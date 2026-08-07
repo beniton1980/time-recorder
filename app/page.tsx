@@ -28,6 +28,8 @@ const stateLabels: Record<Membership["state"], string> = {
 
 export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -90,6 +92,41 @@ export default function Home() {
     };
   }, []);
 
+  async function claimTestStaff() {
+    setClaiming(true);
+    setClaimError(null);
+
+    try {
+      const idToken = liff.getIDToken();
+
+      if (!idToken) {
+        throw new Error("LINEの認証情報を取得できませんでした。");
+      }
+
+      const response = await fetch("/api/session/claim-test-staff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(
+          data.code === "TEST_STAFF_UNAVAILABLE"
+            ? "テストスタッフはすでに登録されています。"
+            : "登録を完了できませんでした。",
+        );
+      }
+
+      window.location.reload();
+    } catch (error) {
+      setClaimError(
+        error instanceof Error ? error.message : "登録を完了できませんでした。",
+      );
+      setClaiming(false);
+    }
+  }
+
   return (
     <main>
       <section className="card" aria-live="polite">
@@ -106,7 +143,18 @@ export default function Home() {
         {view.kind === "unregistered" && (
           <div className="message">
             <p className="status">スタッフ登録が見つかりません</p>
-            <p className="note">店舗管理者へ登録を依頼してください。</p>
+            <p className="note">
+              初期動作確認用のテストスタッフとして登録できます。
+            </p>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={claimTestStaff}
+              disabled={claiming}
+            >
+              {claiming ? "登録しています…" : "テストスタッフとして登録"}
+            </button>
+            {claimError && <p className="error-note">{claimError}</p>}
           </div>
         )}
 
