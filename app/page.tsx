@@ -38,7 +38,7 @@ const eventLabels: Record<EventType, string> = {
 
 const actionsByState: Record<WorkState, EventType[]> = {
   OFF_DUTY: ["CHECK_IN"],
-  WORKING: ["BREAK_START", "CHECK_OUT"],
+  WORKING: ["CHECK_OUT", "BREAK_START"],
   ON_BREAK: ["BREAK_END"],
 };
 
