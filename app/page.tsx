@@ -2,6 +2,7 @@
 
 import liff from "@line/liff";
 import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 
@@ -212,7 +213,7 @@ export default function Home() {
     setShowCorrection(true);
   }
 
-  async function submitCorrectionRequest(event: React.FormEvent<HTMLFormElement>) {
+  async function submitCorrectionRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (
