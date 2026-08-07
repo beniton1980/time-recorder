@@ -128,7 +128,7 @@ export async function POST(request: Request) {
     const result = await sql`
       WITH target AS (
         SELECT
-          st.id AS staff_id,
+          ss.staff_id,
           st.store_id,
           s.timezone,
           s.business_day_start_minute,
@@ -139,56 +139,43 @@ export async function POST(request: Request) {
           ${accuracy}::double precision AS client_accuracy
         FROM staff st
         JOIN stores s ON s.id = st.store_id
+        JOIN staff_states ss ON ss.staff_id = st.id
         WHERE st.line_user_id = ${identity.sub}
           AND st.status = 'active'
           AND s.status = 'active'
+          AND ss.state = ${transition.from}
         ORDER BY st.created_at ASC
         LIMIT 1
-      ),
-      claimed_state AS (
-        UPDATE staff_states ss
-        SET
-          state = ${transition.to},
-          updated_at = NOW()
-        FROM target t
-        WHERE ss.staff_id = t.staff_id
-          AND ss.state = ${transition.from}
-        RETURNING
-          ss.staff_id,
-          t.store_id,
-          t.timezone,
-          t.business_day_start_minute,
-          t.store_latitude,
-          t.store_longitude,
-          t.client_latitude,
-          t.client_longitude,
-          t.client_accuracy
+        FOR UPDATE OF ss
       ),
       located AS (
         SELECT
-          cs.*,
+          t.*,
           CASE
-            WHEN cs.store_latitude IS NULL
-              OR cs.store_longitude IS NULL
-              OR cs.client_latitude IS NULL
-              OR cs.client_longitude IS NULL
+            WHEN t.store_latitude IS NULL
+              OR t.store_longitude IS NULL
+              OR t.client_latitude IS NULL
+              OR t.client_longitude IS NULL
             THEN NULL
             ELSE 6371000 * 2 * ASIN(
-              SQRT(
-                POWER(
-                  SIN(RADIANS(cs.client_latitude - cs.store_latitude) / 2),
-                  2
-                )
-                + COS(RADIANS(cs.store_latitude))
-                * COS(RADIANS(cs.client_latitude))
-                * POWER(
-                  SIN(RADIANS(cs.client_longitude - cs.store_longitude) / 2),
-                  2
+              LEAST(
+                1,
+                SQRT(
+                  POWER(
+                    SIN(RADIANS(t.client_latitude - t.store_latitude) / 2),
+                    2
+                  )
+                  + COS(RADIANS(t.store_latitude))
+                  * COS(RADIANS(t.client_latitude))
+                  * POWER(
+                    SIN(RADIANS(t.client_longitude - t.store_longitude) / 2),
+                    2
+                  )
                 )
               )
             )
           END AS distance_m
-        FROM claimed_state cs
+        FROM target t
       ),
       inserted_event AS (
         INSERT INTO punch_events (
@@ -265,6 +252,7 @@ export async function POST(request: Request) {
       )
       UPDATE staff_states ss
       SET
+        state = ${transition.to},
         last_event_id = ie.id,
         last_event_at = ie.occurred_at,
         updated_at = NOW()
