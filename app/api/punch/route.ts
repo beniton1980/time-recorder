@@ -8,6 +8,9 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const STORE_RADIUS_METERS = 200;
+const MAX_ACCURACY_METERS = 100;
+
 const transitions = {
   CHECK_IN: { from: "OFF_DUTY", to: "WORKING" },
   BREAK_START: { from: "WORKING", to: "ON_BREAK" },
@@ -21,10 +24,43 @@ type PunchRequest = {
   idToken?: unknown;
   eventType?: unknown;
   clientRequestId?: unknown;
+  location?: unknown;
+};
+
+type LocationInput = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
 };
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseLocation(value: unknown): LocationInput | null | undefined {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object") return undefined;
+
+  const candidate = value as Record<string, unknown>;
+  const { latitude, longitude, accuracy } = candidate;
+
+  if (
+    typeof latitude !== "number" ||
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    typeof longitude !== "number" ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180 ||
+    typeof accuracy !== "number" ||
+    !Number.isFinite(accuracy) ||
+    accuracy < 0
+  ) {
+    return undefined;
+  }
+
+  return { latitude, longitude, accuracy };
+}
 
 export async function POST(request: Request) {
   let body: PunchRequest;
@@ -38,12 +74,15 @@ export async function POST(request: Request) {
     );
   }
 
+  const location = parseLocation(body.location);
+
   if (
     typeof body.idToken !== "string" ||
     typeof body.eventType !== "string" ||
     !(body.eventType in transitions) ||
     typeof body.clientRequestId !== "string" ||
-    !uuidPattern.test(body.clientRequestId)
+    !uuidPattern.test(body.clientRequestId) ||
+    location === undefined
   ) {
     return NextResponse.json(
       { ok: false, code: "INVALID_REQUEST" },
@@ -53,6 +92,9 @@ export async function POST(request: Request) {
 
   const eventType = body.eventType as EventType;
   const transition = transitions[eventType];
+  const latitude = location?.latitude ?? null;
+  const longitude = location?.longitude ?? null;
+  const accuracy = location?.accuracy ?? null;
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
@@ -63,6 +105,9 @@ export async function POST(request: Request) {
         pe.id AS event_id,
         pe.event_type,
         pe.occurred_at,
+        pe.location_status,
+        pe.validation_code,
+        pe.distance_from_store_m,
         ss.state
       FROM punch_events pe
       JOIN staff st ON st.id = pe.staff_id
@@ -86,7 +131,12 @@ export async function POST(request: Request) {
           st.id AS staff_id,
           st.store_id,
           s.timezone,
-          s.business_day_start_minute
+          s.business_day_start_minute,
+          s.latitude AS store_latitude,
+          s.longitude AS store_longitude,
+          ${latitude}::double precision AS client_latitude,
+          ${longitude}::double precision AS client_longitude,
+          ${accuracy}::double precision AS client_accuracy
         FROM staff st
         JOIN stores s ON s.id = st.store_id
         WHERE st.line_user_id = ${identity.sub}
@@ -107,7 +157,38 @@ export async function POST(request: Request) {
           ss.staff_id,
           t.store_id,
           t.timezone,
-          t.business_day_start_minute
+          t.business_day_start_minute,
+          t.store_latitude,
+          t.store_longitude,
+          t.client_latitude,
+          t.client_longitude,
+          t.client_accuracy
+      ),
+      located AS (
+        SELECT
+          cs.*,
+          CASE
+            WHEN cs.store_latitude IS NULL
+              OR cs.store_longitude IS NULL
+              OR cs.client_latitude IS NULL
+              OR cs.client_longitude IS NULL
+            THEN NULL
+            ELSE 6371000 * 2 * ASIN(
+              SQRT(
+                POWER(
+                  SIN(RADIANS(cs.client_latitude - cs.store_latitude) / 2),
+                  2
+                )
+                + COS(RADIANS(cs.store_latitude))
+                * COS(RADIANS(cs.client_latitude))
+                * POWER(
+                  SIN(RADIANS(cs.client_longitude - cs.store_longitude) / 2),
+                  2
+                )
+              )
+            )
+          END AS distance_m
+        FROM claimed_state cs
       ),
       inserted_event AS (
         INSERT INTO punch_events (
@@ -117,25 +198,70 @@ export async function POST(request: Request) {
           occurred_at,
           business_date,
           client_request_id,
+          latitude,
+          longitude,
+          gps_accuracy_m,
+          distance_from_store_m,
           location_status,
           validation_status,
+          validation_code,
           source
         )
         SELECT
-          cs.store_id,
-          cs.staff_id,
+          l.store_id,
+          l.staff_id,
           ${eventType},
           NOW(),
           (
-            (NOW() AT TIME ZONE cs.timezone)
-            - make_interval(mins => cs.business_day_start_minute)
+            (NOW() AT TIME ZONE l.timezone)
+            - make_interval(mins => l.business_day_start_minute)
           )::date,
           ${body.clientRequestId},
-          'UNAVAILABLE',
-          'VALID',
+          l.client_latitude,
+          l.client_longitude,
+          l.client_accuracy,
+          l.distance_m,
+          CASE
+            WHEN l.client_latitude IS NULL OR l.client_longitude IS NULL
+              THEN 'UNAVAILABLE'
+            WHEN l.store_latitude IS NULL OR l.store_longitude IS NULL
+              THEN 'UNAVAILABLE'
+            WHEN l.client_accuracy > ${MAX_ACCURACY_METERS}
+              OR l.distance_m > ${STORE_RADIUS_METERS}
+              THEN 'WARNING'
+            ELSE 'OK'
+          END,
+          CASE
+            WHEN l.client_latitude IS NULL
+              OR l.client_longitude IS NULL
+              OR l.store_latitude IS NULL
+              OR l.store_longitude IS NULL
+              OR l.client_accuracy > ${MAX_ACCURACY_METERS}
+              OR l.distance_m > ${STORE_RADIUS_METERS}
+              THEN 'WARNING'
+            ELSE 'VALID'
+          END,
+          CASE
+            WHEN l.client_latitude IS NULL OR l.client_longitude IS NULL
+              THEN 'CLIENT_LOCATION_UNAVAILABLE'
+            WHEN l.store_latitude IS NULL OR l.store_longitude IS NULL
+              THEN 'STORE_LOCATION_UNAVAILABLE'
+            WHEN l.client_accuracy > ${MAX_ACCURACY_METERS}
+              THEN 'LOW_GPS_ACCURACY'
+            WHEN l.distance_m > ${STORE_RADIUS_METERS}
+              THEN 'OUTSIDE_STORE_RADIUS'
+            ELSE NULL
+          END,
           'LIFF'
-        FROM claimed_state cs
-        RETURNING id, staff_id, event_type, occurred_at
+        FROM located l
+        RETURNING
+          id,
+          staff_id,
+          event_type,
+          occurred_at,
+          location_status,
+          validation_code,
+          distance_from_store_m
       )
       UPDATE staff_states ss
       SET
@@ -148,6 +274,9 @@ export async function POST(request: Request) {
         ie.id AS event_id,
         ie.event_type,
         ie.occurred_at,
+        ie.location_status,
+        ie.validation_code,
+        ie.distance_from_store_m,
         ss.state
     `;
 
