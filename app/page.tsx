@@ -8,6 +8,12 @@ const LIFF_ID = "2010761826-6FNSE1PD";
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
 type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
 
+type PunchLocation = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+};
+
 type Membership = {
   staff_id: string;
   legal_name: string;
@@ -41,6 +47,30 @@ const actionsByState: Record<WorkState, EventType[]> = {
   WORKING: ["CHECK_OUT", "BREAK_START"],
   ON_BREAK: ["BREAK_END"],
 };
+
+function getCurrentLocation(): Promise<PunchLocation | null> {
+  if (!("geolocation" in navigator)) {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+      },
+      () => resolve(null),
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
+      },
+    );
+  });
+}
 
 export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
@@ -121,6 +151,8 @@ export default function Home() {
         throw new Error("LINEの認証情報を取得できませんでした。");
       }
 
+      const location = await getCurrentLocation();
+
       const response = await fetch("/api/punch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -128,6 +160,7 @@ export default function Home() {
           idToken,
           eventType,
           clientRequestId: crypto.randomUUID(),
+          location,
         }),
       });
       const data = await response.json();
@@ -150,7 +183,20 @@ export default function Home() {
           last_event_at: data.punch.occurred_at as string,
         },
       });
-      setNotice(`${eventLabels[eventType]}を記録しました`);
+
+      const locationStatus = data.punch.location_status as string;
+
+      if (locationStatus === "OK") {
+        setNotice(`${eventLabels[eventType]}を記録しました`);
+      } else if (locationStatus === "WARNING") {
+        setNotice(
+          `${eventLabels[eventType]}を記録しました（位置情報を確認してください）`,
+        );
+      } else {
+        setNotice(
+          `${eventLabels[eventType]}を記録しました（位置情報は未確認）`,
+        );
+      }
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "打刻を完了できませんでした。",
@@ -200,7 +246,7 @@ export default function Home() {
                   onClick={() => void submitPunch(eventType)}
                 >
                   {submitting === eventType
-                    ? "記録しています…"
+                    ? "位置情報を確認しています…"
                     : eventLabels[eventType]}
                 </button>
               ))}
