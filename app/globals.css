@@ -191,6 +191,32 @@ h1 {
 }
 
 
+
+.last-punch-correction {
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+  color: #40584b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.last-punch-correction > div {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  color: #183024;
+  font-weight: 700;
+  text-align: center;
+}
+
+.last-punch-correction strong {
+  color: #397451;
+  font-size: 20px;
+}
+
 .correction-guide,
 .field-help {
   color: #5e6f65;
