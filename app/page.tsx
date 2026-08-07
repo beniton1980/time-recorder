@@ -2,6 +2,7 @@
 
 import liff from "@line/liff";
 import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 
@@ -98,6 +99,12 @@ export default function Home() {
   const [submitting, setSubmitting] = useState<EventType | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [correctionEvent, setCorrectionEvent] =
+    useState<EventType>("CHECK_IN");
+  const [correctionAt, setCorrectionAt] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
   const storeTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -192,6 +199,71 @@ export default function Home() {
       active = false;
     };
   }, []);
+
+
+  function openCorrectionForm() {
+    const current = new Date();
+    const local = new Date(
+      current.getTime() - current.getTimezoneOffset() * 60_000,
+    );
+
+    setCorrectionAt(local.toISOString().slice(0, 16));
+    setCorrectionReason("");
+    setNotice(null);
+    setShowCorrection(true);
+  }
+
+  async function submitCorrectionRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (
+      view.kind !== "ready" ||
+      correctionSubmitting ||
+      !correctionAt ||
+      !correctionReason.trim()
+    ) {
+      return;
+    }
+
+    setCorrectionSubmitting(true);
+    setNotice(null);
+
+    try {
+      const idToken = liff.getIDToken();
+
+      if (!idToken) {
+        throw new Error("LINEの認証情報を取得できませんでした。");
+      }
+
+      const response = await fetch("/api/correction-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idToken,
+          storeToken: storeTokenRef.current,
+          eventType: correctionEvent,
+          occurredAt: new Date(correctionAt).toISOString(),
+          reason: correctionReason.trim(),
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error("修正申請を送信できませんでした。");
+      }
+
+      setShowCorrection(false);
+      setNotice("打刻修正を申請しました（承認待ち）");
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "修正申請を送信できませんでした。",
+      );
+    } finally {
+      setCorrectionSubmitting(false);
+    }
+  }
 
   async function submitPunch(eventType: EventType) {
     if (view.kind !== "ready" || submitting) return;
@@ -345,6 +417,82 @@ export default function Home() {
                 </button>
               ))}
             </div>
+
+
+            {!showCorrection && (
+              <button
+                className="correction-link"
+                type="button"
+                disabled={submitting !== null}
+                onClick={openCorrectionForm}
+              >
+                打刻修正
+              </button>
+            )}
+
+            {showCorrection && (
+              <form
+                className="correction-form"
+                onSubmit={(event) => void submitCorrectionRequest(event)}
+              >
+                <p className="correction-title">打刻漏れの修正申請</p>
+
+                <label>
+                  打刻の種類
+                  <select
+                    value={correctionEvent}
+                    onChange={(event) =>
+                      setCorrectionEvent(event.target.value as EventType)
+                    }
+                  >
+                    <option value="CHECK_IN">出勤</option>
+                    <option value="BREAK_START">休憩開始</option>
+                    <option value="BREAK_END">休憩終了</option>
+                    <option value="CHECK_OUT">退勤</option>
+                  </select>
+                </label>
+
+                <label>
+                  打刻日時
+                  <input
+                    type="datetime-local"
+                    required
+                    value={correctionAt}
+                    onChange={(event) => setCorrectionAt(event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  理由
+                  <textarea
+                    required
+                    maxLength={500}
+                    rows={3}
+                    placeholder="例：退勤ボタンを押し忘れたため"
+                    value={correctionReason}
+                    onChange={(event) => setCorrectionReason(event.target.value)}
+                  />
+                </label>
+
+                <div className="correction-actions">
+                  <button
+                    className="correction-cancel"
+                    type="button"
+                    disabled={correctionSubmitting}
+                    onClick={() => setShowCorrection(false)}
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    className="correction-submit"
+                    type="submit"
+                    disabled={correctionSubmitting}
+                  >
+                    {correctionSubmitting ? "送信中…" : "申請する"}
+                  </button>
+                </div>
+              </form>
+            )}
 
             {notice && <p className="punch-notice">{notice}</p>}
           </div>
