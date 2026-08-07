@@ -67,6 +67,27 @@ h1 {
   line-height: 1.7;
 }
 
+.clock {
+  margin-bottom: 36px;
+  text-align: center;
+}
+
+.clock-date {
+  color: #5e6f65;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.clock-time {
+  margin-top: 4px !important;
+  color: #183024;
+  font-size: clamp(48px, 14vw, 72px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
 .store {
   margin-bottom: 8px !important;
   color: #5e6f65;
@@ -77,6 +98,13 @@ h1 {
   margin-top: 24px !important;
   color: #397451;
   font-size: 28px;
+  font-weight: 700;
+}
+
+.last-punch {
+  margin-top: 10px !important;
+  color: #5e6f65;
+  font-size: 15px;
   font-weight: 700;
 }
 

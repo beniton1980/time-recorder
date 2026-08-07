@@ -53,11 +53,13 @@ export async function POST(request: Request) {
         s.id AS store_id,
         s.name AS store_name,
         COALESCE(ss.state, 'OFF_DUTY') AS state,
-        ss.last_event_at
+        ss.last_event_at,
+        pe.event_type AS last_event_type
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       JOIN store_entry_tokens setk ON setk.store_id = s.id
       LEFT JOIN staff_states ss ON ss.staff_id = st.id
+      LEFT JOIN punch_events pe ON pe.id = ss.last_event_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
         AND s.status = 'active'

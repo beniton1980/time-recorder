@@ -21,6 +21,7 @@ type Membership = {
   store_name: string;
   state: WorkState;
   last_event_at: string | null;
+  last_event_type: EventType | null;
 };
 
 type ViewState =
@@ -48,6 +49,25 @@ const actionsByState: Record<WorkState, EventType[]> = {
   WORKING: ["CHECK_OUT", "BREAK_START"],
   ON_BREAK: ["BREAK_END"],
 };
+
+
+function formatDate(value: Date) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(value);
+}
+
+function formatTime(value: Date | string) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
 
 function getCurrentLocation(): Promise<PunchLocation | null> {
   if (!("geolocation" in navigator)) {
@@ -77,7 +97,15 @@ export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
   const [submitting, setSubmitting] = useState<EventType | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [now, setNow] = useState<Date | null>(null);
   const storeTokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setNow(new Date());
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -224,6 +252,7 @@ export default function Home() {
           ...view.membership,
           state: nextState,
           last_event_at: data.punch.occurred_at as string,
+          last_event_type: eventType,
         },
       });
 
@@ -278,9 +307,24 @@ export default function Home() {
 
         {view.kind === "ready" && (
           <div className="message">
+            {now && (
+              <div className="clock" aria-label="現在時刻">
+                <p className="clock-date">{formatDate(now)}</p>
+                <p className="clock-time">{formatTime(now)}</p>
+              </div>
+            )}
+
             <p className="store">{view.membership.store_name}</p>
             <p className="status">{view.membership.legal_name}さん</p>
             <p className="state">{stateLabels[view.membership.state]}</p>
+
+            {view.membership.last_event_at &&
+              view.membership.last_event_type && (
+                <p className="last-punch">
+                  {formatTime(view.membership.last_event_at)} に
+                  {eventLabels[view.membership.last_event_type]}
+                </p>
+              )}
 
             <div className="punch-actions">
               {actionsByState[view.membership.state].map((eventType) => (
