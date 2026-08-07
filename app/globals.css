@@ -190,6 +190,64 @@ h1 {
   resize: vertical;
 }
 
+
+.correction-guide,
+.field-help {
+  color: #5e6f65;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.correction-date-time {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 12px;
+}
+
+.correction-error {
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff1f0;
+  color: #a33a32;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.correction-review {
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.correction-review > p {
+  font-weight: 700;
+}
+
+.correction-review dl {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 0;
+}
+
+.correction-review dl > div {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 12px;
+}
+
+.correction-review dt {
+  color: #5e6f65;
+  font-size: 13px;
+}
+
+.correction-review dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
 .correction-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
