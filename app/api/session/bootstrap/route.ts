@@ -53,6 +53,7 @@ export async function POST(request: Request) {
         s.id AS store_id,
         s.name AS store_name,
         COALESCE(ss.state, 'OFF_DUTY') AS state,
+        ss.last_event_id,
         ss.last_event_at,
         pe.event_type AS last_event_type
       FROM staff st

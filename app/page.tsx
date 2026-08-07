@@ -21,6 +21,7 @@ type Membership = {
   store_id: string;
   store_name: string;
   state: WorkState;
+  last_event_id: string | null;
   last_event_at: string | null;
   last_event_type: EventType | null;
 };
@@ -100,6 +101,8 @@ export default function Home() {
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [showCorrection, setShowCorrection] = useState(false);
+  const [correctionCategory, setCorrectionCategory] =
+    useState<"MISTAKE" | "MISSED" | "OTHER">("MISTAKE");
   const [correctionEvent, setCorrectionEvent] =
     useState<EventType>("CHECK_IN");
   const [correctionDate, setCorrectionDate] = useState("");
@@ -204,7 +207,27 @@ export default function Home() {
   }, []);
 
 
+  function canCorrectLastPunch(membership: Membership) {
+    return (
+      membership.last_event_id !== null &&
+      membership.last_event_at !== null &&
+      (membership.last_event_type === "CHECK_OUT" ||
+        membership.last_event_type === "BREAK_START")
+    );
+  }
+
+  function correctedLastEvent(membership: Membership): EventType | null {
+    if (membership.last_event_type === "CHECK_OUT") return "BREAK_START";
+    if (membership.last_event_type === "BREAK_START") return "CHECK_OUT";
+    return null;
+  }
+
   function openCorrectionForm() {
+    if (view.kind !== "ready") return;
+
+    setCorrectionCategory(
+      canCorrectLastPunch(view.membership) ? "MISTAKE" : "MISSED",
+    );
     setCorrectionDate("");
     setCorrectionTime("");
     setCorrectionReason("");
@@ -217,19 +240,33 @@ export default function Home() {
   function reviewCorrectionRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!correctionDate) {
-      setCorrectionError("修正する日付を選択してください。");
-      return;
-    }
+    if (view.kind !== "ready") return;
 
-    if (!correctionTime) {
-      setCorrectionError("実際に打刻したかった時刻を選択してください。");
-      return;
-    }
-
-    if (!correctionReason.trim()) {
+    if (
+      correctionCategory === "MISTAKE" &&
+      !canCorrectLastPunch(view.membership)
+    ) {
       setCorrectionError(
-        "修正が必要になった理由を入力してください。例：退勤ボタンを押し忘れたため",
+        "前回の打刻は、この画面から種類を変更できません。",
+      );
+      return;
+    }
+
+    if (correctionCategory === "MISSED") {
+      if (!correctionDate) {
+        setCorrectionError("追加する打刻の日付を選択してください。");
+        return;
+      }
+
+      if (!correctionTime) {
+        setCorrectionError("追加する打刻の時刻を選択してください。");
+        return;
+      }
+    }
+
+    if (correctionCategory === "OTHER" && !correctionReason.trim()) {
+      setCorrectionError(
+        "店長に確認してほしい内容を入力してください。",
       );
       return;
     }
@@ -239,15 +276,7 @@ export default function Home() {
   }
 
   async function submitCorrectionRequest() {
-    if (
-      view.kind !== "ready" ||
-      correctionSubmitting ||
-      !correctionDate ||
-      !correctionTime ||
-      !correctionReason.trim()
-    ) {
-      return;
-    }
+    if (view.kind !== "ready" || correctionSubmitting) return;
 
     setCorrectionSubmitting(true);
     setCorrectionError(null);
@@ -266,11 +295,19 @@ export default function Home() {
         body: JSON.stringify({
           idToken,
           storeToken: storeTokenRef.current,
-          eventType: correctionEvent,
-          occurredAt: new Date(
-            `${correctionDate}T${correctionTime}`,
-          ).toISOString(),
-          reason: correctionReason.trim(),
+          category: correctionCategory,
+          eventType:
+            correctionCategory === "MISSED" ? correctionEvent : undefined,
+          occurredAt:
+            correctionCategory === "MISSED"
+              ? new Date(
+                  `${correctionDate}T${correctionTime}`,
+                ).toISOString()
+              : undefined,
+          reason:
+            correctionCategory === "OTHER"
+              ? correctionReason.trim()
+              : undefined,
         }),
       });
       const data = await response.json();
@@ -350,6 +387,7 @@ export default function Home() {
         membership: {
           ...view.membership,
           state: nextState,
+          last_event_id: data.punch.event_id as string,
           last_event_at: data.punch.occurred_at as string,
           last_event_type: eventType,
         },
@@ -463,72 +501,132 @@ export default function Home() {
                 noValidate
                 onSubmit={reviewCorrectionRequest}
               >
-                <p className="correction-title">打刻漏れの修正申請</p>
-                <p className="correction-guide">
-                  実際に打刻したかった日時を、1分単位で指定してください。
-                </p>
+                <p className="correction-title">打刻修正</p>
 
                 {!correctionReview ? (
                   <>
                     <label>
-                      打刻の種類
+                      修正内容
                       <select
-                        value={correctionEvent}
+                        value={correctionCategory}
                         onChange={(event) => {
-                          setCorrectionEvent(event.target.value as EventType);
+                          setCorrectionCategory(
+                            event.target.value as
+                              | "MISTAKE"
+                              | "MISSED"
+                              | "OTHER",
+                          );
                           setCorrectionError(null);
                         }}
                       >
-                        <option value="CHECK_IN">出勤</option>
-                        <option value="BREAK_START">休憩開始</option>
-                        <option value="BREAK_END">休憩終了</option>
-                        <option value="CHECK_OUT">退勤</option>
+                        <option value="MISTAKE">
+                          前回の打刻を押し間違えた
+                        </option>
+                        <option value="MISSED">打刻を押し忘れた</option>
+                        <option value="OTHER">その他</option>
                       </select>
                     </label>
 
-                    <div className="correction-date-time">
+                    {correctionCategory === "MISTAKE" &&
+                      view.membership.last_event_at &&
+                      view.membership.last_event_type &&
+                      correctedLastEvent(view.membership) && (
+                        <div className="last-punch-correction">
+                          <p>前回の打刻を次のように修正します。</p>
+                          <div>
+                            <span>
+                              {formatTime(view.membership.last_event_at)}{" "}
+                              {eventLabels[view.membership.last_event_type]}
+                            </span>
+                            <strong aria-hidden="true">→</strong>
+                            <span>
+                              {formatTime(view.membership.last_event_at)}{" "}
+                              {
+                                eventLabels[
+                                  correctedLastEvent(
+                                    view.membership,
+                                  ) as EventType
+                                ]
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                    {correctionCategory === "MISTAKE" &&
+                      !canCorrectLastPunch(view.membership) && (
+                        <p className="correction-error" role="alert">
+                          前回の打刻は種類の押し間違いとして修正できません。
+                          「打刻を押し忘れた」または「その他」を選択してください。
+                        </p>
+                      )}
+
+                    {correctionCategory === "MISSED" && (
+                      <>
+                        <label>
+                          追加する打刻
+                          <select
+                            value={correctionEvent}
+                            onChange={(event) => {
+                              setCorrectionEvent(
+                                event.target.value as EventType,
+                              );
+                              setCorrectionError(null);
+                            }}
+                          >
+                            <option value="CHECK_IN">出勤</option>
+                            <option value="BREAK_START">休憩開始</option>
+                            <option value="BREAK_END">休憩終了</option>
+                            <option value="CHECK_OUT">退勤</option>
+                          </select>
+                        </label>
+
+                        <div className="correction-date-time">
+                          <label>
+                            日付
+                            <input
+                              type="date"
+                              value={correctionDate}
+                              onChange={(event) => {
+                                setCorrectionDate(event.target.value);
+                                setCorrectionError(null);
+                              }}
+                            />
+                          </label>
+                          <label>
+                            時刻
+                            <input
+                              type="time"
+                              step="60"
+                              value={correctionTime}
+                              onChange={(event) => {
+                                setCorrectionTime(event.target.value);
+                                setCorrectionError(null);
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </>
+                    )}
+
+                    {correctionCategory === "OTHER" && (
                       <label>
-                        日付
-                        <input
-                          type="date"
-                          value={correctionDate}
+                        店長に確認してほしい内容
+                        <span className="field-help">
+                          どの記録をどのように直したいか入力してください。
+                        </span>
+                        <textarea
+                          maxLength={500}
+                          rows={4}
+                          placeholder="例：休憩終了の時刻が分からないため確認してほしい"
+                          value={correctionReason}
                           onChange={(event) => {
-                            setCorrectionDate(event.target.value);
+                            setCorrectionReason(event.target.value);
                             setCorrectionError(null);
                           }}
                         />
                       </label>
-
-                      <label>
-                        時刻
-                        <input
-                          type="time"
-                          step="60"
-                          value={correctionTime}
-                          onChange={(event) => {
-                            setCorrectionTime(event.target.value);
-                            setCorrectionError(null);
-                          }}
-                        />
-                      </label>
-                    </div>
-
-                    <label>
-                      修正理由
-                      <span className="field-help">
-                        管理者が内容を判断できるよう、修正が必要な理由を入力してください。
-                      </span>
-                      <textarea
-                        maxLength={500}
-                        rows={3}
-                        placeholder="例：退勤ボタンを押し忘れたため"
-                        value={correctionReason}
-                        onChange={(event) => {
-                          setCorrectionReason(event.target.value);
-                          setCorrectionError(null);
-                        }}
-                      />
-                    </label>
+                    )}
 
                     {correctionError && (
                       <p className="correction-error" role="alert">
@@ -555,20 +653,56 @@ export default function Home() {
                       <p>以下の内容で申請します。</p>
                       <dl>
                         <div>
-                          <dt>種類</dt>
-                          <dd>{eventLabels[correctionEvent]}</dd>
-                        </div>
-                        <div>
-                          <dt>日時</dt>
+                          <dt>内容</dt>
                           <dd>
-                            {correctionDate.replaceAll("-", "/")}{" "}
-                            {correctionTime}
+                            {correctionCategory === "MISTAKE"
+                              ? "前回の打刻を押し間違えた"
+                              : correctionCategory === "MISSED"
+                                ? "打刻を押し忘れた"
+                                : "その他"}
                           </dd>
                         </div>
-                        <div>
-                          <dt>理由</dt>
-                          <dd>{correctionReason.trim()}</dd>
-                        </div>
+                        {correctionCategory === "MISTAKE" &&
+                          view.membership.last_event_at &&
+                          view.membership.last_event_type &&
+                          correctedLastEvent(view.membership) && (
+                            <div>
+                              <dt>修正</dt>
+                              <dd>
+                                {formatTime(view.membership.last_event_at)}{" "}
+                                {eventLabels[view.membership.last_event_type]}
+                                {" → "}
+                                {
+                                  eventLabels[
+                                    correctedLastEvent(
+                                      view.membership,
+                                    ) as EventType
+                                  ]
+                                }
+                              </dd>
+                            </div>
+                          )}
+                        {correctionCategory === "MISSED" && (
+                          <>
+                            <div>
+                              <dt>種類</dt>
+                              <dd>{eventLabels[correctionEvent]}</dd>
+                            </div>
+                            <div>
+                              <dt>日時</dt>
+                              <dd>
+                                {correctionDate.replaceAll("-", "/")}{" "}
+                                {correctionTime}
+                              </dd>
+                            </div>
+                          </>
+                        )}
+                        {correctionCategory === "OTHER" && (
+                          <div>
+                            <dt>内容</dt>
+                            <dd>{correctionReason.trim()}</dd>
+                          </div>
+                        )}
                       </dl>
                     </div>
 
