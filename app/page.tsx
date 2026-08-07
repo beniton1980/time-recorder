@@ -166,11 +166,26 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok || !data.ok) {
-        throw new Error(
-          data.code === "INVALID_STATE_TRANSITION"
-            ? "勤務状態が更新されています。画面を開き直してください。"
-            : "打刻を完了できませんでした。",
-        );
+        if (
+          data.code === "INVALID_STATE_TRANSITION" &&
+          (data.currentState === "OFF_DUTY" ||
+            data.currentState === "WORKING" ||
+            data.currentState === "ON_BREAK")
+        ) {
+          setView({
+            kind: "ready",
+            membership: {
+              ...view.membership,
+              state: data.currentState as WorkState,
+            },
+          });
+          setNotice(
+            "勤務状態を最新に更新しました。もう一度操作してください。",
+          );
+          return;
+        }
+
+        throw new Error("打刻を完了できませんでした。");
       }
 
       const nextState = data.punch.state as WorkState;
