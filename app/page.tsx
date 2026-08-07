@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 const LIFF_ID = "2010761826-6FNSE1PD";
 
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
-type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
+type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";\n\ntype PunchLocation = {\n  latitude: number;\n  longitude: number;\n  accuracy: number;\n};
 
 type Membership = {
   staff_id: string;
@@ -121,7 +121,7 @@ export default function Home() {
         throw new Error("LINEの認証情報を取得できませんでした。");
       }
 
-      const response = await fetch("/api/punch", {
+      const location = await getCurrentLocation();\n\n      const response = await fetch("/api/punch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -150,7 +150,19 @@ export default function Home() {
           last_event_at: data.punch.occurred_at as string,
         },
       });
-      setNotice(`${eventLabels[eventType]}を記録しました`);
+      const locationStatus = data.punch.location_status as string;
+
+      if (locationStatus === "OK") {
+        setNotice(`${eventLabels[eventType]}を記録しました`);
+      } else if (locationStatus === "WARNING") {
+        setNotice(
+          `${eventLabels[eventType]}を記録しました（位置情報を確認してください）`,
+        );
+      } else {
+        setNotice(
+          `${eventLabels[eventType]}を記録しました（位置情報は未確認）`,
+        );
+      }
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "打刻を完了できませんでした。",
