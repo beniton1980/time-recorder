@@ -9,6 +9,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@line/liff": "2.29.1",
     "@neondatabase/serverless": "^1.0.2",
     "next": "^16.0.0",
     "react": "^19.0.0",
