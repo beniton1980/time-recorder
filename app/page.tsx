@@ -316,6 +316,30 @@ export default function Home() {
         throw new Error("修正申請を送信できませんでした。");
       }
 
+      if (
+        correctionCategory === "MISTAKE" &&
+        data.status === "applied" &&
+        (data.correctionRequest.state === "OFF_DUTY" ||
+          data.correctionRequest.state === "ON_BREAK") &&
+        (data.correctionRequest.requested_event_type === "CHECK_OUT" ||
+          data.correctionRequest.requested_event_type === "BREAK_START")
+      ) {
+        setView({
+          kind: "ready",
+          membership: {
+            ...view.membership,
+            state: data.correctionRequest.state as WorkState,
+            last_event_at:
+              data.correctionRequest.requested_occurred_at as string,
+            last_event_type:
+              data.correctionRequest.requested_event_type as EventType,
+          },
+        });
+        setShowCorrection(false);
+        setNotice("前回の打刻を修正しました");
+        return;
+      }
+
       setShowCorrection(false);
       setNotice("打刻修正を申請しました（承認待ち）");
     } catch (error) {

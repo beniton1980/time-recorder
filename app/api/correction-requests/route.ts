@@ -109,14 +109,86 @@ export async function POST(request: Request) {
         );
       }
 
-      operation = "REPLACE";
-      targetEventId = String(member.last_event_id);
-      requestedEventType =
-        member.last_event_type === "CHECK_OUT" ? "BREAK_START" : "CHECK_OUT";
-      requestedOccurredAt = new Date(
-        String(member.last_event_at),
-      ).toISOString();
-      reason = "前回の打刻ボタンを押し間違えた";
+      const applied = await sql`
+        WITH target AS (
+          SELECT
+            ss.staff_id,
+            st.store_id,
+            ss.last_event_id,
+            pe.event_type,
+            pe.occurred_at
+          FROM staff st
+          JOIN staff_states ss ON ss.staff_id = st.id
+          JOIN punch_events pe ON pe.id = ss.last_event_id
+          WHERE st.id = ${String(member.staff_id)}::uuid
+            AND ss.last_event_id = ${String(member.last_event_id)}::uuid
+            AND pe.event_type IN ('CHECK_OUT', 'BREAK_START')
+          FOR UPDATE OF ss
+        ),
+        inserted AS (
+          INSERT INTO correction_requests (
+            store_id,
+            staff_id,
+            operation,
+            target_event_id,
+            requested_event_type,
+            requested_occurred_at,
+            reason,
+            status,
+            approved_by,
+            approved_at
+          )
+          SELECT
+            t.store_id,
+            t.staff_id,
+            'REPLACE',
+            t.last_event_id,
+            CASE
+              WHEN t.event_type = 'CHECK_OUT' THEN 'BREAK_START'
+              ELSE 'CHECK_OUT'
+            END,
+            t.occurred_at,
+            '前回の打刻ボタンを押し間違えた',
+            'APPROVED',
+            'SELF_SERVICE_RULE',
+            NOW()
+          FROM target t
+          RETURNING
+            id,
+            staff_id,
+            requested_event_type,
+            requested_occurred_at,
+            status
+        )
+        UPDATE staff_states ss
+        SET
+          state = CASE
+            WHEN i.requested_event_type = 'BREAK_START' THEN 'ON_BREAK'
+            ELSE 'OFF_DUTY'
+          END,
+          updated_at = NOW()
+        FROM inserted i
+        WHERE ss.staff_id = i.staff_id
+        RETURNING
+          i.id,
+          i.requested_event_type,
+          i.requested_occurred_at,
+          i.status,
+          ss.state
+      `;
+
+      if (applied.length !== 1) {
+        return NextResponse.json(
+          { ok: false, code: "LAST_PUNCH_CHANGED" },
+          { status: 409 },
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        status: "applied",
+        correctionRequest: applied[0],
+      });
     } else if (category === "MISSED") {
       const eventType =
         typeof body.eventType === "string" &&
