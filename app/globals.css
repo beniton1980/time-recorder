@@ -76,6 +76,31 @@ h1 {
   font-weight: 700;
 }
 
+.primary-button {
+  width: 100%;
+  margin-top: 24px;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: #397451;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.error-note {
+  margin-top: 12px !important;
+  color: #b42318;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 .spinner {
   display: block;
   width: 28px;
