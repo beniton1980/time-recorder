@@ -1,7 +1,7 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 
@@ -26,6 +26,7 @@ type Membership = {
 type ViewState =
   | { kind: "loading" }
   | { kind: "unregistered" }
+  | { kind: "store_required"; message: string }
   | { kind: "ready"; membership: Membership }
   | { kind: "error"; message: string };
 
@@ -76,6 +77,7 @@ export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
   const [submitting, setSubmitting] = useState<EventType | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const storeTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -83,6 +85,20 @@ export default function Home() {
     async function bootstrap() {
       try {
         await liff.init({ liffId: LIFF_ID });
+
+        const storeToken = new URLSearchParams(window.location.search).get(
+          "store_token",
+        );
+
+        if (!storeToken) {
+          setView({
+            kind: "store_required",
+            message: "店舗に設置されたQRコードから開いてください。",
+          });
+          return;
+        }
+
+        storeTokenRef.current = storeToken;
 
         if (!liff.isLoggedIn()) {
           liff.login({ redirectUri: window.location.href });
@@ -98,12 +114,23 @@ export default function Home() {
         const response = await fetch("/api/session/bootstrap", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken }),
+          body: JSON.stringify({ idToken, storeToken }),
         });
 
         const data = await response.json();
 
         if (!response.ok || !data.ok) {
+          if (
+            data.code === "STORE_TOKEN_REQUIRED" ||
+            data.code === "STORE_TOKEN_INVALID"
+          ) {
+            setView({
+              kind: "store_required",
+              message: "この店舗QRコードは利用できません。",
+            });
+            return;
+          }
+
           throw new Error("認証を確認できませんでした。");
         }
 
@@ -160,6 +187,7 @@ export default function Home() {
           idToken,
           eventType,
           clientRequestId: crypto.randomUUID(),
+          storeToken: storeTokenRef.current,
           location,
         }),
       });
@@ -231,6 +259,13 @@ export default function Home() {
           <div className="message">
             <span className="spinner" aria-hidden="true" />
             <p>LINE認証を確認しています</p>
+          </div>
+        )}
+
+        {view.kind === "store_required" && (
+          <div className="message">
+            <p className="status">店舗QRコードが必要です</p>
+            <p className="note">{view.message}</p>
           </div>
         )}
 

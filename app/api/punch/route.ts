@@ -4,6 +4,7 @@ import {
   LineTokenVerificationError,
   verifyLineIdToken,
 } from "@/lib/line/verify-id-token";
+import { hashStoreEntryToken } from "@/lib/store-entry-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ type PunchRequest = {
   idToken?: unknown;
   eventType?: unknown;
   clientRequestId?: unknown;
+  storeToken?: unknown;
   location?: unknown;
 };
 
@@ -90,6 +92,15 @@ export async function POST(request: Request) {
     );
   }
 
+  const tokenHash = hashStoreEntryToken(body.storeToken);
+
+  if (!tokenHash) {
+    return NextResponse.json(
+      { ok: false, code: "STORE_TOKEN_REQUIRED" },
+      { status: 400 },
+    );
+  }
+
   const eventType = body.eventType as EventType;
   const transition = transitions[eventType];
   const latitude = location?.latitude ?? null;
@@ -112,8 +123,13 @@ export async function POST(request: Request) {
       FROM punch_events pe
       JOIN staff st ON st.id = pe.staff_id
       JOIN staff_states ss ON ss.staff_id = st.id
+      JOIN store_entry_tokens setk ON setk.store_id = pe.store_id
       WHERE pe.client_request_id = ${body.clientRequestId}
         AND st.line_user_id = ${identity.sub}
+        AND setk.token_hash = ${tokenHash}
+        AND setk.active = TRUE
+        AND setk.revoked_at IS NULL
+        AND (setk.expires_at IS NULL OR setk.expires_at > NOW())
       LIMIT 1
     `;
 
@@ -140,9 +156,14 @@ export async function POST(request: Request) {
         FROM staff st
         JOIN stores s ON s.id = st.store_id
         JOIN staff_states ss ON ss.staff_id = st.id
+        JOIN store_entry_tokens setk ON setk.store_id = s.id
         WHERE st.line_user_id = ${identity.sub}
           AND st.status = 'active'
           AND s.status = 'active'
+          AND setk.token_hash = ${tokenHash}
+          AND setk.active = TRUE
+          AND setk.revoked_at IS NULL
+          AND (setk.expires_at IS NULL OR setk.expires_at > NOW())
           AND ss.state = ${transition.from}
         ORDER BY st.created_at ASC
         LIMIT 1
@@ -281,9 +302,14 @@ export async function POST(request: Request) {
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       JOIN staff_states ss ON ss.staff_id = st.id
+      JOIN store_entry_tokens setk ON setk.store_id = s.id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
         AND s.status = 'active'
+        AND setk.token_hash = ${tokenHash}
+        AND setk.active = TRUE
+        AND setk.revoked_at IS NULL
+        AND (setk.expires_at IS NULL OR setk.expires_at > NOW())
       ORDER BY st.created_at ASC
       LIMIT 1
     `;
