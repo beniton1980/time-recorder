@@ -190,7 +190,7 @@ export default function Home() {
               {actionsByState[view.membership.state].map((eventType) => (
                 <button
                   className={
-                    eventType === "CHECK_OUT"
+                    eventType === "BREAK_START"
                       ? "punch-button punch-button-secondary"
                       : "punch-button"
                   }
