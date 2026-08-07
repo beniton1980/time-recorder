@@ -13,6 +13,10 @@ body {
   margin: 0;
 }
 
+button {
+  font: inherit;
+}
+
 main {
   min-height: 100vh;
   display: grid;
@@ -74,6 +78,42 @@ h1 {
   color: #397451;
   font-size: 28px;
   font-weight: 700;
+}
+
+.punch-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.punch-button {
+  min-height: 56px;
+  padding: 14px 20px;
+  border: 0;
+  border-radius: 14px;
+  background: #397451;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.punch-button-secondary {
+  border: 1px solid #b8c8bd;
+  background: #fff;
+  color: #274d38;
+}
+
+.punch-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.punch-notice {
+  margin-top: 18px !important;
+  color: #397451;
+  font-weight: 700;
+  line-height: 1.6;
 }
 
 .spinner {
