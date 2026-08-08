@@ -84,6 +84,7 @@ export default function ManagerPage() {
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const loadDashboard = useCallback(async () => {
     const idToken = liff.getIDToken();
@@ -132,6 +133,11 @@ export default function ManagerPage() {
   }, [loadDashboard]);
 
   function updateReviewDraft(id: string, values: Partial<ReviewDraft>) {
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
     setReviewDrafts((current) => ({
       ...current,
       [id]: {
@@ -151,7 +157,10 @@ export default function ManagerPage() {
       correction.operation === "REVIEW" &&
       (!draft?.date || !draft?.time)
     ) {
-      setError("「その他」の申請を承認するには、追加する打刻の種類・日付・時刻を入力してください。");
+      setFieldErrors((current) => ({
+        ...current,
+        [correction.id]: "追加する打刻の日付と時刻を入力してください。",
+      }));
       return;
     }
 
@@ -189,6 +198,11 @@ export default function ManagerPage() {
         throw new Error("申請を更新できませんでした。");
       }
 
+      setFieldErrors((current) => {
+        const next = { ...current };
+        delete next[correction.id];
+        return next;
+      });
       await loadDashboard();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "申請を更新できませんでした。");
@@ -317,6 +331,11 @@ export default function ManagerPage() {
                               />
                             </label>
                           </div>
+                          {fieldErrors[correction.id] && (
+                            <p className={styles.fieldError} role="alert">
+                              {fieldErrors[correction.id]}
+                            </p>
+                          )}
                           <small>
                             承認すると、この打刻が訂正データとして追加されます。
                           </small>

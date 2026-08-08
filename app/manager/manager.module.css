@@ -243,3 +243,14 @@
   color: #68756c;
   line-height: 1.5;
 }
+
+.fieldError {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #e2adad;
+  border-radius: 8px;
+  background: #fff3f3;
+  color: #9c2e2e;
+  font-size: 13px;
+  font-weight: 700;
+}
