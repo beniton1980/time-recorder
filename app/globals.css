@@ -399,3 +399,22 @@ h1 {
     animation: none;
   }
 }
+
+
+.close-app-button {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 24px;
+  border: 1px solid #b8c8bd;
+  border-radius: 12px;
+  background: #fff;
+  color: #274d38;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.close-app-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
