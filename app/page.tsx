@@ -485,7 +485,7 @@ export default function Home() {
     <main>
       <section className="card" aria-live="polite">
         <p className="eyebrow">ONOGAMI</p>
-        <h1>Time Recorder v2</h1>
+        <h1>勤怠</h1>
 
         {view.kind === "loading" && (
           <div className="message">

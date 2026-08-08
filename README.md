@@ -1,19 +1,19 @@
-# Onogami Time Recorder v2
+# ONOGAMI 勤怠
 
-A clean Next.js foundation for the next version of Onogami Time Recorder.
+有限会社魚時のスタッフ向け勤怠管理システムです。
 
-## Current scope
+## 主な機能
 
-- Minimal Next.js App Router application
-- Vercel deployment readiness
-- No connection to the existing production system
-- No database connection yet
+- LINE LIFFによるスタッフ認証
+- 店舗QRコードを使った出勤・休憩・退勤の打刻
+- 位置情報の記録と店舗からの距離確認
+- 打刻履歴の保持と訂正申請
+- 店長による勤務状況確認・訂正承認・直接修正
+- 営業日およびスタッフ別の履歴確認
 
-## Local development
+## 構成
 
-```bash
-npm install
-npm run dev
-```
-
-Open http://localhost:3000.
+- Next.js App Router
+- Vercel
+- Neon Postgres
+- LINE LIFF
