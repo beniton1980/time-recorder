@@ -15,6 +15,14 @@ type PunchLocation = {
   accuracy: number;
 };
 
+type PunchHistoryItem = {
+  effective_id: string;
+  original_event_id: string | null;
+  event_type: EventType;
+  occurred_at: string;
+  corrected: boolean;
+};
+
 type Membership = {
   staff_id: string;
   legal_name: string;
@@ -24,6 +32,7 @@ type Membership = {
   last_event_id: string | null;
   last_event_at: string | null;
   last_event_type: EventType | null;
+  recent_punches: PunchHistoryItem[];
 };
 
 type ViewState =
@@ -333,6 +342,20 @@ export default function Home() {
               data.correctionRequest.requested_occurred_at as string,
             last_event_type:
               data.correctionRequest.requested_event_type as EventType,
+            recent_punches: view.membership.recent_punches.map((punch) =>
+              punch.original_event_id === view.membership.last_event_id
+                ? {
+                    ...punch,
+                    event_type:
+                      data.correctionRequest
+                        .requested_event_type as EventType,
+                    occurred_at:
+                      data.correctionRequest
+                        .requested_occurred_at as string,
+                    corrected: true,
+                  }
+                : punch,
+            ),
           },
         });
         setShowCorrection(false);
@@ -414,6 +437,16 @@ export default function Home() {
           last_event_id: data.punch.event_id as string,
           last_event_at: data.punch.occurred_at as string,
           last_event_type: eventType,
+          recent_punches: [
+            ...view.membership.recent_punches,
+            {
+              effective_id: data.punch.event_id as string,
+              original_event_id: data.punch.event_id as string,
+              event_type: eventType,
+              occurred_at: data.punch.occurred_at as string,
+              corrected: false,
+            },
+          ].slice(-8),
         },
       });
 
@@ -486,6 +519,25 @@ export default function Home() {
                   {eventLabels[view.membership.last_event_type]}
                 </p>
               )}
+
+            <div className="punch-history">
+              <p className="punch-history-title">本日の打刻履歴</p>
+              {view.membership.recent_punches.length > 0 ? (
+                <ol>
+                  {view.membership.recent_punches.map((punch) => (
+                    <li key={punch.effective_id}>
+                      <time dateTime={punch.occurred_at}>
+                        {formatTime(punch.occurred_at)}
+                      </time>
+                      <span>{eventLabels[punch.event_type]}</span>
+                      {punch.corrected && <small>修正済み</small>}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="punch-history-empty">本日の打刻はありません</p>
+              )}
+            </div>
 
             <div className="punch-actions">
               {actionsByState[view.membership.state].map((eventType) => (

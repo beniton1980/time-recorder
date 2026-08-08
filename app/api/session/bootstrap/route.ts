@@ -55,13 +55,42 @@ export async function POST(request: Request) {
         COALESCE(ss.state, 'OFF_DUTY') AS state,
         ss.last_event_id,
         COALESCE(epe.occurred_at, ss.last_event_at) AS last_event_at,
-        epe.event_type AS last_event_type
+        epe.event_type AS last_event_type,
+        COALESCE(history.items, '[]'::json) AS recent_punches
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       JOIN store_entry_tokens setk ON setk.store_id = s.id
       LEFT JOIN staff_states ss ON ss.staff_id = st.id
       LEFT JOIN effective_punch_events epe
         ON epe.original_event_id = ss.last_event_id
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+          json_build_object(
+            'effective_id', recent.effective_id,
+            'original_event_id', recent.original_event_id,
+            'event_type', recent.event_type,
+            'occurred_at', recent.occurred_at,
+            'corrected', recent.corrected
+          )
+          ORDER BY recent.occurred_at ASC
+        ) AS items
+        FROM (
+          SELECT
+            day_events.effective_id,
+            day_events.original_event_id,
+            day_events.event_type,
+            day_events.occurred_at,
+            day_events.corrected
+          FROM effective_punch_events day_events
+          WHERE day_events.staff_id = st.id
+            AND day_events.business_date = (
+              (NOW() AT TIME ZONE s.timezone)
+              - make_interval(mins => s.business_day_start_minute)
+            )::date
+          ORDER BY day_events.occurred_at DESC
+          LIMIT 8
+        ) recent
+      ) history ON TRUE
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
         AND s.status = 'active'
