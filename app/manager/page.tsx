@@ -18,6 +18,15 @@ type Attendance = {
   punch_count: number;
 };
 
+type DayEvent = {
+  effective_id: string;
+  original_event_id: string | null;
+  correction_request_id: string | null;
+  event_type: EventType;
+  occurred_at: string;
+  corrected: boolean;
+};
+
 type Correction = {
   id: string;
   operation: "ADD" | "REPLACE" | "VOID" | "REVIEW";
@@ -28,6 +37,7 @@ type Correction = {
   legal_name: string;
   target_event_type: EventType | null;
   target_occurred_at: string | null;
+  day_events: DayEvent[];
 };
 
 type Dashboard = {
@@ -284,6 +294,25 @@ export default function ManagerPage() {
                       )}
 
                       {correction.reason && <p className={styles.reason}>{correction.reason}</p>}
+
+                      <div className={styles.dayHistory}>
+                        <p>対象日の有効な打刻履歴</p>
+                        {correction.day_events.length === 0 ? (
+                          <span>打刻履歴はありません</span>
+                        ) : (
+                          <ol>
+                            {correction.day_events.map((dayEvent) => (
+                              <li key={dayEvent.effective_id}>
+                                <time dateTime={dayEvent.occurred_at}>
+                                  {formatTime(dayEvent.occurred_at)}
+                                </time>
+                                <strong>{eventLabels[dayEvent.event_type]}</strong>
+                                {dayEvent.corrected && <small>訂正</small>}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
 
                       {correction.operation === "REVIEW" && (
                         <div className={styles.resolution}>
