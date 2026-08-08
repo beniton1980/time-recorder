@@ -8,11 +8,20 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const eventTypes = ["CHECK_IN", "BREAK_START", "BREAK_END", "CHECK_OUT"] as const;
+type EventType = (typeof eventTypes)[number];
+
 type DecisionRequest = {
   idToken?: unknown;
   requestId?: unknown;
   decision?: unknown;
+  resolvedEventType?: unknown;
+  resolvedOccurredAt?: unknown;
 };
+
+function isEventType(value: unknown): value is EventType {
+  return typeof value === "string" && eventTypes.includes(value as EventType);
+}
 
 export async function POST(request: Request) {
   let body: DecisionRequest;
@@ -66,27 +75,57 @@ export async function POST(request: Request) {
     }
 
     const correction = pending[0];
+    const isManualResolution =
+      body.decision === "APPROVED" && correction.operation === "REVIEW";
 
-    if (
-      body.decision === "APPROVED" &&
-      correction.operation !== "ADD"
-    ) {
-      return NextResponse.json(
-        { ok: false, code: "MANUAL_EDIT_REQUIRED" },
-        { status: 422 },
-      );
+    let resolvedOccurredAt: string | null = null;
+
+    if (isManualResolution) {
+      if (!isEventType(body.resolvedEventType) || typeof body.resolvedOccurredAt !== "string") {
+        return NextResponse.json({ ok: false, code: "RESOLUTION_REQUIRED" }, { status: 422 });
+      }
+
+      const parsed = new Date(body.resolvedOccurredAt);
+      if (Number.isNaN(parsed.getTime())) {
+        return NextResponse.json({ ok: false, code: "INVALID_RESOLUTION_TIME" }, { status: 422 });
+      }
+
+      resolvedOccurredAt = parsed.toISOString();
+    } else if (body.decision === "APPROVED" && correction.operation !== "ADD") {
+      return NextResponse.json({ ok: false, code: "UNSUPPORTED_APPROVAL" }, { status: 422 });
     }
 
     const updated = await sql`
       UPDATE correction_requests
       SET
+        operation = CASE
+          WHEN ${isManualResolution} THEN 'ADD'
+          ELSE operation
+        END,
+        requested_event_type = CASE
+          WHEN ${isManualResolution} THEN ${isManualResolution ? body.resolvedEventType : null}
+          ELSE requested_event_type
+        END,
+        requested_occurred_at = CASE
+          WHEN ${isManualResolution} THEN ${resolvedOccurredAt}
+          ELSE requested_occurred_at
+        END,
         status = ${body.decision},
-        approved_by = CASE WHEN ${body.decision} = 'APPROVED' THEN ${manager.staff_id}::text ELSE approved_by END,
-        approved_at = CASE WHEN ${body.decision} = 'APPROVED' THEN NOW() ELSE approved_at END,
-        rejected_at = CASE WHEN ${body.decision} = 'REJECTED' THEN NOW() ELSE rejected_at END
+        approved_by = CASE
+          WHEN ${body.decision} = 'APPROVED' THEN ${manager.staff_id}::text
+          ELSE approved_by
+        END,
+        approved_at = CASE
+          WHEN ${body.decision} = 'APPROVED' THEN NOW()
+          ELSE approved_at
+        END,
+        rejected_at = CASE
+          WHEN ${body.decision} = 'REJECTED' THEN NOW()
+          ELSE rejected_at
+        END
       WHERE id = ${body.requestId}
         AND status = 'PENDING'
-      RETURNING id, staff_id, status
+      RETURNING id, staff_id, status, operation, requested_event_type, requested_occurred_at
     `;
 
     if (updated.length === 0) {
@@ -130,10 +169,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({
-      ok: true,
-      request: updated[0],
-    });
+    return NextResponse.json({ ok: true, request: updated[0] });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
