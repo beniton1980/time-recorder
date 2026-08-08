@@ -8,7 +8,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type DashboardRequest = { idToken?: unknown };
+type DashboardRequest = { idToken?: unknown; businessDate?: unknown };
 
 export async function POST(request: Request) {
   let body: DashboardRequest;
@@ -44,12 +44,35 @@ export async function POST(request: Request) {
 
     const manager = managers[0];
 
+    if (
+      body.businessDate !== undefined &&
+      (typeof body.businessDate !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(body.businessDate))
+    ) {
+      return NextResponse.json({ ok: false, code: "INVALID_BUSINESS_DATE" }, { status: 400 });
+    }
+
+    const dates = await sql`
+      SELECT COALESCE(
+        ${typeof body.businessDate === "string" ? body.businessDate : null}::date,
+        ((NOW() AT TIME ZONE timezone)
+          - make_interval(mins => business_day_start_minute))::date
+      )::text AS business_date
+      FROM stores
+      WHERE id = ${manager.store_id}
+    `;
+    const businessDate = String(dates[0].business_date);
+
     const [attendance, corrections] = await Promise.all([
       sql`
         SELECT
           st.id AS staff_id,
           st.legal_name,
-          COALESCE(ss.state, 'OFF_DUTY') AS state,
+          CASE
+            WHEN latest.event_type = 'BREAK_START' THEN 'ON_BREAK'
+            WHEN latest.event_type IN ('CHECK_IN', 'BREAK_END') THEN 'WORKING'
+            ELSE 'OFF_DUTY'
+          END AS state,
           latest.event_type AS last_event_type,
           latest.occurred_at AS last_event_at,
           COALESCE(day_summary.punch_count, 0)::int AS punch_count,
@@ -61,10 +84,7 @@ export async function POST(request: Request) {
           FROM effective_punch_events epe
           JOIN stores store_settings ON store_settings.id = epe.store_id
           WHERE epe.staff_id = st.id
-            AND epe.business_date = (
-              (NOW() AT TIME ZONE store_settings.timezone)
-              - make_interval(mins => store_settings.business_day_start_minute)
-            )::date
+            AND epe.business_date = ${businessDate}::date
           ORDER BY epe.occurred_at DESC, epe.effective_id DESC
           LIMIT 1
         ) latest ON TRUE
@@ -85,10 +105,7 @@ export async function POST(request: Request) {
           FROM effective_punch_events epe
           JOIN stores store_settings ON store_settings.id = epe.store_id
           WHERE epe.staff_id = st.id
-            AND epe.business_date = (
-              (NOW() AT TIME ZONE store_settings.timezone)
-              - make_interval(mins => store_settings.business_day_start_minute)
-            )::date
+            AND epe.business_date = ${businessDate}::date
         ) day_summary ON TRUE
         WHERE st.store_id = ${manager.store_id}
           AND st.status = 'active'
@@ -144,6 +161,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       manager,
+      businessDate,
       attendance,
       corrections,
     });
