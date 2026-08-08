@@ -33,7 +33,7 @@ test("opening another store QR keeps the active-store conflict UX", async () => 
   const bootstrap = await source("app/api/session/bootstrap/route.ts");
   const page = await source("app/page.tsx");
 
-  assert.match(bootstrap, /activeStoreConflict:/);
+  assert.match(bootstrap, /activeStoreConflict(?::|,)/);
   assert.match(bootstrap, /active_state\.state IN \('WORKING', 'ON_BREAK'\)/);
   assert.match(page, /kind: "active_store_conflict"/);
   assert.match(page, /別の店舗で勤務中です/);
@@ -88,4 +88,15 @@ test("manager dashboard warns when an active shift carries into a later business
   assert.match(managerPage, /staff\.carried_over_active/);
   assert.match(managerPage, /前営業日から/);
   assert.match(managerPage, /が継続中です/);
+});
+
+test("session bootstrap resolves cross-store state in the membership query", async () => {
+  const bootstrap = await source("app/api/session/bootstrap/route.ts");
+
+  assert.match(bootstrap, /AS active_store_conflict/);
+  assert.match(bootstrap, /active_staff\.line_user_id = st\.line_user_id/);
+  assert.doesNotMatch(bootstrap, /const activeElsewhere = await sql/);
+  assert.match(bootstrap, /lineVerificationMs/);
+  assert.match(bootstrap, /databaseMs/);
+  assert.match(bootstrap, /session bootstrap completed/);
 });

@@ -15,6 +15,7 @@ type BootstrapRequest = {
 };
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   let body: BootstrapRequest;
 
   try {
@@ -43,8 +44,11 @@ export async function POST(request: Request) {
   }
 
   try {
+    const verificationStartedAt = Date.now();
     const identity = await verifyLineIdToken(body.idToken);
+    const lineVerificationMs = Date.now() - verificationStartedAt;
     const sql = getSql();
+    const databaseStartedAt = Date.now();
 
     const memberships = await sql`
       SELECT
@@ -56,7 +60,24 @@ export async function POST(request: Request) {
         ss.last_event_id,
         COALESCE(epe.occurred_at, ss.last_event_at) AS last_event_at,
         epe.event_type AS last_event_type,
-        COALESCE(history.items, '[]'::json) AS recent_punches
+        COALESCE(history.items, '[]'::json) AS recent_punches,
+        (
+          SELECT json_build_object(
+            'store_id', active_store.id,
+            'store_name', active_store.name,
+            'state', active_state.state
+          )
+          FROM staff active_staff
+          JOIN stores active_store ON active_store.id = active_staff.store_id
+          JOIN staff_states active_state ON active_state.staff_id = active_staff.id
+          WHERE active_staff.line_user_id = st.line_user_id
+            AND active_staff.status = 'active'
+            AND active_store.status = 'active'
+            AND active_staff.store_id <> st.store_id
+            AND active_state.state IN ('WORKING', 'ON_BREAK')
+          ORDER BY active_state.updated_at DESC
+          LIMIT 1
+        ) AS active_store_conflict
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       JOIN store_entry_tokens setk ON setk.store_id = s.id
@@ -125,29 +146,23 @@ export async function POST(request: Request) {
       });
     }
 
-    const activeElsewhere = await sql`
-      SELECT
-        active_store.id AS store_id,
-        active_store.name AS store_name,
-        active_state.state
-      FROM staff active_staff
-      JOIN stores active_store ON active_store.id = active_staff.store_id
-      JOIN staff_states active_state ON active_state.staff_id = active_staff.id
-      WHERE active_staff.line_user_id = ${identity.sub}
-        AND active_staff.status = 'active'
-        AND active_store.status = 'active'
-        AND active_staff.store_id <> ${memberships[0].store_id}
-        AND active_state.state IN ('WORKING', 'ON_BREAK')
-      ORDER BY active_state.updated_at DESC
-      LIMIT 1
-    `;
+    const databaseMs = Date.now() - databaseStartedAt;
+    const activeStoreConflict = memberships[0].active_store_conflict ?? null;
+
+    console.log(JSON.stringify({
+      level: "info",
+      msg: "session bootstrap completed",
+      route: "/api/session/bootstrap",
+      lineVerificationMs,
+      databaseMs,
+      totalMs: Date.now() - startedAt,
+    }));
 
     return NextResponse.json({
       ok: true,
       registered: true,
       memberships,
-      activeStoreConflict:
-        activeElsewhere.length === 1 ? activeElsewhere[0] : null,
+      activeStoreConflict,
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
