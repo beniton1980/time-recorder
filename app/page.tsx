@@ -217,7 +217,16 @@ export default function Home() {
 
 
   function canCorrectLastPunch(membership: Membership) {
-    return (
+    function closeApp() {
+    if (liff.isInClient()) {
+      liff.closeWindow();
+      return;
+    }
+
+    window.close();
+  }
+
+  return (
       membership.last_event_id !== null &&
       membership.last_event_at !== null &&
       (membership.last_event_type === "CHECK_OUT" ||
@@ -520,25 +529,6 @@ export default function Home() {
                 </p>
               )}
 
-            <div className="punch-history">
-              <p className="punch-history-title">本日の打刻履歴</p>
-              {view.membership.recent_punches.length > 0 ? (
-                <ol>
-                  {view.membership.recent_punches.map((punch) => (
-                    <li key={punch.effective_id}>
-                      <time dateTime={punch.occurred_at}>
-                        {formatTime(punch.occurred_at)}
-                      </time>
-                      <span>{eventLabels[punch.event_type]}</span>
-                      {punch.corrected && <small>修正済み</small>}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="punch-history-empty">本日の打刻はありません</p>
-              )}
-            </div>
-
             <div className="punch-actions">
               {actionsByState[view.membership.state].map((eventType) => (
                 <button
@@ -815,6 +805,35 @@ export default function Home() {
             )}
 
             {notice && <p className="punch-notice">{notice}</p>}
+
+            <button
+              className="close-app-button"
+              type="button"
+              disabled={submitting !== null || correctionSubmitting}
+              onClick={closeApp}
+            >
+              打刻画面を閉じる
+            </button>
+
+            <div className="punch-history">
+              <p className="punch-history-title">本日の打刻履歴</p>
+              {view.membership.recent_punches.length > 0 ? (
+                <ol>
+                  {view.membership.recent_punches.map((punch) => (
+                    <li key={punch.effective_id}>
+                      <time dateTime={punch.occurred_at}>
+                        {formatTime(punch.occurred_at)}
+                      </time>
+                      <span>{eventLabels[punch.event_type]}</span>
+                      {punch.corrected && <small>修正済み</small>}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="punch-history-empty">本日の打刻はありません</p>
+              )}
+            </div>
+
           </div>
         )}
 
