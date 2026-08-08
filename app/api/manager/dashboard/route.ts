@@ -52,7 +52,8 @@ export async function POST(request: Request) {
           COALESCE(ss.state, 'OFF_DUTY') AS state,
           latest.event_type AS last_event_type,
           latest.occurred_at AS last_event_at,
-          COALESCE(day_summary.punch_count, 0)::int AS punch_count
+          COALESCE(day_summary.punch_count, 0)::int AS punch_count,
+          COALESCE(day_summary.items, '[]'::json) AS day_events
         FROM staff st
         LEFT JOIN staff_states ss ON ss.staff_id = st.id
         LEFT JOIN LATERAL (
@@ -68,7 +69,19 @@ export async function POST(request: Request) {
           LIMIT 1
         ) latest ON TRUE
         LEFT JOIN LATERAL (
-          SELECT COUNT(*) AS punch_count
+          SELECT
+            COUNT(*) AS punch_count,
+            json_agg(
+              json_build_object(
+                'effective_id', epe.effective_id,
+                'original_event_id', epe.original_event_id,
+                'origin_correction_id', epe.origin_correction_id,
+                'event_type', epe.event_type,
+                'occurred_at', epe.occurred_at,
+                'corrected', epe.corrected
+              )
+              ORDER BY epe.occurred_at ASC, epe.created_at ASC, epe.effective_id ASC
+            ) AS items
           FROM effective_punch_events epe
           JOIN stores store_settings ON store_settings.id = epe.store_id
           WHERE epe.staff_id = st.id
@@ -103,6 +116,7 @@ export async function POST(request: Request) {
               'effective_id', epe.effective_id,
               'original_event_id', epe.original_event_id,
               'correction_request_id', epe.correction_request_id,
+              'origin_correction_id', epe.origin_correction_id,
               'event_type', epe.event_type,
               'occurred_at', epe.occurred_at,
               'corrected', epe.corrected
