@@ -57,11 +57,11 @@ export async function POST(request: Request) {
         ${typeof body.businessDate === "string" ? body.businessDate : null}::date,
         ((NOW() AT TIME ZONE timezone)
           - make_interval(mins => business_day_start_minute))::date
-      ) AS business_date
+      )::text AS business_date
       FROM stores
       WHERE id = ${manager.store_id}
     `;
-    const businessDate = String(dates[0].business_date).slice(0, 10);
+    const businessDate = String(dates[0].business_date);
 
     const [attendance, corrections] = await Promise.all([
       sql`
