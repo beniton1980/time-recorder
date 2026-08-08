@@ -68,7 +68,11 @@ export async function POST(request: Request) {
         SELECT
           st.id AS staff_id,
           st.legal_name,
-          COALESCE(ss.state, 'OFF_DUTY') AS state,
+          CASE
+            WHEN latest.event_type = 'BREAK_START' THEN 'ON_BREAK'
+            WHEN latest.event_type IN ('CHECK_IN', 'BREAK_END') THEN 'WORKING'
+            ELSE 'OFF_DUTY'
+          END AS state,
           latest.event_type AS last_event_type,
           latest.occurred_at AS last_event_at,
           COALESCE(day_summary.punch_count, 0)::int AS punch_count,
