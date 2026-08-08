@@ -123,6 +123,7 @@ export default function ManagerPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [directEdit, setDirectEdit] = useState<DirectEdit | null>(null);
   const [directSubmitting, setDirectSubmitting] = useState(false);
+  const [directError, setDirectError] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     const idToken = liff.getIDToken();
@@ -204,17 +205,19 @@ export default function ManagerPage() {
       reason: "",
     });
     setError(null);
+    setDirectError(null);
   }
 
   async function submitDirectEdit() {
     if (!directEdit || !directEdit.reason.trim()) {
-      setError("店長による修正理由を入力してください。");
+      setDirectError("店長による修正理由を入力してください。");
       return;
     }
     if (!window.confirm(`${directEdit.staffName}さんの打刻履歴を修正しますか？`)) return;
 
     setDirectSubmitting(true);
     setError(null);
+    setDirectError(null);
     try {
       const idToken = liff.getIDToken();
       if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
@@ -242,12 +245,18 @@ export default function ManagerPage() {
         if (data.code === "INVALID_PUNCH_SEQUENCE") {
           throw new Error("この修正では打刻の順序が正しくなりません。履歴を確認してください。");
         }
-        throw new Error("打刻履歴を修正できませんでした。");
+        const messages: Record<string, string> = {
+          TARGET_NOT_FOUND: "選択した打刻が最新の履歴に見つかりません。画面を更新してください。",
+          INVALID_PUNCH_SEQUENCE: "この修正では打刻の順序が正しくなりません。履歴を確認してください。",
+          DUPLICATE_PUNCH_TIME: "同じ時刻の打刻が既にあります。時刻を確認してください。",
+          REQUEST_NOT_PENDING: "この申請は既に処理されています。",
+        };
+        throw new Error(messages[data.code] ?? `打刻履歴を修正できませんでした（${data.code ?? "不明なエラー"}）`);
       }
       setDirectEdit(null);
       await loadDashboard();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "打刻履歴を修正できませんでした。");
+      setDirectError(caught instanceof Error ? caught.message : "打刻履歴を修正できませんでした。");
     } finally {
       setDirectSubmitting(false);
     }
@@ -410,8 +419,11 @@ export default function ManagerPage() {
                     修正理由
                     <input value={directEdit.reason} onChange={(event) => setDirectEdit({ ...directEdit, reason: event.target.value })} placeholder="例：店長確認により時刻を修正" />
                   </label>
+                  {directError && (
+                    <p className={styles.fieldError} role="alert">{directError}</p>
+                  )}
                   <div className={styles.actions}>
-                    <button type="button" className={styles.reject} onClick={() => setDirectEdit(null)}>キャンセル</button>
+                    <button type="button" className={styles.reject} onClick={() => { setDirectEdit(null); setDirectError(null); }}>キャンセル</button>
                     <button type="button" className={styles.approve} disabled={directSubmitting} onClick={() => void submitDirectEdit()}>
                       {directSubmitting ? "処理中…" : "修正を確定"}
                     </button>
