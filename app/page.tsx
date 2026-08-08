@@ -217,16 +217,7 @@ export default function Home() {
 
 
   function canCorrectLastPunch(membership: Membership) {
-    function closeApp() {
-    if (liff.isInClient()) {
-      liff.closeWindow();
-      return;
-    }
-
-    window.close();
-  }
-
-  return (
+    return (
       membership.last_event_id !== null &&
       membership.last_event_at !== null &&
       (membership.last_event_type === "CHECK_OUT" ||
@@ -479,6 +470,15 @@ export default function Home() {
     } finally {
       setSubmitting(null);
     }
+  }
+
+  function closeApp() {
+    if (liff.isInClient()) {
+      liff.closeWindow();
+      return;
+    }
+
+    window.close();
   }
 
   return (
