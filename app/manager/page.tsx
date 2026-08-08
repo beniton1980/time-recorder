@@ -114,6 +114,13 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+async function dismissKeyboard() {
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 180));
+  }
+}
+
 export default function ManagerPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [message, setMessage] = useState("店長権限を確認しています");
@@ -213,6 +220,7 @@ export default function ManagerPage() {
       setDirectError("店長による修正理由を入力してください。");
       return;
     }
+    await dismissKeyboard();
     if (!window.confirm(`${directEdit.staffName}さんの打刻履歴を修正しますか？`)) return;
 
     setDirectSubmitting(true);
@@ -278,6 +286,7 @@ export default function ManagerPage() {
     }
 
     const verb = decision === "APPROVED" ? "承認" : "却下";
+    await dismissKeyboard();
     if (!window.confirm(`${correction.legal_name}さんの申請を${verb}しますか？`)) return;
 
     setDeciding(correction.id);
