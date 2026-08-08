@@ -91,10 +91,36 @@ export async function POST(request: Request) {
           cr.requested_at,
           st.legal_name,
           pe.event_type AS target_event_type,
-          pe.occurred_at AS target_occurred_at
+          pe.occurred_at AS target_occurred_at,
+          COALESCE(day_history.items, '[]'::json) AS day_events
         FROM correction_requests cr
         JOIN staff st ON st.id = cr.staff_id
+        JOIN stores store_settings ON store_settings.id = cr.store_id
         LEFT JOIN punch_events pe ON pe.id = cr.target_event_id
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'effective_id', epe.effective_id,
+              'original_event_id', epe.original_event_id,
+              'correction_request_id', epe.correction_request_id,
+              'event_type', epe.event_type,
+              'occurred_at', epe.occurred_at,
+              'corrected', epe.corrected
+            )
+            ORDER BY epe.occurred_at ASC, epe.created_at ASC, epe.effective_id ASC
+          ) AS items
+          FROM effective_punch_events epe
+          WHERE epe.staff_id = cr.staff_id
+            AND epe.business_date = (
+              (
+                COALESCE(
+                  cr.requested_occurred_at,
+                  pe.occurred_at,
+                  cr.requested_at
+                ) AT TIME ZONE store_settings.timezone
+              ) - make_interval(mins => store_settings.business_day_start_minute)
+            )::date
+        ) day_history ON TRUE
         WHERE cr.store_id = ${manager.store_id}
           AND cr.status = 'PENDING'
         ORDER BY cr.requested_at ASC
