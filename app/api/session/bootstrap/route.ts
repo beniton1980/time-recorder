@@ -125,10 +125,29 @@ export async function POST(request: Request) {
       });
     }
 
+    const activeElsewhere = await sql`
+      SELECT
+        active_store.id AS store_id,
+        active_store.name AS store_name,
+        active_state.state
+      FROM staff active_staff
+      JOIN stores active_store ON active_store.id = active_staff.store_id
+      JOIN staff_states active_state ON active_state.staff_id = active_staff.id
+      WHERE active_staff.line_user_id = ${identity.sub}
+        AND active_staff.status = 'active'
+        AND active_store.status = 'active'
+        AND active_staff.store_id <> ${memberships[0].store_id}
+        AND active_state.state IN ('WORKING', 'ON_BREAK')
+      ORDER BY active_state.updated_at DESC
+      LIMIT 1
+    `;
+
     return NextResponse.json({
       ok: true,
       registered: true,
       memberships,
+      activeStoreConflict:
+        activeElsewhere.length === 1 ? activeElsewhere[0] : null,
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
