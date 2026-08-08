@@ -306,3 +306,51 @@
   font-size: 10px;
   font-weight: 800;
 }
+
+.directHistory {
+  display: grid !important;
+  gap: 10px !important;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #eef4f0;
+}
+
+.directHistory ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.directHistory li {
+  display: grid;
+  grid-template-columns: 48px 1fr auto auto auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+}
+
+.directHistory li button,
+.addPunch {
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 1px solid #aabcb0;
+  border-radius: 7px;
+  background: #fff;
+  color: #285f44;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.directHistory li small {
+  color: #347a57;
+  font-size: 10px;
+}
+
+.addPunch {
+  justify-self: stretch;
+  min-height: 40px;
+}
