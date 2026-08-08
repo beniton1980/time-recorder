@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Onogami Time Recorder v2",
-  description: "Onogami Time Recorder v2",
+  title: "ONOGAMI 勤怠",
+  description: "ONOGAMIの勤怠打刻・訂正管理",
 };
 
 export default function RootLayout({
