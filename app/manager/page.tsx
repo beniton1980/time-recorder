@@ -137,6 +137,7 @@ export default function ManagerPage() {
   const [directSubmitting, setDirectSubmitting] = useState(false);
   const [directError, setDirectError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
+  const [selectedStaffId, setSelectedStaffId] = useState("ALL");
 
   const loadDashboard = useCallback(async (businessDate?: string) => {
     const idToken = liff.getIDToken();
@@ -343,6 +344,10 @@ export default function ManagerPage() {
     }
   }
 
+  const visibleAttendance = dashboard?.attendance.filter(
+    (staff) => selectedStaffId === "ALL" || staff.staff_id === selectedStaffId,
+  ) ?? [];
+
   return (
     <main className={styles.page}>
       <section className={styles.shell}>
@@ -375,11 +380,26 @@ export default function ManagerPage() {
                   onChange={(event) => setSelectedDate(event.target.value)}
                 />
               </label>
+              <label className={styles.staffSelector}>
+                スタッフを選択
+                <select
+                  value={selectedStaffId}
+                  onChange={(event) => setSelectedStaffId(event.target.value)}
+                >
+                  <option value="ALL">全スタッフ</option>
+                  {dashboard.attendance.map((staff) => (
+                    <option key={staff.staff_id} value={staff.staff_id}>
+                      {staff.legal_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className={styles.sectionHeading}>
                 <strong>{selectedDate.replaceAll("-", "/")}</strong>
+                <span>{visibleAttendance.length}名</span>
               </div>
               <ul className={styles.attendanceList}>
-                {dashboard.attendance.map((staff) => (
+                {visibleAttendance.map((staff) => (
                   <li key={staff.staff_id}>
                     <div>
                       <strong>{staff.legal_name}</strong>
