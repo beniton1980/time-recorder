@@ -141,7 +141,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const result = await sql`
+    const punchQuery = sql`
       WITH target AS (
         SELECT
           ss.staff_id,
@@ -165,6 +165,21 @@ export async function POST(request: Request) {
           AND setk.revoked_at IS NULL
           AND (setk.expires_at IS NULL OR setk.expires_at > NOW())
           AND ss.state = ${transition.from}
+          AND (
+            ${eventType} <> 'CHECK_IN'
+            OR NOT EXISTS (
+              SELECT 1
+              FROM staff active_staff
+              JOIN staff_states active_state
+                ON active_state.staff_id = active_staff.id
+              JOIN stores active_store ON active_store.id = active_staff.store_id
+              WHERE active_staff.line_user_id = ${identity.sub}
+                AND active_staff.status = 'active'
+                AND active_store.status = 'active'
+                AND active_staff.store_id <> st.store_id
+                AND active_state.state IN ('WORKING', 'ON_BREAK')
+            )
+          )
         ORDER BY st.created_at ASC
         LIMIT 1
         FOR UPDATE OF ss
@@ -289,6 +304,19 @@ export async function POST(request: Request) {
         ss.state
     `;
 
+    const result =
+      eventType === "CHECK_IN"
+        ? (
+            await sql.transaction(
+              [
+                sql`SELECT pg_advisory_xact_lock(hashtextextended(${identity.sub}, 0))`,
+                punchQuery,
+              ],
+              { isolationLevel: "ReadCommitted" },
+            )
+          )[1]
+        : await punchQuery;
+
     if (result.length === 1) {
       return NextResponse.json({
         ok: true,
@@ -319,6 +347,51 @@ export async function POST(request: Request) {
         { ok: false, code: "STAFF_NOT_REGISTERED" },
         { status: 404 },
       );
+    }
+
+    if (eventType === "CHECK_IN") {
+      const activeElsewhere = await sql`
+        SELECT
+          active_store.id AS store_id,
+          active_store.name AS store_name,
+          active_state.state
+        FROM staff requested_staff
+        JOIN stores requested_store
+          ON requested_store.id = requested_staff.store_id
+        JOIN store_entry_tokens setk
+          ON setk.store_id = requested_store.id
+        JOIN staff active_staff
+          ON active_staff.line_user_id = requested_staff.line_user_id
+          AND active_staff.store_id <> requested_staff.store_id
+        JOIN stores active_store ON active_store.id = active_staff.store_id
+        JOIN staff_states active_state
+          ON active_state.staff_id = active_staff.id
+        WHERE requested_staff.line_user_id = ${identity.sub}
+          AND requested_staff.status = 'active'
+          AND requested_store.status = 'active'
+          AND setk.token_hash = ${tokenHash}
+          AND setk.active = TRUE
+          AND setk.revoked_at IS NULL
+          AND (setk.expires_at IS NULL OR setk.expires_at > NOW())
+          AND active_staff.status = 'active'
+          AND active_store.status = 'active'
+          AND active_state.state IN ('WORKING', 'ON_BREAK')
+        ORDER BY active_state.updated_at DESC
+        LIMIT 1
+      `;
+
+      if (activeElsewhere.length === 1) {
+        const activeStore = activeElsewhere[0];
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "ACTIVE_AT_OTHER_STORE",
+            message: `現在${activeStore.store_name}で勤務中です。${activeStore.store_name}で退勤してから出勤してください。`,
+            activeStore,
+          },
+          { status: 409 },
+        );
+      }
     }
 
     return NextResponse.json(

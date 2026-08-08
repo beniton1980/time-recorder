@@ -23,6 +23,12 @@ type PunchHistoryItem = {
   corrected: boolean;
 };
 
+type ActiveStoreConflict = {
+  store_id: string;
+  store_name: string;
+  state: "WORKING" | "ON_BREAK";
+};
+
 type Membership = {
   staff_id: string;
   legal_name: string;
@@ -39,6 +45,11 @@ type ViewState =
   | { kind: "loading" }
   | { kind: "unregistered" }
   | { kind: "store_required"; message: string }
+  | {
+      kind: "active_store_conflict";
+      requestedStoreName: string;
+      activeStore: ActiveStoreConflict;
+    }
   | { kind: "ready"; membership: Membership }
   | { kind: "error"; message: string };
 
@@ -191,9 +202,22 @@ export default function Home() {
           return;
         }
 
+        const membership = data.memberships[0] as Membership;
+        const activeStoreConflict =
+          data.activeStoreConflict as ActiveStoreConflict | null;
+
+        if (activeStoreConflict) {
+          setView({
+            kind: "active_store_conflict",
+            requestedStoreName: membership.store_name,
+            activeStore: activeStoreConflict,
+          });
+          return;
+        }
+
         setView({
           kind: "ready",
-          membership: data.memberships[0] as Membership,
+          membership,
         });
       } catch (error) {
         if (!active) return;
@@ -424,6 +448,14 @@ export default function Home() {
           return;
         }
 
+        if (data.code === "ACTIVE_AT_OTHER_STORE") {
+          throw new Error(
+            typeof data.message === "string"
+              ? data.message
+              : "別の店舗で勤務中です。勤務中の店舗で退勤してから出勤してください。",
+          );
+        }
+
         throw new Error("打刻を完了できませんでした。");
       }
 
@@ -505,6 +537,18 @@ export default function Home() {
           <div className="message">
             <p className="status">スタッフ登録が見つかりません</p>
             <p className="note">店舗管理者へ登録を依頼してください。</p>
+          </div>
+        )}
+
+        {view.kind === "active_store_conflict" && (
+          <div className="message">
+            <p className="status">別の店舗で勤務中です</p>
+            <p className="note">
+              現在{view.activeStore.store_name}で
+              {view.activeStore.state === "ON_BREAK" ? "休憩中" : "勤務中"}です。
+              {view.activeStore.store_name}で退勤してから
+              {view.requestedStoreName}で出勤してください。
+            </p>
           </div>
         )}
 
