@@ -16,12 +16,14 @@ type Attendance = {
   last_event_type: EventType | null;
   last_event_at: string | null;
   punch_count: number;
+  day_events: DayEvent[];
 };
 
 type DayEvent = {
   effective_id: string;
   original_event_id: string | null;
   correction_request_id: string | null;
+  origin_correction_id: string | null;
   event_type: EventType;
   occurred_at: string;
   corrected: boolean;
@@ -47,6 +49,17 @@ type Dashboard = {
   };
   attendance: Attendance[];
   corrections: Correction[];
+};
+
+type DirectEdit = {
+  staffId: string;
+  staffName: string;
+  operation: "ADD" | "REPLACE" | "VOID";
+  targetEffectiveId?: string;
+  eventType: EventType;
+  date: string;
+  time: string;
+  reason: string;
 };
 
 type ReviewDraft = {
@@ -77,6 +90,19 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
+function inputParts(value: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return {
+    date: `${part("year")}-${part("month")}-${part("day")}`,
+    time: `${part("hour")}:${part("minute")}`,
+  };
+}
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -95,6 +121,8 @@ export default function ManagerPage() {
   const [deciding, setDeciding] = useState<string | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [directEdit, setDirectEdit] = useState<DirectEdit | null>(null);
+  const [directSubmitting, setDirectSubmitting] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     const idToken = liff.getIDToken();
@@ -157,6 +185,72 @@ export default function ManagerPage() {
         ...values,
       },
     }));
+  }
+
+  function openDirectEdit(
+    staff: Attendance,
+    operation: "ADD" | "REPLACE" | "VOID",
+    target?: DayEvent,
+  ) {
+    const parts = target ? inputParts(target.occurred_at) : inputParts(new Date().toISOString());
+    setDirectEdit({
+      staffId: staff.staff_id,
+      staffName: staff.legal_name,
+      operation,
+      targetEffectiveId: target?.effective_id,
+      eventType: target?.event_type ?? "CHECK_IN",
+      date: parts.date,
+      time: parts.time,
+      reason: "",
+    });
+    setError(null);
+  }
+
+  async function submitDirectEdit() {
+    if (!directEdit || !directEdit.reason.trim()) {
+      setError("店長による修正理由を入力してください。");
+      return;
+    }
+    if (!window.confirm(`${directEdit.staffName}さんの打刻履歴を修正しますか？`)) return;
+
+    setDirectSubmitting(true);
+    setError(null);
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/punch-corrections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idToken,
+          staffId: directEdit.staffId,
+          operation: directEdit.operation,
+          targetEffectiveId: directEdit.targetEffectiveId,
+          eventType: directEdit.operation === "VOID" ? undefined : directEdit.eventType,
+          occurredAt:
+            directEdit.operation === "VOID"
+              ? undefined
+              : new Date(`${directEdit.date}T${directEdit.time}`).toISOString(),
+          reason: directEdit.reason.trim(),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        if (data.code === "DUPLICATE_PUNCH_TIME") {
+          throw new Error("同じ時刻の打刻が既にあります。時刻を確認してください。");
+        }
+        if (data.code === "INVALID_PUNCH_SEQUENCE") {
+          throw new Error("この修正では打刻の順序が正しくなりません。履歴を確認してください。");
+        }
+        throw new Error("打刻履歴を修正できませんでした。");
+      }
+      setDirectEdit(null);
+      await loadDashboard();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "打刻履歴を修正できませんでした。");
+    } finally {
+      setDirectSubmitting(false);
+    }
   }
 
   async function decide(correction: Correction, decision: "APPROVED" | "REJECTED") {
@@ -260,10 +354,71 @@ export default function ManagerPage() {
                         : "本日の打刻なし"}
                       <small>{staff.punch_count}件</small>
                     </p>
+                    <div className={styles.directHistory}>
+                      <ol>
+                        {staff.day_events.map((dayEvent) => (
+                          <li key={dayEvent.effective_id}>
+                            <time>{formatTime(dayEvent.occurred_at)}</time>
+                            <strong>{eventLabels[dayEvent.event_type]}</strong>
+                            {dayEvent.corrected && <small>訂正</small>}
+                            <button type="button" onClick={() => openDirectEdit(staff, "REPLACE", dayEvent)}>
+                              変更
+                            </button>
+                            <button type="button" onClick={() => openDirectEdit(staff, "VOID", dayEvent)}>
+                              取消
+                            </button>
+                          </li>
+                        ))}
+                      </ol>
+                      <button type="button" className={styles.addPunch} onClick={() => openDirectEdit(staff, "ADD")}>
+                        打刻を追加
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
             </section>
+
+            {directEdit && (
+              <section className={styles.section}>
+                <div className={styles.sectionHeading}>
+                  <h2>{directEdit.staffName}さんの打刻修正</h2>
+                </div>
+                <div className={styles.resolution}>
+                  <p>
+                    {directEdit.operation === "ADD"
+                      ? "打刻を追加"
+                      : directEdit.operation === "REPLACE"
+                        ? "選択した打刻を変更"
+                        : "選択した打刻を取消"}
+                  </p>
+                  {directEdit.operation !== "VOID" && (
+                    <>
+                      <label>
+                        打刻種類
+                        <select value={directEdit.eventType} onChange={(event) => setDirectEdit({ ...directEdit, eventType: event.target.value as EventType })}>
+                          {Object.entries(eventLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </label>
+                      <div className={styles.resolutionDateTime}>
+                        <label>日付<input type="date" value={directEdit.date} onChange={(event) => setDirectEdit({ ...directEdit, date: event.target.value })} /></label>
+                        <label>時刻<input type="time" value={directEdit.time} onChange={(event) => setDirectEdit({ ...directEdit, time: event.target.value })} /></label>
+                      </div>
+                    </>
+                  )}
+                  <label>
+                    修正理由
+                    <input value={directEdit.reason} onChange={(event) => setDirectEdit({ ...directEdit, reason: event.target.value })} placeholder="例：店長確認により時刻を修正" />
+                  </label>
+                  <div className={styles.actions}>
+                    <button type="button" className={styles.reject} onClick={() => setDirectEdit(null)}>キャンセル</button>
+                    <button type="button" className={styles.approve} disabled={directSubmitting} onClick={() => void submitDirectEdit()}>
+                      {directSubmitting ? "処理中…" : "修正を確定"}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
