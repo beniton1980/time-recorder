@@ -77,3 +77,15 @@ test("an active shift keeps its CHECK_IN business date after the cutoff", async 
   assert.match(punch, /active_check_in\.event_type = 'CHECK_IN'/);
   assert.match(punch, /ORDER BY active_check_in\.occurred_at DESC/);
 });
+
+test("manager dashboard warns when an active shift carries into a later business day", async () => {
+  const dashboard = await source("app/api/manager/dashboard/route.ts");
+  const managerPage = await source("app/manager/page.tsx");
+
+  assert.match(dashboard, /COALESCE\(ss\.state, 'OFF_DUTY'\) AS current_state/);
+  assert.match(dashboard, /active_shift\.business_date < \$\{businessDate}::date/);
+  assert.match(dashboard, /AS carried_over_active/);
+  assert.match(managerPage, /staff\.carried_over_active/);
+  assert.match(managerPage, /前営業日から/);
+  assert.match(managerPage, /が継続中です/);
+});

@@ -13,6 +13,9 @@ type Attendance = {
   staff_id: string;
   legal_name: string;
   state: WorkState;
+  current_state: WorkState;
+  active_since: string | null;
+  carried_over_active: boolean;
   last_event_type: EventType | null;
   last_event_at: string | null;
   punch_count: number;
@@ -407,6 +410,13 @@ export default function ManagerPage() {
                         {stateLabels[staff.state]}
                       </span>
                     </div>
+                    {staff.carried_over_active && staff.active_since && (
+                      <p className={styles.fieldError} role="alert">
+                        前営業日から
+                        {staff.current_state === "ON_BREAK" ? "休憩" : "勤務"}が継続中です
+                        （出勤 {formatDateTime(staff.active_since)}）
+                      </p>
+                    )}
                     <p>
                       {staff.last_event_at && staff.last_event_type
                         ? `最終 ${formatTime(staff.last_event_at)} ${eventLabels[staff.last_event_type]}`
