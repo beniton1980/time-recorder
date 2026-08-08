@@ -21,6 +21,14 @@ type Body = {
 
 type EventRow = { effective_id: string; event_type: EventType; occurred_at: string };
 
+function normalizeDate(value: unknown) {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const text = String(value);
+  const match = text.match(/\d{4}-\d{2}-\d{2}/);
+  if (!match) throw new Error("BUSINESS_DATE_INVALID");
+  return match[0];
+}
+
 function invalidTransitions(events: EventRow[]) {
   let state: "OFF_DUTY" | "WORKING" | "ON_BREAK" = "OFF_DUTY";
   let invalid = 0;
@@ -113,7 +121,7 @@ export async function POST(request: Request) {
           - make_interval(mins => business_day_start_minute)))::date AS business_date
         FROM stores WHERE id = ${manager.store_id}
       `;
-      businessDate = String(dates[0].business_date);
+      businessDate = normalizeDate(dates[0].business_date);
     } else {
       if (typeof body.targetEffectiveId !== "string") {
         return NextResponse.json({ ok: false, code: "TARGET_REQUIRED" }, { status: 400 });
@@ -131,7 +139,7 @@ export async function POST(request: Request) {
       }
       targetEventId = targets[0].original_event_id as string | null;
       targetCorrectionId = targets[0].origin_correction_id as string | null;
-      businessDate = String(targets[0].business_date);
+      businessDate = normalizeDate(targets[0].business_date);
     }
 
     const current = (await sql`
@@ -205,7 +213,17 @@ export async function POST(request: Request) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }
-    console.error("Manager direct correction failed", error);
-    return NextResponse.json({ ok: false, code: "CORRECTION_UNAVAILABLE" }, { status: 503 });
+    console.error("Manager direct correction failed", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "CORRECTION_UNAVAILABLE",
+        detail: error instanceof Error ? error.message : "UNKNOWN_ERROR",
+      },
+      { status: 503 },
+    );
   }
 }
