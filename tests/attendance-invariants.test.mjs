@@ -33,7 +33,7 @@ test("opening another store QR keeps the active-store conflict UX", async () => 
   const bootstrap = await source("app/api/session/bootstrap/route.ts");
   const page = await source("app/page.tsx");
 
-  assert.match(bootstrap, /activeStoreConflict:/);
+  assert.match(bootstrap, /activeStoreConflict(?::|,)/);
   assert.match(bootstrap, /active_state\.state IN \('WORKING', 'ON_BREAK'\)/);
   assert.match(page, /kind: "active_store_conflict"/);
   assert.match(page, /別の店舗で勤務中です/);
