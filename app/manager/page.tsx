@@ -207,7 +207,10 @@ export default function ManagerPage() {
     operation: "ADD" | "REPLACE" | "VOID",
     target?: DayEvent,
   ) {
-    const parts = target ? inputParts(target.occurred_at) : inputParts(new Date().toISOString());
+    const currentParts = inputParts(new Date().toISOString());
+    const parts = target
+      ? inputParts(target.occurred_at)
+      : { date: selectedDate, time: currentParts.time };
     setDirectEdit({
       staffId: staff.staff_id,
       staffName: staff.legal_name,
