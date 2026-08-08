@@ -235,10 +235,27 @@ export async function POST(request: Request) {
           l.staff_id,
           ${eventType},
           NOW(),
-          (
-            (NOW() AT TIME ZONE l.timezone)
-            - make_interval(mins => l.business_day_start_minute)
-          )::date,
+          CASE
+            WHEN ${eventType} = 'CHECK_IN' THEN (
+              (NOW() AT TIME ZONE l.timezone)
+              - make_interval(mins => l.business_day_start_minute)
+            )::date
+            ELSE COALESCE(
+              (
+                SELECT active_check_in.business_date
+                FROM effective_punch_events active_check_in
+                WHERE active_check_in.staff_id = l.staff_id
+                  AND active_check_in.event_type = 'CHECK_IN'
+                  AND active_check_in.occurred_at <= NOW()
+                ORDER BY active_check_in.occurred_at DESC
+                LIMIT 1
+              ),
+              (
+                (NOW() AT TIME ZONE l.timezone)
+                - make_interval(mins => l.business_day_start_minute)
+              )::date
+            )
+          END,
           ${body.clientRequestId},
           l.client_latitude,
           l.client_longitude,

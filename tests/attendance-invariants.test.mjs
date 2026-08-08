@@ -51,3 +51,29 @@ test("business dates remain store-timezone based with a configurable boundary", 
   assert.match(schema, /timezone TEXT NOT NULL DEFAULT 'Asia\/Tokyo'/);
   assert.match(schema, /business_day_start_minute INTEGER NOT NULL DEFAULT 300/);
 });
+
+function jstBusinessDate(isoTimestamp, businessDayStartMinute = 300) {
+  const jstOffsetMinutes = 9 * 60;
+  const shifted = new Date(
+    new Date(isoTimestamp).getTime()
+      + (jstOffsetMinutes - businessDayStartMinute) * 60_000,
+  );
+  return shifted.toISOString().slice(0, 10);
+}
+
+test("05:00 cutoff keeps midnight punches together and advances at the boundary", () => {
+  assert.equal(jstBusinessDate("2026-08-08T14:59:00.000Z"), "2026-08-08");
+  assert.equal(jstBusinessDate("2026-08-08T15:01:00.000Z"), "2026-08-08");
+  assert.equal(jstBusinessDate("2026-08-08T19:59:59.000Z"), "2026-08-08");
+  assert.equal(jstBusinessDate("2026-08-08T20:00:00.000Z"), "2026-08-09");
+});
+
+test("an active shift keeps its CHECK_IN business date after the cutoff", async () => {
+  const punch = await source("app/api/punch/route.ts");
+
+  assert.match(punch, /WHEN \${eventType} = 'CHECK_IN' THEN/);
+  assert.match(punch, /SELECT active_check_in\.business_date/);
+  assert.match(punch, /active_check_in\.staff_id = l\.staff_id/);
+  assert.match(punch, /active_check_in\.event_type = 'CHECK_IN'/);
+  assert.match(punch, /ORDER BY active_check_in\.occurred_at DESC/);
+});
