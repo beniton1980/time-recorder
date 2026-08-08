@@ -8,7 +8,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type DashboardRequest = { idToken?: unknown };
+type DashboardRequest = { idToken?: unknown; businessDate?: unknown };
 
 export async function POST(request: Request) {
   let body: DashboardRequest;
@@ -44,6 +44,25 @@ export async function POST(request: Request) {
 
     const manager = managers[0];
 
+    if (
+      body.businessDate !== undefined &&
+      (typeof body.businessDate !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(body.businessDate))
+    ) {
+      return NextResponse.json({ ok: false, code: "INVALID_BUSINESS_DATE" }, { status: 400 });
+    }
+
+    const dates = await sql`
+      SELECT COALESCE(
+        ${typeof body.businessDate === "string" ? body.businessDate : null}::date,
+        ((NOW() AT TIME ZONE timezone)
+          - make_interval(mins => business_day_start_minute))::date
+      ) AS business_date
+      FROM stores
+      WHERE id = ${manager.store_id}
+    `;
+    const businessDate = String(dates[0].business_date).slice(0, 10);
+
     const [attendance, corrections] = await Promise.all([
       sql`
         SELECT
@@ -61,10 +80,7 @@ export async function POST(request: Request) {
           FROM effective_punch_events epe
           JOIN stores store_settings ON store_settings.id = epe.store_id
           WHERE epe.staff_id = st.id
-            AND epe.business_date = (
-              (NOW() AT TIME ZONE store_settings.timezone)
-              - make_interval(mins => store_settings.business_day_start_minute)
-            )::date
+            AND epe.business_date = ${businessDate}::date
           ORDER BY epe.occurred_at DESC, epe.effective_id DESC
           LIMIT 1
         ) latest ON TRUE
@@ -85,10 +101,7 @@ export async function POST(request: Request) {
           FROM effective_punch_events epe
           JOIN stores store_settings ON store_settings.id = epe.store_id
           WHERE epe.staff_id = st.id
-            AND epe.business_date = (
-              (NOW() AT TIME ZONE store_settings.timezone)
-              - make_interval(mins => store_settings.business_day_start_minute)
-            )::date
+            AND epe.business_date = ${businessDate}::date
         ) day_summary ON TRUE
         WHERE st.store_id = ${manager.store_id}
           AND st.status = 'active'
@@ -144,6 +157,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       manager,
+      businessDate,
       attendance,
       corrections,
     });
