@@ -68,6 +68,12 @@ export async function POST(request: Request) {
         SELECT
           st.id AS staff_id,
           st.legal_name,
+          COALESCE(ss.state, 'OFF_DUTY') AS current_state,
+          active_shift.check_in_at AS active_since,
+          (
+            COALESCE(ss.state, 'OFF_DUTY') IN ('WORKING', 'ON_BREAK')
+            AND active_shift.business_date < ${businessDate}::date
+          ) AS carried_over_active,
           CASE
             WHEN latest.event_type = 'BREAK_START' THEN 'ON_BREAK'
             WHEN latest.event_type IN ('CHECK_IN', 'BREAK_END') THEN 'WORKING'
@@ -79,6 +85,17 @@ export async function POST(request: Request) {
           COALESCE(day_summary.items, '[]'::json) AS day_events
         FROM staff st
         LEFT JOIN staff_states ss ON ss.staff_id = st.id
+        LEFT JOIN LATERAL (
+          SELECT
+            epe.occurred_at AS check_in_at,
+            epe.business_date
+          FROM effective_punch_events epe
+          WHERE epe.staff_id = st.id
+            AND epe.event_type = 'CHECK_IN'
+            AND epe.occurred_at <= COALESCE(ss.last_event_at, NOW())
+          ORDER BY epe.occurred_at DESC, epe.effective_id DESC
+          LIMIT 1
+        ) active_shift ON COALESCE(ss.state, 'OFF_DUTY') IN ('WORKING', 'ON_BREAK')
         LEFT JOIN LATERAL (
           SELECT epe.event_type, epe.occurred_at
           FROM effective_punch_events epe
