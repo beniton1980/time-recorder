@@ -39,6 +39,12 @@ type Dashboard = {
   corrections: Correction[];
 };
 
+type ReviewDraft = {
+  eventType: EventType;
+  date: string;
+  time: string;
+};
+
 const stateLabels: Record<WorkState, string> = {
   OFF_DUTY: "勤務前・退勤済み",
   WORKING: "勤務中",
@@ -77,6 +83,7 @@ export default function ManagerPage() {
   const [message, setMessage] = useState("店長権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
 
   const loadDashboard = useCallback(async () => {
     const idToken = liff.getIDToken();
@@ -124,7 +131,30 @@ export default function ManagerPage() {
     };
   }, [loadDashboard]);
 
+  function updateReviewDraft(id: string, values: Partial<ReviewDraft>) {
+    setReviewDrafts((current) => ({
+      ...current,
+      [id]: {
+        eventType: current[id]?.eventType ?? "CHECK_IN",
+        date: current[id]?.date ?? "",
+        time: current[id]?.time ?? "",
+        ...values,
+      },
+    }));
+  }
+
   async function decide(correction: Correction, decision: "APPROVED" | "REJECTED") {
+    const draft = reviewDrafts[correction.id];
+
+    if (
+      decision === "APPROVED" &&
+      correction.operation === "REVIEW" &&
+      (!draft?.date || !draft?.time)
+    ) {
+      setError("「その他」の申請を承認するには、追加する打刻の種類・日付・時刻を入力してください。");
+      return;
+    }
+
     const verb = decision === "APPROVED" ? "承認" : "却下";
     if (!window.confirm(`${correction.legal_name}さんの申請を${verb}しますか？`)) return;
 
@@ -138,13 +168,23 @@ export default function ManagerPage() {
       const response = await fetch("/api/manager/corrections/decision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken, requestId: correction.id, decision }),
+        body: JSON.stringify({
+          idToken,
+          requestId: correction.id,
+          decision,
+          resolvedEventType:
+            correction.operation === "REVIEW" ? draft?.eventType : undefined,
+          resolvedOccurredAt:
+            correction.operation === "REVIEW" && draft
+              ? new Date(`${draft.date}T${draft.time}`).toISOString()
+              : undefined,
+        }),
       });
       const data = await response.json();
 
       if (!response.ok || !data.ok) {
-        if (data.code === "MANUAL_EDIT_REQUIRED") {
-          throw new Error("「その他」の申請は内容確認が必要なため、現在は却下のみ選択できます。");
+        if (data.code === "RESOLUTION_REQUIRED" || data.code === "INVALID_RESOLUTION_TIME") {
+          throw new Error("追加する打刻の種類・日付・時刻を確認してください。");
         }
         throw new Error("申請を更新できませんでした。");
       }
@@ -231,6 +271,58 @@ export default function ManagerPage() {
 
                       {correction.reason && <p className={styles.reason}>{correction.reason}</p>}
 
+                      {correction.operation === "REVIEW" && (
+                        <div className={styles.resolution}>
+                          <p>店長が確認した内容を入力してください</p>
+                          <label>
+                            追加する打刻
+                            <select
+                              value={reviewDrafts[correction.id]?.eventType ?? "CHECK_IN"}
+                              onChange={(event) =>
+                                updateReviewDraft(correction.id, {
+                                  eventType: event.target.value as EventType,
+                                })
+                              }
+                            >
+                              <option value="CHECK_IN">出勤</option>
+                              <option value="BREAK_START">休憩開始</option>
+                              <option value="BREAK_END">休憩終了</option>
+                              <option value="CHECK_OUT">退勤</option>
+                            </select>
+                          </label>
+                          <div className={styles.resolutionDateTime}>
+                            <label>
+                              日付
+                              <input
+                                type="date"
+                                value={reviewDrafts[correction.id]?.date ?? ""}
+                                onChange={(event) =>
+                                  updateReviewDraft(correction.id, {
+                                    date: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              時刻
+                              <input
+                                type="time"
+                                step="60"
+                                value={reviewDrafts[correction.id]?.time ?? ""}
+                                onChange={(event) =>
+                                  updateReviewDraft(correction.id, {
+                                    time: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                          </div>
+                          <small>
+                            承認すると、この打刻が訂正データとして追加されます。
+                          </small>
+                        </div>
+                      )}
+
                       <div className={styles.actions}>
                         <button
                           type="button"
@@ -243,7 +335,7 @@ export default function ManagerPage() {
                         <button
                           type="button"
                           className={styles.approve}
-                          disabled={deciding !== null || correction.operation !== "ADD"}
+                          disabled={deciding !== null}
                           onClick={() => void decide(correction, "APPROVED")}
                         >
                           {deciding === correction.id ? "処理中…" : "承認"}
