@@ -49,6 +49,7 @@ type Dashboard = {
   };
   attendance: Attendance[];
   corrections: Correction[];
+  businessDate: string;
 };
 
 type DirectEdit = {
@@ -121,6 +122,10 @@ async function dismissKeyboard() {
   }
 }
 
+function currentBusinessDate() {
+  return inputParts(new Date().toISOString()).date;
+}
+
 export default function ManagerPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [message, setMessage] = useState("店長権限を確認しています");
@@ -131,15 +136,16 @@ export default function ManagerPage() {
   const [directEdit, setDirectEdit] = useState<DirectEdit | null>(null);
   const [directSubmitting, setDirectSubmitting] = useState(false);
   const [directError, setDirectError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (businessDate?: string) => {
     const idToken = liff.getIDToken();
     if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
 
     const response = await fetch("/api/manager/dashboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify({ idToken, businessDate }),
     });
     const data = await response.json();
 
@@ -151,6 +157,7 @@ export default function ManagerPage() {
     }
 
     setDashboard(data as Dashboard);
+    setSelectedDate(data.businessDate as string);
     setMessage("");
   }, []);
 
@@ -164,7 +171,7 @@ export default function ManagerPage() {
           liff.login({ redirectUri: window.location.href });
           return;
         }
-        if (active) await loadDashboard();
+        if (active) await loadDashboard(selectedDate);
       } catch (caught) {
         if (active) {
           setError(caught instanceof Error ? caught.message : "店長画面を読み込めませんでした。");
@@ -176,7 +183,7 @@ export default function ManagerPage() {
     return () => {
       active = false;
     };
-  }, [loadDashboard]);
+  }, [loadDashboard, selectedDate]);
 
   function updateReviewDraft(id: string, values: Partial<ReviewDraft>) {
     setFieldErrors((current) => {
@@ -262,7 +269,7 @@ export default function ManagerPage() {
         throw new Error(messages[data.code] ?? `打刻履歴を修正できませんでした（${data.code ?? "不明なエラー"}）`);
       }
       setDirectEdit(null);
-      await loadDashboard();
+      await loadDashboard(selectedDate);
     } catch (caught) {
       setDirectError(caught instanceof Error ? caught.message : "打刻履歴を修正できませんでした。");
     } finally {
@@ -325,7 +332,7 @@ export default function ManagerPage() {
         delete next[correction.id];
         return next;
       });
-      await loadDashboard();
+      await loadDashboard(selectedDate);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "申請を更新できませんでした。");
     } finally {
@@ -354,8 +361,19 @@ export default function ManagerPage() {
           <>
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
-                <h2>本日の勤務状況</h2>
-                <button type="button" onClick={() => void loadDashboard()}>更新</button>
+                <h2>勤務状況</h2>
+                <button type="button" onClick={() => void loadDashboard(selectedDate)}>更新</button>
+              </div>
+              <label className={styles.dateSelector}>
+                表示する営業日
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(event) => setSelectedDate(event.target.value)}
+                />
+              </label>
+              <div className={styles.sectionHeading}>
+                <strong>{selectedDate.replaceAll("-", "/")}</strong>
               </div>
               <ul className={styles.attendanceList}>
                 {dashboard.attendance.map((staff) => (
