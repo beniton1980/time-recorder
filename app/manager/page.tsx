@@ -387,7 +387,7 @@ export default function ManagerPage() {
                     <p>
                       {staff.last_event_at && staff.last_event_type
                         ? `最終 ${formatTime(staff.last_event_at)} ${eventLabels[staff.last_event_type]}`
-                        : "本日の打刻なし"}
+                        : "この日の打刻なし"}
                       <small>{staff.punch_count}件</small>
                     </p>
                     <div className={styles.directHistory}>
