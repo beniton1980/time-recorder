@@ -312,7 +312,7 @@ export async function POST(request: Request) {
                 sql`SELECT pg_advisory_xact_lock(hashtextextended(${identity.sub}, 0))`,
                 punchQuery,
               ],
-              { isolationMode: "ReadCommitted" },
+              { isolationLevel: "ReadCommitted" },
             )
           )[1]
         : await punchQuery;
