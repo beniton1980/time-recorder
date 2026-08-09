@@ -123,6 +123,28 @@ export async function POST(request: Request) {
     `;
 
     if (memberships.length === 0) {
+      const inactiveMemberships = await sql`
+        SELECT st.id
+        FROM staff st
+        JOIN stores s ON s.id = st.store_id
+        JOIN store_entry_tokens token ON token.store_id = s.id
+        WHERE st.line_user_id = ${identity.sub}
+          AND st.status = 'inactive'
+          AND s.status = 'active'
+          AND token.token_hash = ${tokenHash}
+          AND token.active = TRUE
+          AND token.revoked_at IS NULL
+          AND (token.expires_at IS NULL OR token.expires_at > NOW())
+        LIMIT 1
+      `;
+
+      if (inactiveMemberships.length === 1) {
+        return NextResponse.json(
+          { ok: false, code: "STAFF_INACTIVE" },
+          { status: 403 },
+        );
+      }
+
       const targetStores = await sql`
         SELECT s.id AS store_id, s.name AS store_name
         FROM store_entry_tokens token
@@ -183,3 +205,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
