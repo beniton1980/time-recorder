@@ -3,14 +3,14 @@ import test from "node:test";
 import { generateMonthlyAttendancePdf } from "../lib/monthly-attendance-pdf.mjs";
 
 const base = {
-  storeName: "縺翫・縺後∩鬟溷・,
-  label: "8譛亥ｺｦ",
+  storeName: "おのがみ食堂",
+  label: "8月度",
   period: { start: "2026-07-26", end: "2026-08-25" },
   generatedAt: "2026-08-26 09:00",
 };
 
 test("creates a valid PDF with summary and one page per staff", () => {
-  const pdf = generateMonthlyAttendancePdf({ ...base, staff: [{ name: "螻ｱ逕ｰ 闃ｱ蟄・, workDays: 1, workDuration: "08:00", breakDuration: "01:00", attendanceIssueDays: 0, gpsIssueCount: 1, attendanceReasons: [], events: [{ businessDate: "2026-08-25", time: "09:00", label: "蜃ｺ蜍､", corrected: false, gpsIssue: true }] }] });
+  const pdf = generateMonthlyAttendancePdf({ ...base, staff: [{ name: "山田 花子", workDays: 1, workDuration: "08:00", breakDuration: "01:00", attendanceIssueDays: 0, gpsIssueCount: 1, attendanceReasons: [], events: [{ businessDate: "2026-08-25", time: "09:00", label: "出勤", corrected: false, gpsIssue: true }] }] });
   const source = new TextDecoder().decode(pdf);
   assert.match(source, /^%PDF-1\.7/);
   assert.match(source, /\/Count 2/);
