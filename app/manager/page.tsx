@@ -56,6 +56,13 @@ type Dashboard = {
   businessDate: string;
 };
 
+type MonthlyReport = {
+  period_start: string;
+  period_end: string;
+  sent_at: string;
+  reissue_count: number;
+};
+
 type StaffMembership = {
   staff_id: string;
   legal_name: string;
@@ -150,6 +157,9 @@ export default function ManagerPage() {
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
   const [selectedStaffId, setSelectedStaffId] = useState("ALL");
   const [updatingStaffId, setUpdatingStaffId] = useState<string | null>(null);
+  const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
+  const [reissuingPeriod, setReissuingPeriod] = useState<string | null>(null);
+  const [reissueMessage, setReissueMessage] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async (businessDate?: string) => {
     const idToken = liff.getIDToken();
@@ -174,6 +184,18 @@ export default function ManagerPage() {
     setMessage("");
   }, []);
 
+  const loadMonthlyReports = useCallback(async () => {
+    const idToken = liff.getIDToken();
+    if (!idToken) return;
+    const response = await fetch("/api/manager/monthly-attendance/reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+    const data = await response.json();
+    if (response.ok && data.ok) setMonthlyReports(data.reports as MonthlyReport[]);
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -184,7 +206,7 @@ export default function ManagerPage() {
           liff.login({ redirectUri: window.location.href });
           return;
         }
-        if (active) await loadDashboard(selectedDate);
+        if (active) await Promise.all([loadDashboard(selectedDate), loadMonthlyReports()]);
       } catch (caught) {
         if (active) {
           setError(caught instanceof Error ? caught.message : "店長画面を読み込めませんでした。");
@@ -196,7 +218,7 @@ export default function ManagerPage() {
     return () => {
       active = false;
     };
-  }, [loadDashboard, selectedDate]);
+  }, [loadDashboard, loadMonthlyReports, selectedDate]);
 
   function updateReviewDraft(id: string, values: Partial<ReviewDraft>) {
     setFieldErrors((current) => {
@@ -386,6 +408,29 @@ export default function ManagerPage() {
     }
   }
 
+  async function reissueMonthlyReport(report: MonthlyReport) {
+    if (!window.confirm(`${report.period_end.replaceAll("-", "/")}締めの勤怠表を最新データで再発行し、登録メールへ送信しますか？`)) return;
+    setReissuingPeriod(report.period_end);
+    setReissueMessage(null);
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/monthly-attendance/reissue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, periodEnd: report.period_end, requestId: crypto.randomUUID() }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error("勤怠表を再発行できませんでした。時間をおいて再度お試しください。");
+      setReissueMessage("最新の勤怠表を登録メールへ送信しました。");
+      await loadMonthlyReports();
+    } catch (caught) {
+      setReissueMessage(caught instanceof Error ? caught.message : "勤怠表を再発行できませんでした。");
+    } finally {
+      setReissuingPeriod(null);
+    }
+  }
+
   const visibleAttendance = dashboard?.attendance.filter(
     (staff) => selectedStaffId === "ALL" || staff.staff_id === selectedStaffId,
   ) ?? [];
@@ -410,6 +455,32 @@ export default function ManagerPage() {
 
         {dashboard && (
           <>
+            <section className={styles.section}>
+              <div className={styles.sectionHeading}>
+                <h2>月次勤怠表</h2>
+                <span>{monthlyReports.length}件</span>
+              </div>
+              <p className={styles.sectionNote}>打刻を修正した後、対象期間の勤怠表を最新データで再発行できます。</p>
+              {reissueMessage && <p className={styles.reissueMessage} role="status">{reissueMessage}</p>}
+              {monthlyReports.length === 0 ? (
+                <p className={styles.empty}>再発行できる勤怠表はまだありません</p>
+              ) : (
+                <ul className={styles.monthlyReportList}>
+                  {monthlyReports.map((report) => (
+                    <li key={report.period_end}>
+                      <div>
+                        <strong>{report.period_end.slice(5, 7)}月度</strong>
+                        <span>{report.period_start.replaceAll("-", "/")} - {report.period_end.replaceAll("-", "/")}</span>
+                      </div>
+                      <button type="button" disabled={reissuingPeriod !== null} onClick={() => void reissueMonthlyReport(report)}>
+                        {reissuingPeriod === report.period_end ? "再発行中…" : "再発行して送信"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
                 <h2>スタッフ管理</h2>
