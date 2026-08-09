@@ -23,6 +23,7 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
     sql`
       SELECT
         cr.staff_id,
+        st.legal_name,
         COALESCE(
           target.business_date,
           ((cr.requested_occurred_at AT TIME ZONE s.timezone)
@@ -32,6 +33,7 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
         )::text AS business_date
       FROM correction_requests cr
       JOIN stores s ON s.id = cr.store_id
+      JOIN staff st ON st.id = cr.staff_id
       LEFT JOIN effective_punch_events target
         ON target.original_event_id = cr.target_event_id
       WHERE cr.store_id = ${storeId}::uuid
@@ -53,4 +55,3 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
     ),
   };
 }
-
