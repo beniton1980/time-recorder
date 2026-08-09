@@ -137,6 +137,10 @@ function currentBusinessDate() {
   return inputParts(new Date().toISOString()).date;
 }
 
+function currentMonth() {
+  return currentBusinessDate().slice(0, 7);
+}
+
 export default function ManagerPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [message, setMessage] = useState("店長権限を確認しています");
@@ -150,6 +154,9 @@ export default function ManagerPage() {
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
   const [selectedStaffId, setSelectedStaffId] = useState("ALL");
   const [updatingStaffId, setUpdatingStaffId] = useState<string | null>(null);
+  const [exportMonth, setExportMonth] = useState(currentMonth);
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async (businessDate?: string) => {
     const idToken = liff.getIDToken();
@@ -386,6 +393,42 @@ export default function ManagerPage() {
     }
   }
 
+  async function exportAttendance() {
+    setExporting(true);
+    setExportMessage(null);
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/attendance-export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, month: exportMonth }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        if (data.code === "NO_ATTENDANCE_RECORDS") {
+          throw new Error("この月の勤怠データはありません。");
+        }
+        throw new Error("月次CSVを作成できませんでした。");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${dashboard?.manager.store_name ?? "店舗"}-${exportMonth}-勤怠.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setExportMessage("月次CSVを保存しました。");
+    } catch (caught) {
+      setExportMessage(caught instanceof Error ? caught.message : "月次CSVを作成できませんでした。");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const visibleAttendance = dashboard?.attendance.filter(
     (staff) => selectedStaffId === "ALL" || staff.staff_id === selectedStaffId,
   ) ?? [];
@@ -410,6 +453,30 @@ export default function ManagerPage() {
 
         {dashboard && (
           <>
+            <section className={styles.section}>
+              <div className={styles.sectionHeading}>
+                <h2>月次勤怠CSV</h2>
+              </div>
+              <p className={styles.sectionNote}>訂正反映後の打刻を、営業日ごとにCSVで保存します。</p>
+              <div className={styles.exportControls}>
+                <label>
+                  対象月
+                  <input
+                    type="month"
+                    value={exportMonth}
+                    onChange={(event) => {
+                      setExportMonth(event.target.value);
+                      setExportMessage(null);
+                    }}
+                  />
+                </label>
+                <button type="button" disabled={exporting || !exportMonth} onClick={() => void exportAttendance()}>
+                  {exporting ? "作成中…" : "CSVを保存"}
+                </button>
+              </div>
+              {exportMessage && <p className={styles.exportMessage} role="status">{exportMessage}</p>}
+            </section>
+
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
                 <h2>スタッフ管理</h2>
