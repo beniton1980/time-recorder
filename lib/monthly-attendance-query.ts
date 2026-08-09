@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.5 seconds
-Output:
 import { assessAttendance } from "@/lib/monthly-attendance.mjs";
 
 type Period = { start: string; end: string };
