@@ -37,3 +37,10 @@ test("manager UI requires confirmation and disables duplicate clicks", async () 
   assert.match(page, /disabled=\{reissuingPeriod !== null \|\| exportingPeriod !== null\}/);
   assert.match(page, /再発行して送信/);
 });
+
+test("reissue uses the store monthly email with onboarding fallback", async () => {
+  const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
+  assert.match(route, /s\.monthly_report_email/);
+  assert.match(route, /ORDER BY r\.created_at DESC/);
+  assert.match(route, /MONTHLY_REPORT_EMAIL_NOT_CONFIGURED/);
+});
