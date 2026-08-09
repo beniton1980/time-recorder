@@ -1,8 +1,16 @@
 import { assessAttendance } from "@/lib/monthly-attendance.mjs";
+import type {
+  EffectivePunch,
+  PendingCorrection,
+} from "@/lib/monthly-attendance.mjs";
 
 type Period = { start: string; end: string };
+type SqlClient = (
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+) => Promise<unknown[]>;
 
-export async function loadMonthlyAttendance(sql: any, storeId: string, period: Period) {
+export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, period: Period) {
   const [events, pendingCorrections] = await Promise.all([
     sql`
       SELECT epe.*
@@ -37,6 +45,12 @@ export async function loadMonthlyAttendance(sql: any, storeId: string, period: P
         ) BETWEEN ${period.start}::date AND ${period.end}::date
     `,
   ]);
-  return { events, days: assessAttendance(events, pendingCorrections) };
+  return {
+    events: events as EffectivePunch[],
+    days: assessAttendance(
+      events as EffectivePunch[],
+      pendingCorrections as PendingCorrection[],
+    ),
+  };
 }
 
