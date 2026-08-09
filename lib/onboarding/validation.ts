@@ -61,9 +61,10 @@ export function validateOnboardingRequest(body: unknown): ValidationResult {
     return { ok: false, code: "UNSUPPORTED_TIMEZONE" };
   }
   if (
-    !Number.isInteger(businessDayStartMinute)
-    || Number(businessDayStartMinute) < 0
-    || Number(businessDayStartMinute) >= 1440
+    typeof businessDayStartMinute !== "number"
+    || !Number.isInteger(businessDayStartMinute)
+    || businessDayStartMinute < 0
+    || businessDayStartMinute >= 1440
   ) {
     return { ok: false, code: "INVALID_BUSINESS_DAY_START" };
   }
@@ -81,7 +82,7 @@ export function validateOnboardingRequest(body: unknown): ValidationResult {
       contactEmail,
       storeAddress,
       timezone: "Asia/Tokyo",
-      businessDayStartMinute: Number(businessDayStartMinute),
+      businessDayStartMinute,
       closingRule: closingRule as ClosingRule,
     },
   };
