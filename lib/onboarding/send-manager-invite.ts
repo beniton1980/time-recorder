@@ -1,4 +1,3 @@
-
 type ManagerInviteMail = {
   requestId: string;
   recipient: string;
