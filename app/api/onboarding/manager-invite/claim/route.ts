@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
+import QRCode from "qrcode";
 import { getSql } from "@/lib/db";
 import {
   LineTokenVerificationError,
@@ -61,6 +62,24 @@ export async function POST(request: Request) {
     `;
 
     const result = claimed[0];
+    const rawStoreToken = randomBytes(32).toString("base64url");
+    await sql`
+      SELECT *
+      FROM rotate_store_entry_token(
+        ${result.store_id},
+        ${tokenHash(rawStoreToken)}
+      )
+    `;
+    const entryUrl = new URL(
+      `/?store_token=${encodeURIComponent(rawStoreToken)}`,
+      request.url,
+    ).toString();
+    const qrSvg = await QRCode.toString(entryUrl, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 720,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -68,6 +87,10 @@ export async function POST(request: Request) {
         staffId: result.staff_id,
         storeId: result.store_id,
         storeName: result.store_name,
+      },
+      storeQr: {
+        entryUrl,
+        qrSvg,
       },
     });
   } catch (error) {
