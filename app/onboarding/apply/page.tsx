@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.5 seconds
+Output:
 "use client";
 
 import { FormEvent, useState } from "react";
@@ -58,15 +61,15 @@ export default function OnboardingApplyPage() {
       const data = await response.json();
       if (!response.ok || !data.ok) {
         const messages: Record<string, string> = {
-          REQUIRED_FIELD_MISSING: "譛ｪ蜈･蜉帙・蠢・磯・岼縺後≠繧翫∪縺吶・,
-          INVALID_CONTACT_EMAIL: "繝｡繝ｼ繝ｫ繧｢繝峨Ξ繧ｹ繧堤｢ｺ隱阪＠縺ｦ縺上□縺輔＞縲・,
-          TERMS_ACCEPTANCE_REQUIRED: "蛻ｩ逕ｨ譚｡莉ｶ縺ｸ縺ｮ蜷梧э縺悟ｿ・ｦ√〒縺吶・,
+          REQUIRED_FIELD_MISSING: "未入力の必須項目があります。",
+          INVALID_CONTACT_EMAIL: "メールアドレスを確認してください。",
+          TERMS_ACCEPTANCE_REQUIRED: "利用条件への同意が必要です。",
         };
-        throw new Error(messages[data.code] ?? "逕ｳ隲九ｒ騾∽ｿ｡縺ｧ縺阪∪縺帙ｓ縺ｧ縺励◆縲・);
+        throw new Error(messages[data.code] ?? "申請を送信できませんでした。");
       }
       setRequestId(data.request.id as string);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "逕ｳ隲九ｒ騾∽ｿ｡縺ｧ縺阪∪縺帙ｓ縺ｧ縺励◆縲・);
+      setError(caught instanceof Error ? caught.message : "申請を送信できませんでした。");
     } finally {
       setSubmitting(false);
     }
@@ -75,27 +78,27 @@ export default function OnboardingApplyPage() {
   if (requestId) {
     return <main className={styles.page}><section className={[styles.shell, styles.center].join(" ")}>
       <p className={styles.brand}>ONOGAMI</p>
-      <h1>逕ｳ隲九ｒ蜿励￠莉倥￠縺ｾ縺励◆</h1>
-      <p className={styles.success}>蜀・ｮｹ繧貞ｯｩ譟ｻ蠕後・｣邨｡蜈医Γ繝ｼ繝ｫ繧｢繝峨Ξ繧ｹ縺ｸ縺疲｡亥・縺励∪縺吶ら筏隲狗峩蠕後↓蠎苓・繧РR縺御ｽ懈・縺輔ｌ繧九％縺ｨ縺ｯ縺ゅｊ縺ｾ縺帙ｓ縲・/p>
-      <p className={styles.help}>蜿嶺ｻ倡分蜿ｷ・嘴requestId}</p>
+      <h1>申請を受け付けました</h1>
+      <p className={styles.success}>内容を審査後、連絡先メールアドレスへご案内します。申請直後に店舗やQRが作成されることはありません。</p>
+      <p className={styles.help}>受付番号：{requestId}</p>
     </section></main>;
   }
 
   return <main className={styles.page}><section className={styles.shell}>
     <p className={styles.brand}>ONOGAMI</p>
-    <h1>蠎苓・蛻ｩ逕ｨ逕ｳ隲・/h1>
-    <p className={styles.lead}>ONOGAMI 蜍､諤縺ｮ髯仙ｮ壽署萓帷沿繧偵＃蛻ｩ逕ｨ縺ｫ縺ｪ繧句ｺ苓・縺ｮ諠・ｱ繧貞・蜉帙＠縺ｦ縺上□縺輔＞縲ら筏隲句・螳ｹ縺ｯONOGAMI蛛ｴ縺ｧ蟇ｩ譟ｻ縺励∵価隱榊ｾ後↓繝｡繝ｼ繝ｫ縺ｧ縺疲｡亥・縺励∪縺吶・/p>
+    <h1>店舗利用申請</h1>
+    <p className={styles.lead}>ONOGAMI 勤怠の限定提供版をご利用になる店舗の情報を入力してください。申請内容はONOGAMI側で審査し、承認後にメールでご案内します。</p>
     <form className={styles.form} onSubmit={submit}>
-      <label className={styles.field}>蠎苓・蜷・input required maxLength={120} value={form.storeName} onChange={(e)=>update("storeName",e.target.value)} /></label>
+      <label className={styles.field}>店舗名<input required maxLength={120} value={form.storeName} onChange={(e)=>update("storeName",e.target.value)} /></label>
       <div className={styles.grid}>
-        <label className={styles.field}>邂｡逅・・ｰ丞錐<input required maxLength={120} value={form.managerLegalName} onChange={(e)=>update("managerLegalName",e.target.value)} /><span className={styles.help}>蠕後⊇縺ｩLINE譛ｬ莠ｺ遒ｺ隱阪ｒ陦後≧譁ｹ</span></label>
-        <label className={styles.field}>騾｣邨｡蜈医Γ繝ｼ繝ｫ<input required type="email" maxLength={254} value={form.contactEmail} onChange={(e)=>update("contactEmail",e.target.value)} /><span className={styles.help}>邂｡逅・・魚蠕・→譛域ｬ｡繝ｬ繝昴・繝医・蛻晄悄騾∽ｿ｡蜈・/span></label>
+        <label className={styles.field}>管理者氏名<input required maxLength={120} value={form.managerLegalName} onChange={(e)=>update("managerLegalName",e.target.value)} /><span className={styles.help}>後ほどLINE本人確認を行う方</span></label>
+        <label className={styles.field}>連絡先メール<input required type="email" maxLength={254} value={form.contactEmail} onChange={(e)=>update("contactEmail",e.target.value)} /><span className={styles.help}>管理者招待と月次レポートの初期送信先</span></label>
       </div>
-      <label className={styles.field}>蠎苓・菴乗園<textarea required maxLength={300} rows={3} value={form.storeAddress} onChange={(e)=>update("storeAddress",e.target.value)} /></label>
-      <label className={styles.field}>邱繧∵律<select value={form.closingRule} onChange={(e)=>update("closingRule",e.target.value)}><option value="month_end">譛域忰</option><option value="day_15">15譌･</option><option value="day_25">25譌･</option></select></label>
-      <label className={styles.check}><input required type="checkbox" checked={form.termsAccepted} onChange={(e)=>update("termsAccepted",e.target.checked)} /><span>蜈･蜉帙＠縺滓ュ蝣ｱ繧貞ｺ苓・逋ｻ骭ｲ縺ｮ蟇ｩ譟ｻ繝ｻ騾｣邨｡繝ｻ繧ｵ繝ｼ繝薙せ謠蝉ｾ帙・縺溘ａ縺ｫ蛻ｩ逕ｨ縺吶ｋ縺薙→縺ｫ蜷梧э縺励∪縺吶・/span></label>
+      <label className={styles.field}>店舗住所<textarea required maxLength={300} rows={3} value={form.storeAddress} onChange={(e)=>update("storeAddress",e.target.value)} /></label>
+      <label className={styles.field}>締め日<select value={form.closingRule} onChange={(e)=>update("closingRule",e.target.value)}><option value="month_end">月末</option><option value="day_15">15日</option><option value="day_25">25日</option></select></label>
+      <label className={styles.check}><input required type="checkbox" checked={form.termsAccepted} onChange={(e)=>update("termsAccepted",e.target.checked)} /><span>入力した情報を店舗登録の審査・連絡・サービス提供のために利用することに同意します。</span></label>
       {error && <p className={styles.error} role="alert">{error}</p>}
-      <button className={styles.primary} type="submit" disabled={submitting}>{submitting ? "騾∽ｿ｡荳ｭ窶ｦ" : "縺薙・蜀・ｮｹ縺ｧ逕ｳ隲・}</button>
+      <button className={styles.primary} type="submit" disabled={submitting}>{submitting ? "送信中…" : "この内容で申請"}</button>
     </form>
   </section></main>;
 }
