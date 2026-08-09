@@ -21,6 +21,8 @@ test("operator screen keeps approval and provisioning as separate confirmed acti
   assert.match(source, /window\.confirm\(item\.store_name \+ "の申請を"/);
   assert.match(source, /window\.confirm\(item\.store_name \+ "を作成し、管理者招待を発行しますか？"/);
   assert.match(source, /7日間有効・一度だけ利用可能/);
+  assert.match(source, /管理者招待メールを送信しました/);
+  assert.match(source, /招待リンクを手動で送ってください/);
 });
 
 test("manager invite is claimed only after an explicit user action", async () => {

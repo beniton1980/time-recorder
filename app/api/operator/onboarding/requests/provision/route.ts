@@ -6,6 +6,7 @@ import {
   operatorErrorResponse,
   verifyOperator,
 } from "@/lib/onboarding/verify-operator";
+import { sendManagerInviteMail } from "@/lib/onboarding/send-manager-invite";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +61,29 @@ export async function POST(request: Request) {
       `/onboarding/invite?token=${encodeURIComponent(rawToken)}`,
       request.url,
     ).toString();
+    const recipients = await sql`
+      SELECT contact_email, manager_legal_name
+      FROM onboarding_requests
+      WHERE id = ${body.requestId}::uuid
+    `;
+    let email: Awaited<ReturnType<typeof sendManagerInviteMail>>;
+
+    try {
+      email = await sendManagerInviteMail({
+        requestId: body.requestId,
+        recipient: recipients[0].contact_email,
+        managerName: recipients[0].manager_legal_name,
+        storeName: result.store_name,
+        inviteUrl,
+        expiresAt: result.invite_expires_at,
+      });
+    } catch (mailError) {
+      console.error("Manager invite email delivery failed", {
+        requestId: body.requestId,
+        error: mailError instanceof Error ? mailError.name : "UnknownError",
+      });
+      email = { sent: false, code: "EMAIL_DELIVERY_FAILED" };
+    }
 
     return NextResponse.json(
       {
@@ -72,6 +96,7 @@ export async function POST(request: Request) {
         managerInvite: {
           url: inviteUrl,
           expiresAt: result.invite_expires_at,
+          email,
         },
       },
       { status: 201 },

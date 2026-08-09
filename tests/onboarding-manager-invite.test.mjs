@@ -67,3 +67,21 @@ test("a failed claim cannot partially create manager state", async () => {
   assert.match(schema, /UPDATE stores/);
   assert.match(schema, /LANGUAGE plpgsql/);
 });
+
+test("provisioning emails the invite with idempotency and preserves manual fallback", async () => {
+  const route = await source(
+    "app/api/operator/onboarding/requests/provision/route.ts",
+  );
+  const mailer = await source(
+    "lib/onboarding/send-manager-invite.ts",
+  );
+
+  assert.match(route, /sendManagerInviteMail/);
+  assert.match(route, /managerInvite:[\s\S]*url: inviteUrl[\s\S]*email/);
+  assert.match(mailer, /process\.env\.RESEND_API_KEY/);
+  assert.match(mailer, /process\.env\.RESEND_EMAIL_DOMAIN/);
+  assert.match(mailer, /Idempotency-Key/);
+  assert.match(mailer, /onboarding-manager-invite-/);
+  assert.match(mailer, /no-reply@\$\{domain\}/);
+  assert.doesNotMatch(mailer, /console\./);
+});
