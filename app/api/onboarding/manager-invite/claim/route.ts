@@ -62,24 +62,34 @@ export async function POST(request: Request) {
     `;
 
     const result = claimed[0];
-    const rawStoreToken = randomBytes(32).toString("base64url");
-    await sql`
-      SELECT *
-      FROM rotate_store_entry_token(
-        ${result.store_id},
-        ${tokenHash(rawStoreToken)}
-      )
-    `;
-    const entryUrl = new URL(
-      `/?store_token=${encodeURIComponent(rawStoreToken)}`,
-      request.url,
-    ).toString();
-    const qrSvg = await QRCode.toString(entryUrl, {
-      type: "svg",
-      errorCorrectionLevel: "M",
-      margin: 2,
-      width: 720,
-    });
+    let storeQr: { entryUrl: string; qrSvg: string } | null = null;
+
+    try {
+      const rawStoreToken = randomBytes(32).toString("base64url");
+      await sql`
+        SELECT *
+        FROM rotate_store_entry_token(
+          ${result.store_id},
+          ${tokenHash(rawStoreToken)}
+        )
+      `;
+      const entryUrl = new URL(
+        `/?store_token=${encodeURIComponent(rawStoreToken)}`,
+        request.url,
+      ).toString();
+      const qrSvg = await QRCode.toString(entryUrl, {
+        type: "svg",
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: 720,
+      });
+      storeQr = { entryUrl, qrSvg };
+    } catch (qrError) {
+      console.error("Initial store QR issuance failed", {
+        storeId: result.store_id,
+        error: qrError instanceof Error ? qrError.name : "UnknownError",
+      });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -88,10 +98,7 @@ export async function POST(request: Request) {
         storeId: result.store_id,
         storeName: result.store_name,
       },
-      storeQr: {
-        entryUrl,
-        qrSvg,
-      },
+      storeQr,
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
