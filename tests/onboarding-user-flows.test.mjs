@@ -25,6 +25,16 @@ test("operator screen keeps approval and provisioning as separate confirmed acti
   assert.match(source, /招待リンクを手動で送ってください/);
 });
 
+test("manager registration completion displays and saves the issued store QR", async () => {
+  const source = await readFile(invitePath, "utf8");
+  assert.match(source, /data\.storeQr\?\.qrSvg/);
+  assert.match(source, /dangerouslySetInnerHTML=\{\{ __html: qrSvg \}\}/);
+  assert.match(source, /店舗QRを保存/);
+  assert.match(source, /QR管理画面へ/);
+  assert.match(source, /QRの自動発行を完了できませんでした/);
+  assert.match(source, /QRを発行する/);
+});
+
 test("manager invite is claimed only after an explicit user action", async () => {
   const source = await readFile(invitePath, "utf8");
   assert.match(source, /async function claim\(\)/);

@@ -11,6 +11,7 @@ export default function ManagerInvitePage() {
   const [ready, setReady] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [storeName, setStoreName] = useState<string | null>(null);
+  const [qrSvg, setQrSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,6 +59,7 @@ export default function ManagerInvitePage() {
         throw new Error("管理者登録を完了できませんでした。");
       }
       setStoreName(data.manager.storeName as string);
+      setQrSvg((data.storeQr?.qrSvg as string | undefined) ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "管理者登録を完了できませんでした。");
     } finally {
@@ -65,12 +67,28 @@ export default function ManagerInvitePage() {
     }
   }
 
+  function downloadQr() {
+    if (!qrSvg || !storeName) return;
+    const blob = new Blob([qrSvg], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${storeName.replace(/[\\/:*?"<>|]/g, "-")}-打刻QR.svg`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   return <main className={styles.page}><section className={[styles.shell, styles.center].join(" ")}>
     <p className={styles.brand}>ONOGAMI</p>
     {storeName ? <>
       <h1>管理者登録が完了しました</h1>
       <p className={styles.success}>{storeName}の店舗管理者として登録され、店舗が利用可能になりました。</p>
-      <a className={styles.back} href="/manager/qr">店舗QRを発行する</a>
+      {qrSvg ? <>
+        <p className={styles.tokenWarning}>店舗の打刻QRを発行しました。この画面を閉じる前に保存してください。</p>
+        <div dangerouslySetInnerHTML={{ __html: qrSvg }} />
+        <button className={styles.primary} type="button" onClick={downloadQr}>店舗QRを保存</button>
+      </> : <p className={styles.tokenWarning}>QRの自動発行を完了できませんでした。QR管理画面から発行してください。</p>}
+      <a className={styles.back} href="/manager/qr">{qrSvg ? "QR管理画面へ" : "QRを発行する"}</a>
     </> : <>
       <h1>店舗管理者の登録</h1>
       <p className={styles.lead}>このLINEアカウントを店舗管理者として登録します。登録後、店舗の打刻QRを発行できます。</p>
