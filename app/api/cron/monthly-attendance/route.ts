@@ -15,20 +15,39 @@ export async function GET(request: Request) {
   }
   const sql = getSql();
   const stores = await sql`
+    WITH candidates AS (
+      SELECT s.id,
+        NULL::text AS period_start,
+        ((NOW() AT TIME ZONE s.timezone) - INTERVAL '1 day')::date::text AS period_end
+      FROM stores s
+      WHERE s.status = 'active'
+        AND (
+          (s.closing_rule = 'month_end' AND EXTRACT(DAY FROM ((NOW() AT TIME ZONE s.timezone) - INTERVAL '1 day')) = EXTRACT(DAY FROM (date_trunc('month', (NOW() AT TIME ZONE s.timezone) - INTERVAL '1 day') + INTERVAL '1 month - 1 day')))
+          OR s.closing_rule = 'day_' || EXTRACT(DAY FROM ((NOW() AT TIME ZONE s.timezone) - INTERVAL '1 day'))::int::text
+        )
+      UNION ALL
+      SELECT s.id, d.period_start::text, d.period_end::text
+      FROM monthly_attendance_deliveries d
+      JOIN stores s ON s.id = d.store_id
+      WHERE s.status = 'active'
+        AND d.delivery_version = 'initial'
+        AND (
+          d.status = 'FAILED'
+          OR (d.status = 'PROCESSING' AND d.updated_at < NOW() - INTERVAL '15 minutes')
+        )
+    )
     SELECT s.id, s.name, s.timezone, s.closing_rule, r.contact_email,
-      ((NOW() AT TIME ZONE s.timezone) - INTERVAL '1 day')::date::text AS closing_date
-    FROM stores s
+      candidates.period_start, candidates.period_end
+    FROM candidates
+    JOIN stores s ON s.id = candidates.id
     JOIN onboarding_requests r ON r.provisioned_store_id = s.id
-    WHERE s.status = 'active'
-      AND (
-        (s.closing_rule = 'month_end' AND EXTRACT(DAY FROM ((NOW() AT TIME ZONE s.timezone) - INTERVAL '1 day')) = EXTRACT(DAY FROM (date_trunc('month', (NOW() AT TIME ZONE s.timezone) - INTERVAL '1 day') + INTERVAL '1 month - 1 day')))
-        OR s.closing_rule = 'day_' || EXTRACT(DAY FROM ((NOW() AT TIME ZONE s.timezone) - INTERVAL '1 day'))::int::text
-      )
-    ORDER BY s.id
+    ORDER BY s.id, candidates.period_end
   `;
   const results = [];
   for (const store of stores) {
-    const period = calculateClosingPeriod(String(store.closing_rule), String(store.closing_date));
+    const period = store.period_start
+      ? { start: String(store.period_start), end: String(store.period_end) }
+      : calculateClosingPeriod(String(store.closing_rule), String(store.period_end));
     const claimed = await sql`
       INSERT INTO monthly_attendance_deliveries (store_id, period_start, period_end, recipient)
       VALUES (${store.id}::uuid, ${period.start}::date, ${period.end}::date, ${store.contact_email})
@@ -57,4 +76,3 @@ export async function GET(request: Request) {
   }
   return Response.json({ ok: true, processed: results.length, results });
 }
-
