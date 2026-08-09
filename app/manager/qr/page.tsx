@@ -17,6 +17,16 @@ type IssuedQr = {
   qrSvg: string;
 };
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character] as string);
+}
+
 export default function StoreQrPage() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [storeId, setStoreId] = useState("");
@@ -140,19 +150,21 @@ export default function StoreQrPage() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${issued.storeName}-打刻QR.svg`;
+    anchor.download = `${safeStoreName}-打刻QR.svg`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
 
   function printA4() {
     if (!issued) return;
-    const popup = window.open("", "_blank", "noopener,noreferrer");
+    const popup = window.open("", "_blank");
     if (!popup) {
       setError("印刷画面を開けませんでした。ポップアップを許可してください。");
       return;
     }
-    popup.document.write(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${issued.storeName} 打刻QR</title><style>@page{size:A4;margin:18mm}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;text-align:center;color:#17221b}h1{font-size:30px;margin:8mm 0 3mm}.brand{font-weight:800;letter-spacing:.16em;color:#207a45}.qr{width:120mm;height:120mm;margin:8mm auto 5mm}.steps{font-size:18px;line-height:1.8;text-align:left;display:inline-block}.note{font-size:14px;color:#526057;margin-top:8mm}@media print{button{display:none}}</style></head><body><p class="brand">ONOGAMI 勤怠</p><h1>${issued.storeName}</h1><p>スタッフ打刻用QRコード</p><div class="qr">${issued.qrSvg}</div><ol class="steps"><li>LINEでQRコードを読み取る</li><li>店舗名を確認する</li><li>出勤・休憩・退勤を打刻する</li></ol><p class="note">QRが読み取れない場合は店長へお知らせください。</p><button onclick="window.print()">A4 PDFとして保存・印刷</button><script>window.onload=()=>window.print()<\/script></body></html>`);
+    popup.opener = null;
+    const safeStoreName = escapeHtml(issued.storeName);
+    popup.document.write(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${safeStoreName} 打刻QR</title><style>@page{size:A4;margin:18mm}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;text-align:center;color:#17221b}h1{font-size:30px;margin:8mm 0 3mm}.brand{font-weight:800;letter-spacing:.16em;color:#207a45}.qr{width:120mm;height:120mm;margin:8mm auto 5mm}.steps{font-size:18px;line-height:1.8;text-align:left;display:inline-block}.note{font-size:14px;color:#526057;margin-top:8mm}@media print{button{display:none}}</style></head><body><p class="brand">ONOGAMI 勤怠</p><h1>${safeStoreName}</h1><p>スタッフ打刻用QRコード</p><div class="qr">${issued.qrSvg}</div><ol class="steps"><li>LINEでQRコードを読み取る</li><li>店舗名を確認する</li><li>出勤・休憩・退勤を打刻する</li></ol><p class="note">QRが読み取れない場合は店長へお知らせください。</p><button onclick="window.print()">A4 PDFとして保存・印刷</button><script>window.onload=()=>window.print()<\/script></body></html>`);
     popup.document.close();
   }
 
