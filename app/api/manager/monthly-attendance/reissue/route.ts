@@ -24,14 +24,24 @@ export async function POST(request: Request) {
     const identity = await verifyLineIdToken(body.idToken);
     const sql = getSql();
     const managers = await sql`
-      SELECT s.id, s.name, s.timezone, s.closing_rule, r.contact_email
+      SELECT s.id, s.name, s.timezone, s.closing_rule,
+        COALESCE(
+          s.monthly_report_email,
+          (
+            SELECT r.contact_email
+            FROM onboarding_requests r
+            WHERE r.provisioned_store_id = s.id
+            ORDER BY r.created_at DESC
+            LIMIT 1
+          )
+        ) AS contact_email
       FROM staff st JOIN stores s ON s.id = st.store_id
-      JOIN onboarding_requests r ON r.provisioned_store_id = s.id
       WHERE st.line_user_id = ${identity.sub} AND st.status = 'active' AND st.role = 'MANAGER' AND s.status = 'active'
       ORDER BY st.created_at LIMIT 1
     `;
     if (managers.length === 0) return Response.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
     const store = managers[0];
+    if (!store.contact_email) return Response.json({ ok: false, code: "MONTHLY_REPORT_EMAIL_NOT_CONFIGURED" }, { status: 409 });
     const period = calculateClosingPeriod(String(store.closing_rule), body.periodEnd);
     const initial = await sql`
       SELECT id FROM monthly_attendance_deliveries
