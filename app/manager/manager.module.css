@@ -489,3 +489,26 @@
   font-size: 13px;
   font-weight: 700;
 }
+
+.monthlyReportActions {
+  display: flex;
+  gap: 8px;
+}
+
+.monthlyReportList .csvButton {
+  border-color: #aabcb0;
+  background: #fff;
+  color: #285f44;
+}
+
+@media (max-width: 520px) {
+  .monthlyReportList li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .monthlyReportActions {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+  }
+}
