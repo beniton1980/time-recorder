@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { assessAttendance, calculateClosingPeriod } from "./monthly-attendance.mjs";
+import { assessAttendance, calculateClosingPeriod } from "../lib/monthly-attendance.mjs";
 
 test("closing periods follow month-end, 15th, and 25th rules", () => {
   assert.deepEqual(calculateClosingPeriod("month_end", "2024-02-29"), { start: "2024-02-01", end: "2024-02-29" });
@@ -34,7 +34,7 @@ test("store location absence and manager corrections are not staff GPS issues", 
 });
 
 test("query uses effective events and does not filter inactive staff", async () => {
-  const source = await readFile(new URL("./monthly-attendance-query.ts", import.meta.url), "utf8");
+  const source = await readFile(new URL("../lib/monthly-attendance-query.ts", import.meta.url), "utf8");
   assert.match(source, /FROM effective_punch_events epe/);
   assert.match(source, /epe\.business_date BETWEEN/);
   assert.match(source, /cr\.status = 'PENDING'/);
