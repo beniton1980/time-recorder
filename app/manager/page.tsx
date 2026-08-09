@@ -361,6 +361,7 @@ export default function ManagerPage() {
             <>
               <p className={styles.store}>{dashboard.manager.store_name}</p>
               <p className={styles.manager}>{dashboard.manager.legal_name}さん</p>
+              <a href="/manager/qr">店舗QRを発行・再発行</a>
             </>
           )}
         </header>
