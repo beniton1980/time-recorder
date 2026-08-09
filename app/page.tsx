@@ -195,6 +195,14 @@ export default function Home() {
             return;
           }
 
+          if (data.code === "STAFF_INACTIVE") {
+            setView({
+              kind: "store_required",
+              message: "この店舗での利用は停止されています。店長に確認してください。",
+            });
+            return;
+          }
+
           throw new Error("認証を確認できませんでした。");
         }
 
@@ -946,3 +954,4 @@ export default function Home() {
     </main>
   );
 }
+

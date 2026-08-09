@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     `;
     const businessDate = String(dates[0].business_date);
 
-    const [attendance, corrections] = await Promise.all([
+    const [attendance, corrections, staffMemberships] = await Promise.all([
       sql`
         SELECT
           st.id AS staff_id,
@@ -173,6 +173,19 @@ export async function POST(request: Request) {
           AND cr.status = 'PENDING'
         ORDER BY cr.requested_at ASC
       `,
+      sql`
+        SELECT
+          st.id AS staff_id,
+          st.legal_name,
+          st.status,
+          COALESCE(ss.state, 'OFF_DUTY') AS state,
+          st.created_at
+        FROM staff st
+        LEFT JOIN staff_states ss ON ss.staff_id = st.id
+        WHERE st.store_id = ${manager.store_id}
+          AND st.role = 'STAFF'
+        ORDER BY st.legal_name ASC, st.created_at ASC
+      `,
     ]);
 
     return NextResponse.json({
@@ -181,6 +194,7 @@ export async function POST(request: Request) {
       businessDate,
       attendance,
       corrections,
+      staffMemberships,
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
@@ -190,3 +204,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, code: "DASHBOARD_UNAVAILABLE" }, { status: 503 });
   }
 }
+
