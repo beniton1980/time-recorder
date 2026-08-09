@@ -27,6 +27,7 @@ test("public onboarding cannot provision a store or manager", async () => {
 });
 
 test("operator access uses a LINE identity allowlist", async () => {
+  const validation = await source("lib/onboarding/validation.ts");
   const guard = await source("lib/onboarding/verify-operator.ts");
   const listing = await source("app/api/operator/onboarding/requests/route.ts");
   const decision = await source(
@@ -34,7 +35,7 @@ test("operator access uses a LINE identity allowlist", async () => {
   );
 
   assert.match(guard, /verifyLineIdToken\(idToken\)/);
-  assert.match(guard, /ONOGAMI_OPERATOR_LINE_USER_IDS/);
+  assert.match(validation, /ONOGAMI_OPERATOR_LINE_USER_IDS/);
   assert.match(guard, /allowed\.has\(identity\.sub\)/);
   assert.match(listing, /await verifyOperator\(body\.idToken\)/);
   assert.match(decision, /await verifyOperator\(body\.idToken\)/);
