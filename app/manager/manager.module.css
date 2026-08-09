@@ -236,6 +236,56 @@
 
 .staffManagementList button:disabled { opacity: .45; }
 
+.exportControls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.exportControls label {
+  display: grid;
+  gap: 7px;
+  color: #4d5d53;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.exportControls input,
+.exportControls button {
+  min-height: 44px;
+  border-radius: 9px;
+  font: inherit;
+}
+
+.exportControls input {
+  padding: 8px 10px;
+  border: 1px solid #aebdb2;
+  background: #fff;
+  color: #173326;
+}
+
+.exportControls button {
+  padding: 8px 16px;
+  border: 1px solid #347a57;
+  background: #347a57;
+  color: #fff;
+  font-weight: 800;
+}
+
+.exportControls button:disabled { opacity: .45; }
+
+.exportMessage {
+  margin: 12px 0 0;
+  color: #4d5d53;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .exportControls { grid-template-columns: 1fr; }
+}
+
 @media (min-width: 640px) {
   .page { padding-top: 48px; }
   .header, .section { padding: 26px 30px; }
