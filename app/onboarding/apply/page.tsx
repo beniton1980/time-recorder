@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
 import styles from "../onboarding.module.css";
 
 type FormState = {
@@ -30,7 +30,7 @@ export default function OnboardingApplyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const clientRequestId = useRef(crypto.randomUUID());
+  const [clientRequestId] = useState(() => crypto.randomUUID());
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -48,7 +48,7 @@ export default function OnboardingApplyPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientRequestId: clientRequestId.current,
+          clientRequestId,
           businessName: form.businessName,
           storeName: form.storeName,
           managerLegalName: form.managerLegalName,
@@ -105,7 +105,7 @@ export default function OnboardingApplyPage() {
       </div>
       <label className={styles.check}><input required type="checkbox" checked={form.termsAccepted} onChange={(e)=>update("termsAccepted",e.target.checked)} /><span>入力した情報を店舗登録の審査・連絡・サービス提供のために利用することに同意します。</span></label>
       {error && <p className={styles.error} role="alert">{error}</p>}
-      <button className={styles.primary} type="submit" disabled={submitting}>{submitting ? "送信中…" : "内容を確認して申請"}</button>
+      <button className={styles.primary} type="submit" disabled={submitting}>{submitting ? "送信中…" : "この内容で申請"}</button>
     </form>
   </section></main>;
 }
