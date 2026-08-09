@@ -160,6 +160,7 @@ export default function ManagerPage() {
   const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
   const [reissuingPeriod, setReissuingPeriod] = useState<string | null>(null);
   const [reissueMessage, setReissueMessage] = useState<string | null>(null);
+  const [exportingPeriod, setExportingPeriod] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async (businessDate?: string) => {
     const idToken = liff.getIDToken();
@@ -408,6 +409,35 @@ export default function ManagerPage() {
     }
   }
 
+  async function exportMonthlyCsv(report: MonthlyReport) {
+    setExportingPeriod(report.period_end);
+    setReissueMessage(null);
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/monthly-attendance/csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, periodEnd: report.period_end }),
+      });
+      if (!response.ok) throw new Error("CSVを作成できませんでした。");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${dashboard?.manager.store_name ?? "店舗"}-${report.period_end}-勤怠.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setReissueMessage("補助CSVを保存しました。");
+    } catch (caught) {
+      setReissueMessage(caught instanceof Error ? caught.message : "CSVを作成できませんでした。");
+    } finally {
+      setExportingPeriod(null);
+    }
+  }
+
   async function reissueMonthlyReport(report: MonthlyReport) {
     if (!window.confirm(`${report.period_end.replaceAll("-", "/")}締めの勤怠表を最新データで再発行し、登録メールへ送信しますか？`)) return;
     setReissuingPeriod(report.period_end);
@@ -472,9 +502,14 @@ export default function ManagerPage() {
                         <strong>{report.period_end.slice(5, 7)}月度</strong>
                         <span>{report.period_start.replaceAll("-", "/")} - {report.period_end.replaceAll("-", "/")}</span>
                       </div>
-                      <button type="button" disabled={reissuingPeriod !== null} onClick={() => void reissueMonthlyReport(report)}>
-                        {reissuingPeriod === report.period_end ? "再発行中…" : "再発行して送信"}
-                      </button>
+                      <div className={styles.monthlyReportActions}>
+                        <button type="button" className={styles.csvButton} disabled={exportingPeriod !== null || reissuingPeriod !== null} onClick={() => void exportMonthlyCsv(report)}>
+                          {exportingPeriod === report.period_end ? "CSV作成中…" : "補助CSV"}
+                        </button>
+                        <button type="button" disabled={reissuingPeriod !== null || exportingPeriod !== null} onClick={() => void reissueMonthlyReport(report)}>
+                          {reissuingPeriod === report.period_end ? "再発行中…" : "再発行して送信"}
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
