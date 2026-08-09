@@ -1,3 +1,4 @@
+
 "use client";
 
 import liff from "@line/liff";
@@ -38,6 +39,7 @@ export default function OperatorOnboardingPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [invites, setInvites] = useState<Record<string, string>>({});
+  const [emailSent, setEmailSent] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +98,7 @@ export default function OperatorOnboardingPage() {
   async function switchStatus(next: Status) {
     setStatus(next);
     setInvites({});
+    setEmailSent({});
     await load(next);
   }
 
@@ -151,6 +154,7 @@ export default function OperatorOnboardingPage() {
           : "店舗と招待を作成できませんでした。");
       }
       setInvites((current) => ({ ...current, [item.id]: data.managerInvite.url as string }));
+      setEmailSent((current) => ({ ...current, [item.id]: data.managerInvite.email.sent === true }));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "店舗と招待を作成できませんでした。");
     } finally {
@@ -192,9 +196,9 @@ export default function OperatorOnboardingPage() {
           <button className={styles.primary} type="button" disabled={working !== null || Boolean(invites[item.id])} onClick={()=>void provision(item)}>店舗と管理者招待を作成</button>
         </div>}
         {invites[item.id] && <div className={styles.invite}>
-          <strong>管理者へ送る招待リンク</strong>
+          <strong>{emailSent[item.id] ? "管理者招待メールを送信しました" : "メールを送信できませんでした。招待リンクを手動で送ってください"}</strong>
           <a href={invites[item.id]}>{invites[item.id]}</a>
-          <p className={styles.tokenWarning}>7日間有効・一度だけ利用可能です。閉じる前にコピーしてください。</p>
+          <p className={styles.tokenWarning}>予備の招待リンクです。7日間有効・一度だけ利用可能です。閉じる前にコピーしてください。</p>
           <button className={styles.secondary} type="button" onClick={()=>void navigator.clipboard.writeText(invites[item.id])}>リンクをコピー</button>
         </div>}
       </li>)}</ul>
