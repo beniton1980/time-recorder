@@ -15,6 +15,8 @@ test("only an active manager can change a STAFF membership in the same store", a
 
 test("active work blocks deactivation and history is never deleted", async () => {
   const migration = await source("db/migrations/0010_manager_staff_status.sql");
+  assert.match(migration, /JOIN staff_states ss ON ss\.staff_id = st\.id/);
+  assert.doesNotMatch(migration, /LEFT JOIN staff_states ss/);
   assert.match(migration, /FOR UPDATE OF st, ss/);
   assert.match(migration, /target_state IN \('WORKING', 'ON_BREAK'\)/);
   assert.match(migration, /STAFF_ACTIVE_WORK/);
