@@ -3,6 +3,7 @@ export type ClosingPeriod = { start: string; end: string };
 export type EffectivePunch = {
   effective_id: string;
   staff_id: string;
+  legal_name?: string;
   business_date: string;
   occurred_at: string | Date;
   event_type: "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
@@ -11,10 +12,11 @@ export type EffectivePunch = {
   validation_code?: string | null;
 };
 
-export type PendingCorrection = { staff_id: string; business_date: string };
+export type PendingCorrection = { staff_id: string; legal_name?: string; business_date: string };
 
 export type AttendanceDayAssessment = {
   staffId: string;
+  legalName?: string;
   businessDate: string;
   attendanceReasons: string[];
   gpsIssues: Array<{ effectiveId: string; reason: string }>;
