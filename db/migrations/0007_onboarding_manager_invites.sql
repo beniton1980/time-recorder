@@ -160,7 +160,7 @@ BEGIN
 
   INSERT INTO staff_states (staff_id, state)
   VALUES (new_staff_id, 'OFF_DUTY')
-  ON CONFLICT (staff_id) DO NOTHING;
+  ON CONFLICT ON CONSTRAINT staff_states_pkey DO NOTHING;
 
   UPDATE onboarding_manager_invites
   SET used_at = NOW()
