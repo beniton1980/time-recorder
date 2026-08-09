@@ -36,15 +36,28 @@ export async function GET(request: Request) {
           OR (d.status = 'PROCESSING' AND d.updated_at < NOW() - INTERVAL '15 minutes')
         )
     )
-    SELECT s.id, s.name, s.timezone, s.closing_rule, r.contact_email,
+    SELECT s.id, s.name, s.timezone, s.closing_rule,
+      COALESCE(
+        s.monthly_report_email,
+        (
+          SELECT r.contact_email
+          FROM onboarding_requests r
+          WHERE r.provisioned_store_id = s.id
+          ORDER BY r.created_at DESC
+          LIMIT 1
+        )
+      ) AS contact_email,
       candidates.period_start, candidates.period_end
     FROM candidates
     JOIN stores s ON s.id = candidates.id
-    JOIN onboarding_requests r ON r.provisioned_store_id = s.id
     ORDER BY s.id, candidates.period_end
   `;
   const results = [];
   for (const store of stores) {
+    if (!store.contact_email) {
+      results.push({ storeId: store.id, status: "SKIPPED", code: "MONTHLY_REPORT_EMAIL_NOT_CONFIGURED" });
+      continue;
+    }
     const period = store.period_start
       ? { start: String(store.period_start), end: String(store.period_end) }
       : calculateClosingPeriod(String(store.closing_rule), String(store.period_end));

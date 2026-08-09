@@ -42,3 +42,12 @@ test("runner composes assessment, PDF, and email without changing punch state", 
   assert.match(route, /sendMonthlyAttendanceEmail/);
   assert.doesNotMatch(route, /UPDATE staff_states|INSERT INTO punch_events/);
 });
+
+test("store-level monthly report email is preferred with onboarding fallback", async () => {
+  const route = await source("app/api/cron/monthly-attendance/route.ts");
+  const migration = await source("db/migrations/0012_store_monthly_report_email.sql");
+  assert.match(migration, /ADD COLUMN monthly_report_email TEXT/);
+  assert.match(route, /COALESCE\(/);
+  assert.match(route, /s\.monthly_report_email/);
+  assert.match(route, /MONTHLY_REPORT_EMAIL_NOT_CONFIGURED/);
+});
