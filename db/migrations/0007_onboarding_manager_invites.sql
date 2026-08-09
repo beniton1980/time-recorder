@@ -150,7 +150,7 @@ BEGIN
     'active',
     'MANAGER'
   )
-  ON CONFLICT (store_id, line_user_id)
+  ON CONFLICT ON CONSTRAINT staff_store_id_line_user_id_key
   DO UPDATE SET
     legal_name = EXCLUDED.legal_name,
     status = 'active',
