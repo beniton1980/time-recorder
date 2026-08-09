@@ -193,6 +193,49 @@
   color: #68756c;
 }
 
+.sectionNote {
+  margin: -4px 0 14px;
+  color: #68756c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.staffManagementList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staffManagementList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 0;
+  border-top: 1px solid #e5ebe6;
+}
+
+.staffManagementList li:first-child { border-top: 0; }
+
+.staffManagementList li > div {
+  display: grid;
+  gap: 4px;
+}
+
+.staffManagementList li span {
+  color: #68756c;
+  font-size: 12px;
+}
+
+.staffManagementList button {
+  min-width: 96px;
+  min-height: 40px;
+  border-radius: 9px;
+  font-weight: 800;
+}
+
+.staffManagementList button:disabled { opacity: .45; }
+
 @media (min-width: 640px) {
   .page { padding-top: 48px; }
   .header, .section { padding: 26px 30px; }
@@ -396,3 +439,4 @@
   color: #173326;
   font: inherit;
 }
+
