@@ -43,7 +43,7 @@ type Membership = {
 
 type ViewState =
   | { kind: "loading" }
-  | { kind: "unregistered" }
+  | { kind: "unregistered"; storeName: string }
   | { kind: "store_required"; message: string }
   | {
       kind: "active_store_conflict";
@@ -131,6 +131,9 @@ export default function Home() {
   const [correctionReview, setCorrectionReview] = useState(false);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
+  const [registrationName, setRegistrationName] = useState("");
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const storeTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -198,7 +201,7 @@ export default function Home() {
         if (!active) return;
 
         if (!data.registered) {
-          setView({ kind: "unregistered" });
+          setView({ kind: "unregistered", storeName: data.store.store_name as string });
           return;
         }
 
@@ -238,6 +241,39 @@ export default function Home() {
       active = false;
     };
   }, []);
+
+  async function selfRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const legalName = registrationName.trim();
+    if (!legalName) {
+      setRegistrationError("お名前を入力してください。");
+      return;
+    }
+    const idToken = liff.getIDToken();
+    if (!idToken || !storeTokenRef.current) {
+      setRegistrationError("LINEの認証情報を取得できませんでした。");
+      return;
+    }
+    setRegistrationSubmitting(true);
+    setRegistrationError(null);
+    try {
+      const response = await fetch("/api/staff/self-register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, storeToken: storeTokenRef.current, legalName }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.code === "STAFF_ALREADY_REGISTERED"
+          ? "この店舗には既に登録されています。店長へ利用状態をご確認ください。"
+          : "スタッフ登録を完了できませんでした。");
+      }
+      window.location.reload();
+    } catch (caught) {
+      setRegistrationError(caught instanceof Error ? caught.message : "スタッフ登録を完了できませんでした。");
+      setRegistrationSubmitting(false);
+    }
+  }
 
 
   function canCorrectLastPunch(membership: Membership) {
@@ -535,8 +571,27 @@ export default function Home() {
 
         {view.kind === "unregistered" && (
           <div className="message">
-            <p className="status">スタッフ登録が見つかりません</p>
-            <p className="note">店舗管理者へ登録を依頼してください。</p>
+            <p className="status">{view.storeName}へ初回登録</p>
+            <p className="note">お名前を入力すると、この店舗で打刻できるようになります。</p>
+            <form className="correction-form" onSubmit={selfRegister}>
+              <label>
+                お名前
+                <input
+                  type="text"
+                  maxLength={100}
+                  autoComplete="name"
+                  value={registrationName}
+                  onChange={(event) => {
+                    setRegistrationName(event.target.value);
+                    setRegistrationError(null);
+                  }}
+                />
+              </label>
+              {registrationError && <p className="correction-error" role="alert">{registrationError}</p>}
+              <button className="correction-submit" type="submit" disabled={registrationSubmitting}>
+                {registrationSubmitting ? "登録中…" : "この店舗に登録する"}
+              </button>
+            </form>
           </div>
         )}
 
