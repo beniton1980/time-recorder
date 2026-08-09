@@ -36,3 +36,11 @@ test("GPS reason remains separate and does not remove punches", async () => {
   assert.doesNotMatch(route, /validation_status = 'VALID'/);
 });
 
+test("manager UI exposes CSV only as an action on completed periods", async () => {
+  const page = await source("app/manager/page.tsx");
+  assert.match(page, /monthlyReports\.map/);
+  assert.match(page, /periodEnd: report\.period_end/);
+  assert.match(page, /補助CSV/);
+  assert.doesNotMatch(page, /type="month"/);
+});
+
