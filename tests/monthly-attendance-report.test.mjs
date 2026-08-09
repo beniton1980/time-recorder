@@ -11,8 +11,8 @@ test("confirmed work and breaks are totaled while issue days are excluded", () =
     ["2026-08-25", "CHECK_IN", "2026-08-25T13:00:00Z", "5"],
   ].map(([business_date, event_type, occurred_at, effective_id]) => ({ staff_id: "s1", legal_name: "山田 花子", business_date, event_type, occurred_at, effective_id }));
   const report = buildMonthlyAttendanceReport({ storeName: "店舗", timezone: "Asia/Tokyo", label: "8月度", period: { start: "2026-07-26", end: "2026-08-25" }, generatedAt: new Date("2026-08-26T00:00:00Z"), events, days: [
-    { staffId: "s1", businessDate: "2026-08-24", attendanceReasons: [], gpsIssues: [] },
-    { staffId: "s1", businessDate: "2026-08-25", attendanceReasons: ["UNCLOSED_SHIFT"], gpsIssues: [] },
+    { staffId: "s1", legalName: "山田 花子", businessDate: "2026-08-24", attendanceReasons: [], gpsIssues: [] },
+    { staffId: "s1", legalName: "山田 花子", businessDate: "2026-08-25", attendanceReasons: ["UNCLOSED_SHIFT"], gpsIssues: [] },
   ] });
   assert.equal(report.staff[0].workDuration, "08:00");
   assert.equal(report.staff[0].breakDuration, "01:00");
@@ -20,3 +20,24 @@ test("confirmed work and breaks are totaled while issue days are excluded", () =
   assert.equal(report.staff[0].attendanceIssueDays, 1);
 });
 
+test("staff with only a pending correction still appears as requiring attention", () => {
+  const report = buildMonthlyAttendanceReport({
+    storeName: "店舗",
+    timezone: "Asia/Tokyo",
+    label: "8月度",
+    period: { start: "2026-07-26", end: "2026-08-25" },
+    generatedAt: new Date("2026-08-26T00:00:00Z"),
+    events: [],
+    days: [{
+      staffId: "inactive",
+      legalName: "退職済みスタッフ",
+      businessDate: "2026-08-10",
+      attendanceReasons: ["PENDING_CORRECTION"],
+      gpsIssues: [],
+    }],
+  });
+  assert.equal(report.staff.length, 1);
+  assert.equal(report.staff[0].name, "退職済みスタッフ");
+  assert.equal(report.staff[0].attendanceIssueDays, 1);
+  assert.deepEqual(report.staff[0].events, []);
+});
