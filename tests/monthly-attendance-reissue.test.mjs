@@ -30,3 +30,11 @@ test("report listing is manager-scoped and returns only successful initial perio
   assert.match(route, /d\.delivery_version = 'initial' AND d\.status = 'SENT'/);
 });
 
+test("manager UI requires confirmation and disables duplicate clicks", async () => {
+  const page = await source("app/manager/page.tsx");
+  assert.match(page, /window\.confirm/);
+  assert.match(page, /crypto\.randomUUID\(\)/);
+  assert.match(page, /disabled=\{reissuingPeriod !== null\}/);
+  assert.match(page, /再発行して送信/);
+});
+
