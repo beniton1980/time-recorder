@@ -440,3 +440,75 @@
   font: inherit;
 }
 
+
+.monthlyReportList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.monthlyReportList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 0;
+  border-top: 1px solid #e5ebe6;
+}
+
+.monthlyReportList li:first-child { border-top: 0; }
+
+.monthlyReportList li > div {
+  display: grid;
+  gap: 4px;
+}
+
+.monthlyReportList span {
+  color: #68756c;
+  font-size: 12px;
+}
+
+.monthlyReportList button {
+  min-height: 40px;
+  padding: 7px 12px;
+  border: 1px solid #347a57;
+  border-radius: 9px;
+  background: #347a57;
+  color: #fff;
+  font-weight: 800;
+}
+
+.monthlyReportList button:disabled { opacity: .45; }
+
+.reissueMessage {
+  margin: 0 0 12px;
+  padding: 11px 12px;
+  border-radius: 9px;
+  background: #eef4f0;
+  color: #285f44;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.monthlyReportActions {
+  display: flex;
+  gap: 8px;
+}
+
+.monthlyReportList .csvButton {
+  border-color: #aabcb0;
+  background: #fff;
+  color: #285f44;
+}
+
+@media (max-width: 520px) {
+  .monthlyReportList li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .monthlyReportActions {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+  }
+}
