@@ -123,17 +123,19 @@ export async function POST(request: Request) {
     `;
 
     if (memberships.length === 0) {
-      const registeredStaff = await sql`
-        SELECT 1
-        FROM staff st
-        JOIN stores s ON s.id = st.store_id
-        WHERE st.line_user_id = ${identity.sub}
-          AND st.status = 'active'
+      const targetStores = await sql`
+        SELECT s.id AS store_id, s.name AS store_name
+        FROM store_entry_tokens token
+        JOIN stores s ON s.id = token.store_id
+        WHERE token.token_hash = ${tokenHash}
+          AND token.active = TRUE
+          AND token.revoked_at IS NULL
+          AND (token.expires_at IS NULL OR token.expires_at > NOW())
           AND s.status = 'active'
         LIMIT 1
       `;
 
-      if (registeredStaff.length === 1) {
+      if (targetStores.length === 0) {
         return NextResponse.json(
           { ok: false, code: "STORE_TOKEN_INVALID" },
           { status: 403 },
@@ -143,6 +145,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         registered: false,
+        store: targetStores[0],
       });
     }
 
