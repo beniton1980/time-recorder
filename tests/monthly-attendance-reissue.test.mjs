@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+
+test("reissue resolves the manager store and ignores client store or recipient", async () => {
+  const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
+  assert.match(route, /verifyLineIdToken\(body\.idToken\)/);
+  assert.match(route, /st\.role = 'MANAGER'/);
+  assert.match(route, /recipient: String\(store\.contact_email\)/);
+  assert.doesNotMatch(route, /body\.storeId|body\.recipient/);
+});
+
+test("only a previously sent initial report can be reissued", async () => {
+  const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
+  assert.match(route, /delivery_version = 'initial' AND status = 'SENT'/);
+  assert.match(route, /MONTHLY_REPORT_NOT_FOUND/);
+});
+
+test("request IDs make retries idempotent and failed delivery retryable", async () => {
+  const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
+  assert.match(route, /reissue-\$\{body\.requestId\}/);
+  assert.match(route, /ON CONFLICT \(store_id, period_start, period_end, delivery_version\)/);
+  assert.match(route, /WHERE monthly_attendance_deliveries\.status = 'FAILED'/);
+});
+
+test("report listing is manager-scoped and returns only successful initial periods", async () => {
+  const route = await source("app/api/manager/monthly-attendance/reports/route.ts");
+  assert.match(route, /st\.line_user_id = \$\{identity\.sub\}/);
+  assert.match(route, /d\.delivery_version = 'initial' AND d\.status = 'SENT'/);
+});
+
