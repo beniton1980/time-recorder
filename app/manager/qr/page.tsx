@@ -150,7 +150,8 @@ export default function StoreQrPage() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${safeStoreName}-打刻QR.svg`;
+    const safeFileName = issued.storeName.replace(/[\\/:*?"<>|]/g, "-");
+    anchor.download = `${safeFileName}-打刻QR.svg`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
