@@ -28,6 +28,7 @@ export default function ManagerInvitePage() {
           liff.login({ redirectUri: window.location.href });
           return;
         }
+        window.history.replaceState({}, "", window.location.pathname);
         if (active) setReady(true);
       } catch {
         if (active) setError("LINE認証を開始できませんでした。");
