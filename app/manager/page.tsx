@@ -52,7 +52,15 @@ type Dashboard = {
   };
   attendance: Attendance[];
   corrections: Correction[];
+  staffMemberships: StaffMembership[];
   businessDate: string;
+};
+
+type StaffMembership = {
+  staff_id: string;
+  legal_name: string;
+  status: "active" | "inactive";
+  state: WorkState;
 };
 
 type DirectEdit = {
@@ -141,6 +149,7 @@ export default function ManagerPage() {
   const [directError, setDirectError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
   const [selectedStaffId, setSelectedStaffId] = useState("ALL");
+  const [updatingStaffId, setUpdatingStaffId] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async (businessDate?: string) => {
     const idToken = liff.getIDToken();
@@ -347,6 +356,36 @@ export default function ManagerPage() {
     }
   }
 
+  async function updateStaffStatus(staff: StaffMembership) {
+    const nextStatus = staff.status === "active" ? "inactive" : "active";
+    const action = nextStatus === "inactive" ? "利用停止" : "利用再開";
+    if (!window.confirm(`${staff.legal_name}さんを${action}しますか？`)) return;
+
+    setUpdatingStaffId(staff.staff_id);
+    setError(null);
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/staff/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, staffId: staff.staff_id, status: nextStatus }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        if (data.code === "STAFF_ACTIVE_WORK") {
+          throw new Error("勤務中または休憩中のスタッフは停止できません。先に退勤してください。");
+        }
+        throw new Error(`${action}できませんでした。`);
+      }
+      await loadDashboard(selectedDate);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : `${action}できませんでした。`);
+    } finally {
+      setUpdatingStaffId(null);
+    }
+  }
+
   const visibleAttendance = dashboard?.attendance.filter(
     (staff) => selectedStaffId === "ALL" || staff.staff_id === selectedStaffId,
   ) ?? [];
@@ -371,6 +410,41 @@ export default function ManagerPage() {
 
         {dashboard && (
           <>
+            <section className={styles.section}>
+              <div className={styles.sectionHeading}>
+                <h2>スタッフ管理</h2>
+                <span>{dashboard.staffMemberships.length}名</span>
+              </div>
+              <p className={styles.sectionNote}>登録は店舗QRから自動で行われます。必要なときだけ停止・再開してください。</p>
+              {dashboard.staffMemberships.length === 0 ? (
+                <p className={styles.empty}>登録済みスタッフはいません</p>
+              ) : (
+                <ul className={styles.staffManagementList}>
+                  {dashboard.staffMemberships.map((staff) => (
+                    <li key={staff.staff_id}>
+                      <div>
+                        <strong>{staff.legal_name}</strong>
+                        <span>{staff.status === "active" ? "利用中" : "停止中"}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className={staff.status === "active" ? styles.reject : styles.approve}
+                        disabled={updatingStaffId !== null || (staff.status === "active" && staff.state !== "OFF_DUTY")}
+                        title={staff.status === "active" && staff.state !== "OFF_DUTY" ? "退勤後に停止できます" : undefined}
+                        onClick={() => void updateStaffStatus(staff)}
+                      >
+                        {updatingStaffId === staff.staff_id
+                          ? "処理中…"
+                          : staff.status === "active"
+                            ? "利用停止"
+                            : "利用再開"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
                 <h2>勤務状況</h2>
@@ -628,3 +702,4 @@ export default function ManagerPage() {
     </main>
   );
 }
+
