@@ -17,3 +17,13 @@
 - Vercel
 - Neon Postgres
 - LINE LIFF
+
+## 店舗オンボーディング
+
+限定提供版の申請・承認APIを有効にする前に、次を設定します。
+
+1. `db/migrations/0006_onboarding_requests.sql` を対象DBへ適用
+2. VercelのProduction / Previewへ `ONOGAMI_OPERATOR_LINE_USER_IDS` を追加
+3. 値には店舗申請を確認できるONOGAMI運営者のLINE user IDをカンマ区切りで設定
+
+この変数はサーバーだけで参照し、`NEXT_PUBLIC_`は付けません。未設定の場合、運営者用APIは安全側に倒れて利用できません。
