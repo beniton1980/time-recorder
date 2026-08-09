@@ -39,7 +39,7 @@ BEGIN
   SELECT st.legal_name, COALESCE(ss.state, 'OFF_DUTY')
   INTO target_name, target_state
   FROM staff st
-  LEFT JOIN staff_states ss ON ss.staff_id = st.id
+  JOIN staff_states ss ON ss.staff_id = st.id
   WHERE st.id = p_staff_id
     AND st.store_id = manager_store_id
     AND st.role = 'STAFF'
