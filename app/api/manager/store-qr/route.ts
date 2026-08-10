@@ -10,6 +10,8 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const LIFF_ID = "2010761826-6FNSE1PD";
+
 type TokenRequest = {
   idToken?: unknown;
   storeId?: unknown;
@@ -103,10 +105,7 @@ export async function POST(request: Request) {
         ${hashToken(rawToken)}
       )
     `;
-    const entryUrl = new URL(
-      `/?store_token=${encodeURIComponent(rawToken)}`,
-      request.url,
-    ).toString();
+    const entryUrl = `https://liff.line.me/${LIFF_ID}?store_token=${encodeURIComponent(rawToken)}`;
     const qrSvg = await QRCode.toString(entryUrl, {
       type: "svg",
       errorCorrectionLevel: "M",
