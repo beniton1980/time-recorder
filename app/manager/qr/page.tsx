@@ -36,6 +36,9 @@ export default function StoreQrPage() {
   const [message, setMessage] = useState("管理者権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const managerUrl = storeId
+    ? `${MANAGER_LIFF_URL}?store_id=${encodeURIComponent(storeId)}`
+    : MANAGER_LIFF_URL;
 
   const storeName = useMemo(
     () => memberships.find((item) => item.store_id === storeId)?.store_name ?? "",
@@ -215,7 +218,7 @@ export default function StoreQrPage() {
             <button type="button" onClick={printA4}>A4案内をPDF保存・印刷</button>
           </section>
         )}
-        <a className={styles.back} href={MANAGER_LIFF_URL}>管理者画面へ戻る</a>
+        <a className={styles.back} href={managerUrl}>管理者画面へ戻る</a>
       </section>
     </main>
   );
