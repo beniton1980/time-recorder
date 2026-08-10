@@ -63,8 +63,8 @@ test("claim issues the first store QR after activating the manager", async () =>
 
   assert.match(route, /rotate_store_entry_token/);
   assert.match(route, /randomBytes\(32\)\.toString\("base64url"\)/);
-  assert.match(route, /QRCode\.toString\(entryUrl/);
-  assert.match(route, /storeQr = \{ entryUrl, qrSvg \}/);
+  assert.match(route, /QRCode\.toDataURL\(entryUrl/);
+  assert.match(route, /storeQr = \{ entryUrl, qrPngDataUrl \}/);
   assert.match(route, /catch \(qrError\)/);
   assert.match(route, /return NextResponse\.json\(\{[\s\S]*ok: true,[\s\S]*storeQr/);
 });
