@@ -61,6 +61,9 @@ test("initial QR is generated, downloaded, and emailed as PNG", async () => {
   assert.match(mailer, /attachments/);
   assert.match(mailer, /content_type: "image\/png"/);
   assert.match(mailer, /data:image\/png;base64,/);
+  assert.match(mailer, /LINEで管理者画面を開く/);
+  assert.match(mailer, /打刻修正申請の承認/);
+  assert.match(claim, /\/manager\?store_id=/);
   assert.doesNotMatch(mailer, /image\/svg\+xml/);
 });
 
@@ -83,8 +86,10 @@ test("newly registered store is selected after membership validation", async () 
 
   assert.match(invite, /data\.manager\.storeId/);
   assert.match(invite, /store_id=\$\{encodeURIComponent\(storeId\)\}/);
+  assert.match(invite, /href=\{managerUrl\}>管理者画面へ/);
   assert.match(claim, /store_id=\$\{encodeURIComponent\(result\.store_id\)\}/);
   assert.match(qrManager, /new URLSearchParams\(window\.location\.search\)/);
   assert.match(qrManager, /item\.store_id === requestedStoreId/);
   assert.match(qrManager, /\?\.store_id \?\? items\[0\]\.store_id/);
+  assert.match(qrManager, /href=\{managerUrl\}>管理者画面へ戻る/);
 });
