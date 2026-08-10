@@ -48,9 +48,13 @@ test("initial QR is generated, downloaded, and emailed as PNG", async () => {
   assert.match(claim, /QRCode\.toDataURL/);
   assert.match(claim, /qrPngDataUrl/);
   assert.match(claim, /catch \(mailError\)/);
+  assert.match(page, /navigator\.canShare\(\{ files: \[imageFile\] \}\)/);
+  assert.match(page, /navigator\.share/);
   assert.match(page, /anchor\.href = qrPngDataUrl/);
+  assert.match(page, /長押しして画像を保存/);
   assert.match(page, /打刻QR\.png/);
-  assert.match(page, /店舗QRをPNGで保存/);
+  assert.match(page, /店舗QRを保存/);
+  assert.doesNotMatch(page, /店舗QRをPNGで保存/);
   assert.match(mailer, /Idempotency-Key/);
   assert.match(mailer, /onboarding-store-qr-/);
   assert.match(mailer, /attachments/);
@@ -76,10 +80,10 @@ test("newly registered store is selected after membership validation", async () 
   const invite = await source("app/onboarding/invite/page.tsx");
   const qrManager = await source("app/manager/qr/page.tsx");
 
-  assert.match(invite, /data\\.manager\\.storeId/);
-  assert.match(invite, /store_id=\\$\\{encodeURIComponent\\(storeId\\)\\}/);
-  assert.match(claim, /store_id=\\$\\{encodeURIComponent\\(result\\.store_id\\)\\}/);
-  assert.match(qrManager, /new URLSearchParams\\(window\\.location\\.search\\)/);
-  assert.match(qrManager, /item\\.store_id === requestedStoreId/);
-  assert.match(qrManager, /\\?\\.store_id \\?\\? items\\[0\\]\\.store_id/);
+  assert.match(invite, /data\.manager\.storeId/);
+  assert.match(invite, /store_id=\$\{encodeURIComponent\(storeId\)\}/);
+  assert.match(claim, /store_id=\$\{encodeURIComponent\(result\.store_id\)\}/);
+  assert.match(qrManager, /new URLSearchParams\(window\.location\.search\)/);
+  assert.match(qrManager, /item\.store_id === requestedStoreId/);
+  assert.match(qrManager, /\?\.store_id \?\? items\[0\]\.store_id/);
 });
