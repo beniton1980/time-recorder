@@ -8,7 +8,10 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type DashboardRequest = { idToken?: unknown; businessDate?: unknown };
+type DashboardRequest = { idToken?: unknown; businessDate?: unknown; storeId?: unknown };
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request) {
   let body: DashboardRequest;
@@ -20,6 +23,10 @@ export async function POST(request: Request) {
 
   if (typeof body.idToken !== "string" || body.idToken.length === 0) {
     return NextResponse.json({ ok: false, code: "ID_TOKEN_REQUIRED" }, { status: 400 });
+  }
+
+  if (body.storeId !== undefined && (typeof body.storeId !== "string" || !uuidPattern.test(body.storeId))) {
+    return NextResponse.json({ ok: false, code: "INVALID_STORE_ID" }, { status: 400 });
   }
 
   try {
@@ -34,6 +41,8 @@ export async function POST(request: Request) {
         AND st.status = 'active'
         AND st.role = 'MANAGER'
         AND s.status = 'active'
+        AND (${typeof body.storeId === "string" ? body.storeId : null}::uuid IS NULL
+          OR st.store_id = ${typeof body.storeId === "string" ? body.storeId : null}::uuid)
       ORDER BY st.created_at ASC
       LIMIT 1
     `;
