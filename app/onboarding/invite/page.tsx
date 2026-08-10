@@ -116,6 +116,9 @@ export default function ManagerInvitePage() {
   const managerQrUrl = storeId
     ? `${MANAGER_QR_LIFF_URL}?store_id=${encodeURIComponent(storeId)}`
     : MANAGER_QR_LIFF_URL;
+  const managerUrl = storeId
+    ? `${MANAGER_LIFF_URL}?store_id=${encodeURIComponent(storeId)}`
+    : MANAGER_LIFF_URL;
 
   return <main className={styles.page}><section className={[styles.shell, styles.center].join(" ")}>
     <p className={styles.brand}>ONOGAMI</p>
@@ -131,7 +134,7 @@ export default function ManagerInvitePage() {
         {saveNotice && <p className={styles.notice}>{saveNotice}</p>}
         <div className={styles.completionActions}>
           <button className={styles.primary} type="button" onClick={() => void saveQr()}>店舗QRを保存</button>
-          <a className={styles.secondary} href={MANAGER_LIFF_URL}>管理者画面へ</a>
+          <a className={styles.secondary} href={managerUrl}>管理者画面へ</a>
         </div>
       </> : <>
         <p className={styles.tokenWarning}>QRの自動発行を完了できませんでした。QR管理画面から発行してください。</p>
