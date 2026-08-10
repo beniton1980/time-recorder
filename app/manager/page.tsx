@@ -147,7 +147,7 @@ function currentBusinessDate() {
 
 export default function ManagerPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
-  const [message, setMessage] = useState("店長権限を確認しています");
+  const [message, setMessage] = useState("管理者権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
@@ -176,9 +176,9 @@ export default function ManagerPage() {
 
     if (!response.ok || !data.ok) {
       if (data.code === "MANAGER_ACCESS_REQUIRED") {
-        throw new Error("この画面を利用できる店長権限がありません。");
+        throw new Error("この画面を利用できる管理者権限がありません。");
       }
-      throw new Error("店長画面を読み込めませんでした。");
+      throw new Error("管理者画面を読み込めませんでした。");
     }
 
     setDashboard(data as Dashboard);
@@ -211,7 +211,7 @@ export default function ManagerPage() {
         if (active) await Promise.all([loadDashboard(selectedDate), loadMonthlyReports()]);
       } catch (caught) {
         if (active) {
-          setError(caught instanceof Error ? caught.message : "店長画面を読み込めませんでした。");
+          setError(caught instanceof Error ? caught.message : "管理者画面を読み込めませんでした。");
         }
       }
     }
@@ -264,7 +264,7 @@ export default function ManagerPage() {
 
   async function submitDirectEdit() {
     if (!directEdit || !directEdit.reason.trim()) {
-      setDirectError("店長による修正理由を入力してください。");
+      setDirectError("管理者による修正理由を入力してください。");
       return;
     }
     await dismissKeyboard();
@@ -471,7 +471,7 @@ export default function ManagerPage() {
       <section className={styles.shell}>
         <header className={styles.header}>
           <p className={styles.eyebrow}>ONOGAMI</p>
-          <h1>店長画面</h1>
+          <h1>管理者画面</h1>
           {dashboard && (
             <>
               <p className={styles.store}>{dashboard.manager.store_name}</p>
@@ -659,7 +659,7 @@ export default function ManagerPage() {
                   )}
                   <label>
                     修正理由
-                    <input value={directEdit.reason} onChange={(event) => setDirectEdit({ ...directEdit, reason: event.target.value })} placeholder="例：店長確認により時刻を修正" />
+                    <input value={directEdit.reason} onChange={(event) => setDirectEdit({ ...directEdit, reason: event.target.value })} placeholder="例：管理者確認により時刻を修正" />
                   </label>
                   {directError && (
                     <p className={styles.fieldError} role="alert">{directError}</p>
@@ -725,7 +725,7 @@ export default function ManagerPage() {
 
                       {correction.operation === "REVIEW" && (
                         <div className={styles.resolution}>
-                          <p>店長が確認した内容を入力してください</p>
+                          <p>管理者が確認した内容を入力してください</p>
                           <label>
                             追加する打刻
                             <select

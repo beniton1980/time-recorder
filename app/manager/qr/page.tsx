@@ -33,7 +33,7 @@ export default function StoreQrPage() {
   const [storeId, setStoreId] = useState("");
   const [hasActiveQr, setHasActiveQr] = useState(false);
   const [issued, setIssued] = useState<IssuedQr | null>(null);
-  const [message, setMessage] = useState("店長権限を確認しています");
+  const [message, setMessage] = useState("管理者権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -77,7 +77,7 @@ export default function StoreQrPage() {
         });
         const data = await response.json();
         if (!response.ok || !data.ok) {
-          throw new Error("店長権限を確認できませんでした。");
+          throw new Error("管理者権限を確認できませんでした。");
         }
         const items = data.manager.memberships as Membership[];
         if (!active) return;
@@ -171,7 +171,7 @@ export default function StoreQrPage() {
     }
     popup.opener = null;
     const safeStoreName = escapeHtml(issued.storeName);
-    popup.document.write(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${safeStoreName} 打刻QR</title><style>@page{size:A4;margin:18mm}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;text-align:center;color:#17221b}h1{font-size:30px;margin:8mm 0 3mm}.brand{font-weight:800;letter-spacing:.16em;color:#207a45}.qr{width:120mm;height:120mm;margin:8mm auto 5mm}.steps{font-size:18px;line-height:1.8;text-align:left;display:inline-block}.note{font-size:14px;color:#526057;margin-top:8mm}@media print{button{display:none}}</style></head><body><p class="brand">ONOGAMI 勤怠</p><h1>${safeStoreName}</h1><p>スタッフ打刻用QRコード</p><div class="qr">${issued.qrSvg}</div><ol class="steps"><li>LINEでQRコードを読み取る</li><li>店舗名を確認する</li><li>出勤・休憩・退勤を打刻する</li></ol><p class="note">QRが読み取れない場合は店長へお知らせください。</p><button onclick="window.print()">A4 PDFとして保存・印刷</button><script>window.onload=()=>window.print()<\/script></body></html>`);
+    popup.document.write(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${safeStoreName} 打刻QR</title><style>@page{size:A4;margin:18mm}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;text-align:center;color:#17221b}h1{font-size:30px;margin:8mm 0 3mm}.brand{font-weight:800;letter-spacing:.16em;color:#207a45}.qr{width:120mm;height:120mm;margin:8mm auto 5mm}.steps{font-size:18px;line-height:1.8;text-align:left;display:inline-block}.note{font-size:14px;color:#526057;margin-top:8mm}@media print{button{display:none}}</style></head><body><p class="brand">ONOGAMI 勤怠</p><h1>${safeStoreName}</h1><p>スタッフ打刻用QRコード</p><div class="qr">${issued.qrSvg}</div><ol class="steps"><li>LINEでQRコードを読み取る</li><li>店舗名を確認する</li><li>出勤・休憩・退勤を打刻する</li></ol><p class="note">QRが読み取れない場合は管理者へお知らせください。</p><button onclick="window.print()">A4 PDFとして保存・印刷</button><script>window.onload=()=>window.print()<\/script></body></html>`);
     popup.document.close();
   }
 
@@ -215,7 +215,7 @@ export default function StoreQrPage() {
             <button type="button" onClick={printA4}>A4案内をPDF保存・印刷</button>
           </section>
         )}
-        <a className={styles.back} href={MANAGER_LIFF_URL}>店長画面へ戻る</a>
+        <a className={styles.back} href={MANAGER_LIFF_URL}>管理者画面へ戻る</a>
       </section>
     </main>
   );
