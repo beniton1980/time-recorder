@@ -170,6 +170,50 @@ export default function OperatorOnboardingPage() {
     }
   }
 
+  async function deleteTestStore(item: Item) {
+    const confirmationStoreName = window.prompt(
+      "削除する店舗名を正確に入力してください。\n\n" + item.store_name,
+    );
+    if (confirmationStoreName === null) return;
+    if (confirmationStoreName.trim() !== item.store_name) {
+      setError("店舗名が一致しません。削除は実行されませんでした。");
+      return;
+    }
+    if (!window.confirm(
+      item.store_name
+      + "の申請・招待・QR・管理者データを完全に削除します。元に戻せません。実行しますか？",
+    )) return;
+
+    setWorking(item.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/operator/onboarding/requests/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idToken: idToken(),
+          requestId: item.id,
+          confirmationStoreName,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        if (data.code === "TEST_STORE_HAS_ATTENDANCE_HISTORY") {
+          throw new Error("勤怠・訂正・月次送信履歴があるため、この店舗は削除できません。");
+        }
+        if (data.code === "STORE_NAME_CONFIRMATION_MISMATCH") {
+          throw new Error("店舗名が一致しません。削除は実行されませんでした。");
+        }
+        throw new Error("テスト店舗を削除できませんでした。");
+      }
+      await load("PROVISIONED");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "テスト店舗を削除できませんでした。");
+    } finally {
+      setWorking(null);
+    }
+  }
+
   return <main className={styles.page}><section className={styles.shell}>
     <p className={styles.brand}>ONOGAMI OPERATOR</p>
     <h1>店舗申請管理</h1>
@@ -202,6 +246,9 @@ export default function OperatorOnboardingPage() {
         </>}
         {status === "APPROVED" && <div className={styles.actions}>
           <button className={styles.primary} type="button" disabled={working !== null || Boolean(invites[item.id])} onClick={()=>void provision(item)}>店舗と管理者招待を作成</button>
+        </div>}
+        {status === "PROVISIONED" && <div className={styles.actions}>
+          <button className={styles.danger} type="button" disabled={working !== null} onClick={()=>void deleteTestStore(item)}>テスト店舗データを削除</button>
         </div>}
         {invites[item.id] && <div className={styles.invite}>
           <strong>{emailSent[item.id] ? "管理者招待メールを送信しました" : "メールを送信できませんでした。招待リンクを手動で送ってください"}</strong>
