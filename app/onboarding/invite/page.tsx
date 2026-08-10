@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import styles from "../onboarding.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
-const MANAGER_QR_LIFF_URL = `https://liff.line.me/${LIFF_ID}/manager/qr`;
+const MANAGER_LIFF_URL = `https://liff.line.me/${LIFF_ID}/manager`;
+const MANAGER_QR_LIFF_URL = `${MANAGER_LIFF_URL}/qr`;
 
 export default function ManagerInvitePage() {
   const [token, setToken] = useState("");
@@ -130,7 +131,7 @@ export default function ManagerInvitePage() {
         {saveNotice && <p className={styles.notice}>{saveNotice}</p>}
         <div className={styles.completionActions}>
           <button className={styles.primary} type="button" onClick={() => void saveQr()}>店舗QRを保存</button>
-          <a className={styles.secondary} href={managerQrUrl}>QR管理画面へ</a>
+          <a className={styles.secondary} href={MANAGER_LIFF_URL}>管理者画面へ</a>
         </div>
       </> : <>
         <p className={styles.tokenWarning}>QRの自動発行を完了できませんでした。QR管理画面から発行してください。</p>
