@@ -12,8 +12,10 @@ export default function ManagerInvitePage() {
   const [ready, setReady] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [storeName, setStoreName] = useState<string | null>(null);
+  const [storeId, setStoreId] = useState<string | null>(null);
   const [qrPngDataUrl, setQrPngDataUrl] = useState<string | null>(null);
   const [qrEmailSent, setQrEmailSent] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,6 +63,7 @@ export default function ManagerInvitePage() {
         throw new Error("管理者登録を完了できませんでした。");
       }
       setStoreName(data.manager.storeName as string);
+      setStoreId(data.manager.storeId as string);
       setQrPngDataUrl((data.storeQr?.qrPngDataUrl as string | undefined) ?? null);
       setQrEmailSent(data.storeQrEmail?.sent === true);
     } catch (caught) {
@@ -70,15 +73,48 @@ export default function ManagerInvitePage() {
     }
   }
 
-  function downloadQr() {
+  async function saveQr() {
     if (!qrPngDataUrl || !storeName) return;
-    const anchor = document.createElement("a");
-    anchor.href = qrPngDataUrl;
-    anchor.download = `${storeName.replace(/[\\/:*?"<>|]/g, "-")}-打刻QR.png`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
+    setSaveNotice(null);
+    setError(null);
+    const safeFileName = storeName.replace(/[\\/:*?"<>|]/g, "-");
+    try {
+      const imageBlob = await (await fetch(qrPngDataUrl)).blob();
+      const imageFile = new File(
+        [imageBlob],
+        `${safeFileName}-打刻QR.png`,
+        { type: "image/png" },
+      );
+      if (
+        typeof navigator.share === "function"
+        && typeof navigator.canShare === "function"
+        && navigator.canShare({ files: [imageFile] })
+      ) {
+        await navigator.share({
+          files: [imageFile],
+          title: `${storeName}の店舗QR`,
+        });
+        return;
+      }
+
+      const anchor = document.createElement("a");
+      anchor.href = qrPngDataUrl;
+      anchor.download = imageFile.name;
+      anchor.target = "_blank";
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setSaveNotice("保存されない場合は、開いたQR画像を長押しして画像を保存してください。");
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setError("QR画像を保存できませんでした。画面のQR画像を長押しして保存してください。");
+    }
   }
+
+  const managerQrUrl = storeId
+    ? `${MANAGER_QR_LIFF_URL}?store_id=${encodeURIComponent(storeId)}`
+    : MANAGER_QR_LIFF_URL;
 
   return <main className={styles.page}><section className={[styles.shell, styles.center].join(" ")}>
     <p className={styles.brand}>ONOGAMI</p>
@@ -91,14 +127,15 @@ export default function ManagerInvitePage() {
           <img src={qrPngDataUrl} alt={`${storeName}の打刻QRコード`} />
         </div>
         {qrEmailSent && <p className={styles.notice}>同じQR画像を登録メールアドレスにも送信しました。</p>}
+        {saveNotice && <p className={styles.notice}>{saveNotice}</p>}
         <div className={styles.completionActions}>
-          <button className={styles.primary} type="button" onClick={downloadQr}>店舗QRをPNGで保存</button>
-          <a className={styles.secondary} href={MANAGER_QR_LIFF_URL}>QR管理画面へ</a>
+          <button className={styles.primary} type="button" onClick={() => void saveQr()}>店舗QRを保存</button>
+          <a className={styles.secondary} href={managerQrUrl}>QR管理画面へ</a>
         </div>
       </> : <>
         <p className={styles.tokenWarning}>QRの自動発行を完了できませんでした。QR管理画面から発行してください。</p>
         <div className={styles.completionActions}>
-          <a className={styles.primary} href={MANAGER_QR_LIFF_URL}>QRを発行する</a>
+          <a className={styles.primary} href={managerQrUrl}>QRを発行する</a>
         </div>
       </>}
     </> : <>
