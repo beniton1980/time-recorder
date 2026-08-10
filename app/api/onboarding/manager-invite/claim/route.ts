@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { getSql } from "@/lib/db";
+import { sendInitialStoreQrMail } from "@/lib/onboarding/send-initial-store-qr";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -9,6 +10,8 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const LIFF_ID = "2010761826-6FNSE1PD";
 
 type ClaimRequest = {
   idToken?: unknown;
@@ -63,6 +66,7 @@ export async function POST(request: Request) {
 
     const result = claimed[0];
     let storeQr: { entryUrl: string; qrSvg: string } | null = null;
+    let storeQrEmail: Awaited<ReturnType<typeof sendInitialStoreQrMail>> | null = null;
 
     try {
       const rawStoreToken = randomBytes(32).toString("base64url");
@@ -84,6 +88,31 @@ export async function POST(request: Request) {
         width: 720,
       });
       storeQr = { entryUrl, qrSvg };
+
+      const recipients = await sql`
+        SELECT id, contact_email, manager_legal_name
+        FROM onboarding_requests
+        WHERE provisioned_store_id = ${result.store_id}
+        LIMIT 1
+      `;
+      if (recipients.length > 0) {
+        try {
+          storeQrEmail = await sendInitialStoreQrMail({
+            requestId: recipients[0].id,
+            recipient: recipients[0].contact_email,
+            managerName: recipients[0].manager_legal_name,
+            storeName: result.store_name,
+            qrSvg,
+            managerUrl: `https://liff.line.me/${LIFF_ID}/manager/qr`,
+          });
+        } catch (mailError) {
+          console.error("Initial store QR email delivery failed", {
+            storeId: result.store_id,
+            error: mailError instanceof Error ? mailError.name : "UnknownError",
+          });
+          storeQrEmail = { sent: false, code: "EMAIL_DELIVERY_FAILED" };
+        }
+      }
     } catch (qrError) {
       console.error("Initial store QR issuance failed", {
         storeId: result.store_id,
@@ -99,6 +128,7 @@ export async function POST(request: Request) {
         storeName: result.store_name,
       },
       storeQr,
+      storeQrEmail,
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {

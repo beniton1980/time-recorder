@@ -16,6 +16,8 @@ type ProvisionRequest = {
   requestId?: unknown;
 };
 
+const LIFF_ID = "2010761826-6FNSE1PD";
+
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -57,10 +59,7 @@ export async function POST(request: Request) {
     `;
 
     const result = provisioned[0];
-    const inviteUrl = new URL(
-      `/onboarding/invite?token=${encodeURIComponent(rawToken)}`,
-      request.url,
-    ).toString();
+    const inviteUrl = `https://liff.line.me/${LIFF_ID}/onboarding/invite?token=${encodeURIComponent(rawToken)}`;
     const recipients = await sql`
       SELECT contact_email, manager_legal_name
       FROM onboarding_requests

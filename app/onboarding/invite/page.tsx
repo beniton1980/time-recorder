@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import styles from "../onboarding.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
+const MANAGER_QR_LIFF_URL = `https://liff.line.me/${LIFF_ID}/manager/qr`;
 
 export default function ManagerInvitePage() {
   const [token, setToken] = useState("");
@@ -12,6 +13,7 @@ export default function ManagerInvitePage() {
   const [claiming, setClaiming] = useState(false);
   const [storeName, setStoreName] = useState<string | null>(null);
   const [qrSvg, setQrSvg] = useState<string | null>(null);
+  const [qrEmailSent, setQrEmailSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +62,7 @@ export default function ManagerInvitePage() {
       }
       setStoreName(data.manager.storeName as string);
       setQrSvg((data.storeQr?.qrSvg as string | undefined) ?? null);
+      setQrEmailSent(data.storeQrEmail?.sent === true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "管理者登録を完了できませんでした。");
     } finally {
@@ -85,10 +88,18 @@ export default function ManagerInvitePage() {
       <p className={styles.success}>{storeName}の店舗管理者として登録され、店舗が利用可能になりました。</p>
       {qrSvg ? <>
         <p className={styles.tokenWarning}>店舗の打刻QRを発行しました。この画面を閉じる前に保存してください。</p>
-        <div dangerouslySetInnerHTML={{ __html: qrSvg }} />
-        <button className={styles.primary} type="button" onClick={downloadQr}>店舗QRを保存</button>
-      </> : <p className={styles.tokenWarning}>QRの自動発行を完了できませんでした。QR管理画面から発行してください。</p>}
-      <a className={styles.back} href="/manager/qr">{qrSvg ? "QR管理画面へ" : "QRを発行する"}</a>
+        <div className={styles.qrPreview} dangerouslySetInnerHTML={{ __html: qrSvg }} />
+        {qrEmailSent && <p className={styles.notice}>同じQR画像を登録メールアドレスにも送信しました。</p>}
+        <div className={styles.completionActions}>
+          <button className={styles.primary} type="button" onClick={downloadQr}>店舗QRを保存</button>
+          <a className={styles.secondary} href={MANAGER_QR_LIFF_URL}>{qrSvg ? "QR管理画面へ" : "QRを発行する"}</a>
+        </div>
+      </> : <>
+        <p className={styles.tokenWarning}>QRの自動発行を完了できませんでした。QR管理画面から発行してください。</p>
+        <div className={styles.completionActions}>
+          <a className={styles.primary} href={MANAGER_QR_LIFF_URL}>QRを発行する</a>
+        </div>
+      </>}
     </> : <>
       <h1>店舗管理者の登録</h1>
       <p className={styles.lead}>このLINEアカウントを店舗管理者として登録します。登録後、店舗の打刻QRを発行できます。</p>

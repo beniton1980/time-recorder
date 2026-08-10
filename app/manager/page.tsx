@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "./manager.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
+const MANAGER_QR_LIFF_URL = `https://liff.line.me/${LIFF_ID}/manager/qr`;
 
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
 type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
@@ -475,7 +476,7 @@ export default function ManagerPage() {
             <>
               <p className={styles.store}>{dashboard.manager.store_name}</p>
               <p className={styles.manager}>{dashboard.manager.legal_name}さん</p>
-              <a href="/manager/qr">店舗QRを発行・再発行</a>
+              <a href={MANAGER_QR_LIFF_URL}>店舗QRを発行・再発行</a>
             </>
           )}
         </header>
