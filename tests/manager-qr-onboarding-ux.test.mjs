@@ -15,6 +15,7 @@ test("manager onboarding and QR navigation stay inside LIFF", async () => {
   const qrManager = await source("app/manager/qr/page.tsx");
 
   assert.match(provision, /https:\/\/liff\.line\.me\/\$\{LIFF_ID\}\/onboarding\/invite/);
+  assert.match(invite, /MANAGER_LIFF_URL/);
   assert.match(invite, /MANAGER_QR_LIFF_URL/);
   assert.match(manager, /MANAGER_QR_LIFF_URL/);
   assert.match(qrManager, /MANAGER_LIFF_URL/);
