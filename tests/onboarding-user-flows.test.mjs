@@ -31,7 +31,8 @@ test("manager registration completion displays and saves the issued store QR as 
   assert.match(source, /data\.storeQr\?\.qrPngDataUrl/);
   assert.match(source, /<img src=\{qrPngDataUrl\}/);
   assert.match(source, /anchor\.href = qrPngDataUrl/);
-  assert.match(source, /店舗QRをPNGで保存/);
+  assert.match(source, /店舗QRを保存/);
+  assert.match(source, /navigator\.share/);
   assert.match(source, /QR管理画面へ/);
   assert.match(source, /QRの自動発行を完了できませんでした/);
   assert.match(source, /QRを発行する/);
