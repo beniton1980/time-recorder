@@ -11,6 +11,7 @@ type Operation = "ADD" | "REPLACE" | "VOID";
 
 type Body = {
   idToken?: unknown;
+  storeId?: unknown;
   staffId?: unknown;
   operation?: unknown;
   targetEffectiveId?: unknown;
@@ -18,6 +19,9 @@ type Body = {
   occurredAt?: unknown;
   reason?: unknown;
 };
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type EventRow = { effective_id: string; event_type: EventType; occurred_at: string };
 
@@ -65,6 +69,8 @@ export async function POST(request: Request) {
 
   if (
     typeof body.idToken !== "string" ||
+    typeof body.storeId !== "string" ||
+    !uuidPattern.test(body.storeId) ||
     typeof body.staffId !== "string" ||
     !["ADD", "REPLACE", "VOID"].includes(operation) ||
     !reason
@@ -94,6 +100,7 @@ export async function POST(request: Request) {
       JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active' AND st.role = 'MANAGER' AND s.status = 'active'
+        AND st.store_id = ${body.storeId}::uuid
       LIMIT 1
     `;
 
