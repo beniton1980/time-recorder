@@ -81,9 +81,14 @@ export default function StoreQrPage() {
         }
         const items = data.manager.memberships as Membership[];
         if (!active) return;
+        const requestedStoreId = new URLSearchParams(window.location.search)
+          .get("store_id");
+        const selectedStoreId = items.find(
+          (item) => item.store_id === requestedStoreId,
+        )?.store_id ?? items[0].store_id;
         setMemberships(items);
-        setStoreId(items[0].store_id);
-        const status = await request("STATUS", items[0].store_id);
+        setStoreId(selectedStoreId);
+        const status = await request("STATUS", selectedStoreId);
         if (!active) return;
         setHasActiveQr(status.token.active);
         setMessage("");

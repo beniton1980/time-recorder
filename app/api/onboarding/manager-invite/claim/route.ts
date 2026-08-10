@@ -102,7 +102,7 @@ export async function POST(request: Request) {
             managerName: recipients[0].manager_legal_name,
             storeName: result.store_name,
             qrPngDataUrl,
-            managerUrl: `https://liff.line.me/${LIFF_ID}/manager/qr`,
+            managerUrl: `https://liff.line.me/${LIFF_ID}/manager/qr?store_id=${encodeURIComponent(result.store_id)}`,
           });
         } catch (mailError) {
           console.error("Initial store QR email delivery failed", {
