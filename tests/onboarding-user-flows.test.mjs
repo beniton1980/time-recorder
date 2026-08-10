@@ -33,7 +33,7 @@ test("manager registration completion displays and saves the issued store QR as 
   assert.match(source, /anchor\.href = qrPngDataUrl/);
   assert.match(source, /店舗QRを保存/);
   assert.match(source, /navigator\.share/);
-  assert.match(source, /href=\{MANAGER_LIFF_URL\}>管理者画面へ/);
+  assert.match(source, /href=\{managerUrl\}>管理者画面へ/);
   assert.match(source, /QRの自動発行を完了できませんでした/);
   assert.match(source, /QRを発行する/);
 });

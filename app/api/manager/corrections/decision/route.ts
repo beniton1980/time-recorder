@@ -13,11 +13,15 @@ type EventType = (typeof eventTypes)[number];
 
 type DecisionRequest = {
   idToken?: unknown;
+  storeId?: unknown;
   requestId?: unknown;
   decision?: unknown;
   resolvedEventType?: unknown;
   resolvedOccurredAt?: unknown;
 };
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isEventType(value: unknown): value is EventType {
   return typeof value === "string" && eventTypes.includes(value as EventType);
@@ -33,6 +37,8 @@ export async function POST(request: Request) {
 
   if (
     typeof body.idToken !== "string" ||
+    typeof body.storeId !== "string" ||
+    !uuidPattern.test(body.storeId) ||
     typeof body.requestId !== "string" ||
     (body.decision !== "APPROVED" && body.decision !== "REJECTED")
   ) {
@@ -51,6 +57,7 @@ export async function POST(request: Request) {
         AND st.status = 'active'
         AND st.role = 'MANAGER'
         AND s.status = 'active'
+        AND st.store_id = ${body.storeId}::uuid
       ORDER BY st.created_at ASC
       LIMIT 1
     `;

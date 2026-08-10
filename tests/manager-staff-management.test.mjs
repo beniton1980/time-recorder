@@ -42,3 +42,16 @@ test("manager dashboard includes active and inactive STAFF memberships", async (
   assert.match(page, /利用再開/);
 });
 
+
+
+test("manager dashboard and correction actions stay on the selected store", async () => {
+  const dashboard = await source("app/api/manager/dashboard/route.ts");
+  const decision = await source("app/api/manager/corrections/decision/route.ts");
+  const direct = await source("app/api/manager/punch-corrections/route.ts");
+  const page = await source("app/manager/page.tsx");
+  assert.match(dashboard, /st\.store_id = \$\{typeof body\.storeId/);
+  assert.match(decision, /st\.store_id = \$\{body\.storeId\}::uuid/);
+  assert.match(direct, /st\.store_id = \$\{body\.storeId\}::uuid/);
+  assert.match(page, /new URLSearchParams\(window\.location\.search\)\.get\("store_id"\)/);
+  assert.match(page, /storeId: dashboard\?\.manager\.store_id/);
+});

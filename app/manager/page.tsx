@@ -49,6 +49,7 @@ type Correction = {
 type Dashboard = {
   manager: {
     legal_name: string;
+    store_id: string;
     store_name: string;
   };
   attendance: Attendance[];
@@ -167,10 +168,11 @@ export default function ManagerPage() {
     const idToken = liff.getIDToken();
     if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
 
+    const storeId = new URLSearchParams(window.location.search).get("store_id");
     const response = await fetch("/api/manager/dashboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken, businessDate }),
+      body: JSON.stringify({ idToken, businessDate, storeId: storeId ?? undefined }),
     });
     const data = await response.json();
 
@@ -281,6 +283,7 @@ export default function ManagerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           idToken,
+          storeId: dashboard?.manager.store_id,
           staffId: directEdit.staffId,
           operation: directEdit.operation,
           targetEffectiveId: directEdit.targetEffectiveId,
@@ -348,6 +351,7 @@ export default function ManagerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           idToken,
+          storeId: dashboard?.manager.store_id,
           requestId: correction.id,
           decision,
           resolvedEventType:
@@ -476,7 +480,7 @@ export default function ManagerPage() {
             <>
               <p className={styles.store}>{dashboard.manager.store_name}</p>
               <p className={styles.manager}>{dashboard.manager.legal_name}さん</p>
-              <a href={MANAGER_QR_LIFF_URL}>店舗QRを発行・再発行</a>
+              <a href={`${MANAGER_QR_LIFF_URL}?store_id=${encodeURIComponent(dashboard.manager.store_id)}`}>店舗QRを発行・再発行</a>
             </>
           )}
         </header>
