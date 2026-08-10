@@ -98,3 +98,13 @@ test("provisioning emails the invite with idempotency and preserves manual fallb
   assert.match(mailer, /no-reply@\$\{domain\}/);
   assert.doesNotMatch(mailer, /console\./);
 });
+
+
+test("initial store QR opens the attendance screen through LIFF", async () => {
+  const route = await source(
+    "app/api/onboarding/manager-invite/claim/route.ts",
+  );
+
+  assert.match(route, /https:\/\/liff\.line\.me\/\$\{LIFF_ID\}\?store_token=/);
+  assert.doesNotMatch(route, /new URL\([\s\S]*request\.url/);
+});
