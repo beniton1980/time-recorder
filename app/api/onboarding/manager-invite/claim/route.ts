@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     `;
 
     const result = claimed[0];
-    let storeQr: { entryUrl: string; qrSvg: string } | null = null;
+    let storeQr: { entryUrl: string; qrPngDataUrl: string } | null = null;
     let storeQrEmail: Awaited<ReturnType<typeof sendInitialStoreQrMail>> | null = null;
 
     try {
@@ -81,13 +81,12 @@ export async function POST(request: Request) {
         `/?store_token=${encodeURIComponent(rawStoreToken)}`,
         request.url,
       ).toString();
-      const qrSvg = await QRCode.toString(entryUrl, {
-        type: "svg",
+      const qrPngDataUrl = await QRCode.toDataURL(entryUrl, {
         errorCorrectionLevel: "M",
         margin: 2,
         width: 720,
       });
-      storeQr = { entryUrl, qrSvg };
+      storeQr = { entryUrl, qrPngDataUrl };
 
       const recipients = await sql`
         SELECT id, contact_email, manager_legal_name
@@ -102,7 +101,7 @@ export async function POST(request: Request) {
             recipient: recipients[0].contact_email,
             managerName: recipients[0].manager_legal_name,
             storeName: result.store_name,
-            qrSvg,
+            qrPngDataUrl,
             managerUrl: `https://liff.line.me/${LIFF_ID}/manager/qr`,
           });
         } catch (mailError) {

@@ -12,7 +12,7 @@ export default function ManagerInvitePage() {
   const [ready, setReady] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [storeName, setStoreName] = useState<string | null>(null);
-  const [qrSvg, setQrSvg] = useState<string | null>(null);
+  const [qrPngDataUrl, setQrPngDataUrl] = useState<string | null>(null);
   const [qrEmailSent, setQrEmailSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,7 +61,7 @@ export default function ManagerInvitePage() {
         throw new Error("管理者登録を完了できませんでした。");
       }
       setStoreName(data.manager.storeName as string);
-      setQrSvg((data.storeQr?.qrSvg as string | undefined) ?? null);
+      setQrPngDataUrl((data.storeQr?.qrPngDataUrl as string | undefined) ?? null);
       setQrEmailSent(data.storeQrEmail?.sent === true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "管理者登録を完了できませんでした。");
@@ -71,14 +71,13 @@ export default function ManagerInvitePage() {
   }
 
   function downloadQr() {
-    if (!qrSvg || !storeName) return;
-    const blob = new Blob([qrSvg], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    if (!qrPngDataUrl || !storeName) return;
     const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${storeName.replace(/[\\/:*?"<>|]/g, "-")}-打刻QR.svg`;
+    anchor.href = qrPngDataUrl;
+    anchor.download = `${storeName.replace(/[\\/:*?"<>|]/g, "-")}-打刻QR.png`;
+    document.body.appendChild(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
   }
 
   return <main className={styles.page}><section className={[styles.shell, styles.center].join(" ")}>
@@ -86,13 +85,15 @@ export default function ManagerInvitePage() {
     {storeName ? <>
       <h1>管理者登録が完了しました</h1>
       <p className={styles.success}>{storeName}の店舗管理者として登録され、店舗が利用可能になりました。</p>
-      {qrSvg ? <>
+      {qrPngDataUrl ? <>
         <p className={styles.tokenWarning}>店舗の打刻QRを発行しました。この画面を閉じる前に保存してください。</p>
-        <div className={styles.qrPreview} dangerouslySetInnerHTML={{ __html: qrSvg }} />
+        <div className={styles.qrPreview}>
+          <img src={qrPngDataUrl} alt={`${storeName}の打刻QRコード`} />
+        </div>
         {qrEmailSent && <p className={styles.notice}>同じQR画像を登録メールアドレスにも送信しました。</p>}
         <div className={styles.completionActions}>
-          <button className={styles.primary} type="button" onClick={downloadQr}>店舗QRを保存</button>
-          <a className={styles.secondary} href={MANAGER_QR_LIFF_URL}>{qrSvg ? "QR管理画面へ" : "QRを発行する"}</a>
+          <button className={styles.primary} type="button" onClick={downloadQr}>店舗QRをPNGで保存</button>
+          <a className={styles.secondary} href={MANAGER_QR_LIFF_URL}>QR管理画面へ</a>
         </div>
       </> : <>
         <p className={styles.tokenWarning}>QRの自動発行を完了できませんでした。QR管理画面から発行してください。</p>

@@ -107,8 +107,10 @@ export default function OperatorOnboardingPage() {
       setError("却下理由を入力してください。");
       return;
     }
-    const wording = decision === "APPROVED" ? "承認" : "却下";
-    if (!window.confirm(item.store_name + "の申請を" + wording + "しますか？")) return;
+    const confirmation = decision === "APPROVED"
+      ? item.store_name + "の申請を承認し、店舗と管理者招待を作成しますか？"
+      : item.store_name + "の申請を却下しますか？";
+    if (!window.confirm(confirmation)) return;
     setWorking(item.id);
     setError(null);
     try {
@@ -128,6 +130,10 @@ export default function OperatorOnboardingPage() {
           ? "この申請は既に処理されています。"
           : "申請を更新できませんでした。");
       }
+      if (decision === "APPROVED") {
+        await provision(item, false);
+        return;
+      }
       await load(status);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "申請を更新できませんでした。");
@@ -136,8 +142,11 @@ export default function OperatorOnboardingPage() {
     }
   }
 
-  async function provision(item: Item) {
-    if (!window.confirm(item.store_name + "を作成し、管理者招待を発行しますか？")) return;
+  async function provision(item: Item, confirmFirst = true) {
+    if (
+      confirmFirst
+      && !window.confirm(item.store_name + "を作成し、管理者招待を発行しますか？")
+    ) return;
     setWorking(item.id);
     setError(null);
     try {
@@ -164,7 +173,7 @@ export default function OperatorOnboardingPage() {
   return <main className={styles.page}><section className={styles.shell}>
     <p className={styles.brand}>ONOGAMI OPERATOR</p>
     <h1>店舗申請管理</h1>
-    <p className={styles.lead}>申請内容を確認し、承認後に店舗と一度限りの管理者招待を作成します。</p>
+    <p className={styles.lead}>申請内容を確認して承認すると、店舗作成と一度限りの管理者招待まで続けて実行します。</p>
     <nav className={styles.tabs} aria-label="申請状態">
       {(Object.keys(labels) as Status[]).map((value) =>
         <button key={value} className={status === value ? styles.selected : ""} type="button" onClick={()=>void switchStatus(value)}>{labels[value]}</button>

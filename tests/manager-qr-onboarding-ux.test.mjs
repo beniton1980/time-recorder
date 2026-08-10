@@ -38,18 +38,32 @@ test("manager invitation explains the LINE launch flow", async () => {
   assert.match(mailer, /スマートフォンでこのリンクを開くとLINEが起動します/);
 });
 
-test("initial QR is emailed as an SVG attachment without blocking claim", async () => {
+test("initial QR is generated, downloaded, and emailed as PNG", async () => {
   const claim = await source(
     "app/api/onboarding/manager-invite/claim/route.ts",
   );
+  const page = await source("app/onboarding/invite/page.tsx");
   const mailer = await source("lib/onboarding/send-initial-store-qr.ts");
 
-  assert.match(claim, /sendInitialStoreQrMail/);
+  assert.match(claim, /QRCode\.toDataURL/);
+  assert.match(claim, /qrPngDataUrl/);
   assert.match(claim, /catch \(mailError\)/);
-  assert.match(claim, /storeQrEmail/);
+  assert.match(page, /anchor\.href = qrPngDataUrl/);
+  assert.match(page, /打刻QR\.png/);
+  assert.match(page, /店舗QRをPNGで保存/);
   assert.match(mailer, /Idempotency-Key/);
   assert.match(mailer, /onboarding-store-qr-/);
   assert.match(mailer, /attachments/);
-  assert.match(mailer, /content_type: "image\/svg\+xml"/);
-  assert.match(mailer, /Buffer\.from\(mail\.qrSvg/);
+  assert.match(mailer, /content_type: "image\/png"/);
+  assert.match(mailer, /data:image\/png;base64,/);
+  assert.doesNotMatch(mailer, /image\/svg\+xml/);
+});
+
+test("operator approval continues directly to provisioning and invite creation", async () => {
+  const page = await source("app/operator/onboarding/page.tsx");
+
+  assert.match(page, /if \(decision === "APPROVED"\) \{/);
+  assert.match(page, /await provision\(item, false\)/);
+  assert.match(page, /async function provision\(item: Item, confirmFirst = true\)/);
+  assert.match(page, /承認し、店舗と管理者招待を作成しますか/);
 });
