@@ -77,10 +77,7 @@ export async function POST(request: Request) {
           ${tokenHash(rawStoreToken)}
         )
       `;
-      const entryUrl = new URL(
-        `/?store_token=${encodeURIComponent(rawStoreToken)}`,
-        request.url,
-      ).toString();
+      const entryUrl = `https://liff.line.me/${LIFF_ID}?store_token=${encodeURIComponent(rawStoreToken)}`;
       const qrPngDataUrl = await QRCode.toDataURL(entryUrl, {
         errorCorrectionLevel: "M",
         margin: 2,
