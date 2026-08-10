@@ -67,3 +67,19 @@ test("operator approval continues directly to provisioning and invite creation",
   assert.match(page, /async function provision\(item: Item, confirmFirst = true\)/);
   assert.match(page, /承認し、店舗と管理者招待を作成しますか/);
 });
+
+
+test("newly registered store is selected after membership validation", async () => {
+  const claim = await source(
+    "app/api/onboarding/manager-invite/claim/route.ts",
+  );
+  const invite = await source("app/onboarding/invite/page.tsx");
+  const qrManager = await source("app/manager/qr/page.tsx");
+
+  assert.match(invite, /data\\.manager\\.storeId/);
+  assert.match(invite, /store_id=\\$\\{encodeURIComponent\\(storeId\\)\\}/);
+  assert.match(claim, /store_id=\\$\\{encodeURIComponent\\(result\\.store_id\\)\\}/);
+  assert.match(qrManager, /new URLSearchParams\\(window\\.location\\.search\\)/);
+  assert.match(qrManager, /item\\.store_id === requestedStoreId/);
+  assert.match(qrManager, /\\?\\.store_id \\?\\? items\\[0\\]\\.store_id/);
+});
