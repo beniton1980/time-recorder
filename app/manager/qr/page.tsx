@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./qr.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
+const MANAGER_LIFF_URL = `https://liff.line.me/${LIFF_ID}/manager`;
 
 type Membership = {
   store_id: string;
@@ -209,7 +210,7 @@ export default function StoreQrPage() {
             <button type="button" onClick={printA4}>A4案内をPDF保存・印刷</button>
           </section>
         )}
-        <a className={styles.back} href="/manager">店長画面へ戻る</a>
+        <a className={styles.back} href={MANAGER_LIFF_URL}>店長画面へ戻る</a>
       </section>
     </main>
   );
