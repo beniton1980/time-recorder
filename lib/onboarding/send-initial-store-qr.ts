@@ -57,7 +57,8 @@ export async function sendInitialStoreQrMail(
       html: `<p>${escapeHtml(mail.managerName)} 様</p>
         <p>${escapeHtml(mail.storeName)}の管理者登録と店舗QRの発行が完了しました。</p>
         <p>添付のPNG画像を保存し、スタッフが読み取れる場所へ掲示してください。</p>
-        <p><a href="${escapeHtml(mail.managerUrl)}">LINEで店舗QR管理を開く</a></p>
+        <p>勤務状況の確認、打刻修正申請の承認、スタッフ管理は管理者画面から行えます。</p>
+        <p><a href="${escapeHtml(mail.managerUrl)}">LINEで管理者画面を開く</a></p>
         <p>QRを再発行すると、以前のQRは利用できなくなります。</p>`,
       attachments: [{
         filename: `${safeFileName(mail.storeName)}-打刻QR.png`,
