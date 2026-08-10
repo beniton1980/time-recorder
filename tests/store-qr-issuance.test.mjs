@@ -27,3 +27,10 @@ test("rotation and revocation are separate explicit actions", async () => {
   assert.match(route, /revoke_store_entry_tokens/);
   assert.match(route, /rotate_store_entry_token/);
 });
+
+
+test("manager QR opens the attendance screen through LIFF", async () => {
+  const route = await readFile(routePath, "utf8");
+  assert.match(route, /https:\/\/liff\.line\.me\/\$\{LIFF_ID\}\?store_token=/);
+  assert.doesNotMatch(route, /new URL\([\s\S]*request\.url/);
+});
