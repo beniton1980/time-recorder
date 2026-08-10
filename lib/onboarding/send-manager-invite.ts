@@ -47,7 +47,8 @@ export async function sendManagerInviteMail(
       subject: `【ONOGAMI 勤怠】${mail.storeName} 管理者登録のご案内`,
       html: `<p>${escapeHtml(mail.managerName)} 様</p>
         <p>${escapeHtml(mail.storeName)}の管理者登録をご案内します。</p>
-        <p><a href="${escapeHtml(mail.inviteUrl)}">管理者登録を開始する</a></p>
+        <p><a href="${escapeHtml(mail.inviteUrl)}">LINEで管理者登録を開始する</a></p>
+        <p>スマートフォンでこのリンクを開くとLINEが起動します。登録する管理者本人のLINEアカウントで続けてください。</p>
         <p>このリンクは${escapeHtml(expiresAt)}まで有効で、一度だけ利用できます。</p>
         <p>心当たりがない場合は、このメールを破棄してください。</p>`,
     }),
