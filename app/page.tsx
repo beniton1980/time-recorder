@@ -198,7 +198,7 @@ export default function Home() {
           if (data.code === "STAFF_INACTIVE") {
             setView({
               kind: "store_required",
-              message: "この店舗での利用は停止されています。店長に確認してください。",
+              message: "この店舗での利用は停止されています。管理者に確認してください。",
             });
             return;
           }
@@ -273,7 +273,7 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok || !data.ok) {
         throw new Error(data.code === "STAFF_ALREADY_REGISTERED"
-          ? "この店舗には既に登録されています。店長へ利用状態をご確認ください。"
+          ? "この店舗には既に登録されています。管理者へ利用状態をご確認ください。"
           : "スタッフ登録を完了できませんでした。");
       }
       window.location.reload();
@@ -343,7 +343,7 @@ export default function Home() {
 
     if (correctionCategory === "OTHER" && !correctionReason.trim()) {
       setCorrectionError(
-        "店長に確認してほしい内容を入力してください。",
+        "管理者に確認してほしい内容を入力してください。",
       );
       return;
     }
@@ -784,7 +784,7 @@ export default function Home() {
 
                     {correctionCategory === "OTHER" && (
                       <label>
-                        店長に確認してほしい内容
+                        管理者に確認してほしい内容
                         <span className="field-help">
                           どの記録をどのように直したいか入力してください。
                         </span>
