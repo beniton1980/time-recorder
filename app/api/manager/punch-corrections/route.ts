@@ -74,8 +74,10 @@ export async function POST(request: Request) {
     typeof body.storeId !== "string" ||
     !uuidPattern.test(body.storeId) ||
     typeof body.staffId !== "string" ||
+    !uuidPattern.test(body.staffId) ||
     !["ADD", "REPLACE", "VOID"].includes(operation) ||
-    !reason
+    !reason ||
+    reason.length > 500
   ) {
     return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
@@ -92,6 +94,13 @@ export async function POST(request: Request) {
     (!eventTypes.includes(eventType) || typeof body.occurredAt !== "string")
   ) {
     return NextResponse.json({ ok: false, code: "CORRECTION_FIELDS_REQUIRED" }, { status: 400 });
+  }
+
+  if (
+    operation !== "ADD" &&
+    (typeof body.targetEffectiveId !== "string" || !uuidPattern.test(body.targetEffectiveId))
+  ) {
+    return NextResponse.json({ ok: false, code: "INVALID_TARGET" }, { status: 400 });
   }
 
   const parsedOccurredAt = operation === "VOID" ? null : new Date(body.occurredAt as string);

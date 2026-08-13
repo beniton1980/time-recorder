@@ -6,6 +6,7 @@ import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
 import { buildMonthlyAttendanceReport } from "@/lib/monthly-attendance-report.mjs";
 import { generateMonthlyAttendancePdf } from "@/lib/monthly-attendance-pdf.mjs";
 import { sendMonthlyAttendanceEmail } from "@/lib/monthly-attendance-email.mjs";
+import { enforceRateLimit } from "@/lib/api-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,8 @@ export async function POST(request: Request) {
   if (typeof body.idToken !== "string" || typeof body.storeId !== "string" || !uuidPattern.test(body.storeId) || typeof body.periodEnd !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.periodEnd) || typeof body.requestId !== "string" || !uuidPattern.test(body.requestId)) {
     return Response.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
+  const limited = await enforceRateLimit(request, { scope: "manager-monthly-reissue", limit: 10, windowSeconds: 300 }, body.idToken);
+  if (limited) return limited;
   try {
     const identity = await verifyLineIdToken(body.idToken);
     const sql = getSql();

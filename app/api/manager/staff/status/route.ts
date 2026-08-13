@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
+import { enforceRateLimit } from "@/lib/api-security";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -37,6 +38,9 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
+
+  const limited = await enforceRateLimit(request, { scope: "manager-staff-status", limit: 30, windowSeconds: 300 }, body.idToken);
+  if (limited) return limited;
 
   try {
     const identity = await verifyLineIdToken(body.idToken);

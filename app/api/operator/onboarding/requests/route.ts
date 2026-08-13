@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
+import { enforceRateLimit } from "@/lib/api-security";
 import {
   OperatorAccessError,
   operatorErrorResponse,
@@ -33,6 +34,9 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  const limited = await enforceRateLimit(request, { scope: "operator-onboarding-list", limit: 60, windowSeconds: 300 }, typeof body.idToken === "string" ? body.idToken : undefined);
+  if (limited) return limited;
 
   try {
     await verifyOperator(body.idToken);

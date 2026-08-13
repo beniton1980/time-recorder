@@ -19,8 +19,18 @@ test("sensitive public operations use persistent rate limits", async () => {
     "app/api/correction-requests/route.ts",
     "app/api/manager/punch-corrections/route.ts",
     "app/api/manager/store-qr/route.ts",
+    "app/api/manager/dashboard/route.ts",
+    "app/api/manager/corrections/decision/route.ts",
+    "app/api/manager/staff/status/route.ts",
+    "app/api/manager/monthly-attendance/csv/route.ts",
+    "app/api/manager/monthly-attendance/reports/route.ts",
+    "app/api/manager/monthly-attendance/reissue/route.ts",
     "app/api/onboarding/requests/route.ts",
     "app/api/onboarding/manager-invite/claim/route.ts",
+    "app/api/operator/onboarding/requests/route.ts",
+    "app/api/operator/onboarding/requests/decision/route.ts",
+    "app/api/operator/onboarding/requests/provision/route.ts",
+    "app/api/operator/onboarding/requests/delete/route.ts",
   ];
   for (const route of routes) {
     const source = await read(route);
@@ -46,4 +56,18 @@ test("manager direct correction never returns internal error detail", async () =
   const route = await read("app/api/manager/punch-corrections/route.ts");
   assert.doesNotMatch(route, /detail:\s*error/);
   assert.match(route, /code: "CORRECTION_UNAVAILABLE"/);
+});
+
+test("LINE verification and manager mutation inputs are bounded", async () => {
+  const verifier = await read("lib/line/verify-id-token.ts");
+  assert.match(verifier, /MAX_ID_TOKEN_LENGTH = 8192/);
+  assert.match(verifier, /AbortSignal\.timeout\(LINE_VERIFY_TIMEOUT_MS\)/);
+
+  const correction = await read("app/api/manager/punch-corrections/route.ts");
+  assert.match(correction, /!uuidPattern\.test\(body\.staffId\)/);
+  assert.match(correction, /reason\.length > 500/);
+  assert.match(correction, /!uuidPattern\.test\(body\.targetEffectiveId\)/);
+
+  const decision = await read("app/api/manager/corrections/decision/route.ts");
+  assert.match(decision, /!uuidPattern\.test\(body\.requestId\)/);
 });

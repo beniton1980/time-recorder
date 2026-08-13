@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
+import { enforceRateLimit } from "@/lib/api-security";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -29,6 +30,9 @@ export async function POST(request: Request) {
   if (body.storeId !== undefined && (typeof body.storeId !== "string" || !uuidPattern.test(body.storeId))) {
     return NextResponse.json({ ok: false, code: "INVALID_STORE_ID" }, { status: 400 });
   }
+
+  const limited = await enforceRateLimit(request, { scope: "manager-dashboard", limit: 120, windowSeconds: 300 }, body.idToken);
+  if (limited) return limited;
 
   try {
     const identity = await verifyLineIdToken(body.idToken);

@@ -1,5 +1,7 @@
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const LINE_LOGIN_CHANNEL_ID = "2010761826";
+const MAX_ID_TOKEN_LENGTH = 8192;
+const LINE_VERIFY_TIMEOUT_MS = 5000;
 
 type LineIdTokenPayload = {
   sub: string;
@@ -18,6 +20,10 @@ export class LineTokenVerificationError extends Error {
 export async function verifyLineIdToken(
   idToken: string,
 ): Promise<LineIdTokenPayload> {
+  if (idToken.length === 0 || idToken.length > MAX_ID_TOKEN_LENGTH) {
+    throw new LineTokenVerificationError();
+  }
+
   const body = new URLSearchParams({
     id_token: idToken,
     client_id: LINE_LOGIN_CHANNEL_ID,
@@ -30,6 +36,7 @@ export async function verifyLineIdToken(
     },
     body,
     cache: "no-store",
+    signal: AbortSignal.timeout(LINE_VERIFY_TIMEOUT_MS),
   });
 
   if (!response.ok) {
