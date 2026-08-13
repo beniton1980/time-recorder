@@ -1,3 +1,5 @@
+import { isEmailDeliveryAllowed } from "@/lib/environment-safety.mjs";
+
 type InitialStoreQrMail = {
   requestId: string;
   recipient: string;
@@ -36,6 +38,10 @@ function pngBase64(dataUrl: string) {
 export async function sendInitialStoreQrMail(
   mail: InitialStoreQrMail,
 ): Promise<InitialStoreQrMailResult> {
+  if (!isEmailDeliveryAllowed()) {
+    return { sent: false, code: "EMAIL_NOT_CONFIGURED" };
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
   const domain = process.env.RESEND_EMAIL_DOMAIN;
 

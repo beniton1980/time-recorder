@@ -27,3 +27,11 @@
 3. 値には店舗申請を確認できるONOGAMI運営者のLINE user IDをカンマ区切りで設定
 
 この変数はサーバーだけで参照し、`NEXT_PUBLIC_`は付けません。未設定の場合、運営者用APIは安全側に倒れて利用できません。
+
+## Preview環境の安全設定
+
+`.env.example`にはキー名だけを記載し、秘密値は`.env.local`またはVercelの環境変数へ設定します。
+
+Vercel PreviewのDBアクセスは、専用Neon branchを割り当てた後にPreviewだけへ`ONOGAMI_PREVIEW_DATABASE_ISOLATED=true`と`ONOGAMI_PRODUCTION_DATABASE_HOST`を設定するまで停止します。本番DBと同じホストの場合も停止します。
+
+Previewのメール送信は既定で停止し、安全なテスト送信先を準備した場合だけ`ONOGAMI_PREVIEW_EMAIL_ENABLED=true`で許可します。
