@@ -1,7 +1,7 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./qr.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -49,6 +49,7 @@ export default function StoreQrPage() {
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [a4PngDataUrl, setA4PngDataUrl] = useState<string | null>(null);
+  const a4PreviewRef = useRef<HTMLDivElement>(null);
   const managerUrl = storeId
     ? `${MANAGER_LIFF_URL}?store_id=${encodeURIComponent(storeId)}`
     : MANAGER_LIFF_URL;
@@ -57,6 +58,14 @@ export default function StoreQrPage() {
     () => memberships.find((item) => item.store_id === storeId)?.store_name ?? "",
     [memberships, storeId],
   );
+
+  useEffect(() => {
+    if (!a4PngDataUrl) return;
+    const frame = window.requestAnimationFrame(() => {
+      a4PreviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [a4PngDataUrl]);
 
   useEffect(() => {
     let active = true;
@@ -226,10 +235,9 @@ export default function StoreQrPage() {
         await navigator.share({ files: [guideFile], title: `${issued.storeName}のA4打刻案内` });
         return;
       }
-      window.open(guideDataUrl, "_blank");
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
-      setError("A4案内を保存できませんでした。表示されたA4案内画像を長押しして保存してください。");
+      setError("共有画面を開けませんでした。下のA4案内画像を長押しして保存してください。");
     }
   }
 
@@ -276,8 +284,8 @@ export default function StoreQrPage() {
             <button type="button" onClick={() => void savePng()}>QR画像を保存・共有</button>
             <p className={styles.saveHelp}>保存画面が開かない場合は、上のQR画像を長押しして保存してください。</p>
             <button type="button" onClick={() => void saveA4Guide()}>A4案内画像を保存・共有</button>
-            {a4PngDataUrl && <div className={styles.a4Preview}>
-              <p>保存画面が開かない場合は、下のA4案内画像を長押しして保存してください。</p>
+            {a4PngDataUrl && <div ref={a4PreviewRef} className={styles.a4Preview}>
+              <p role="status">A4案内画像を作成しました。下の画像を長押しして保存してください。</p>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={a4PngDataUrl} alt={`${issued.storeName}のA4打刻案内`} />
             </div>}
