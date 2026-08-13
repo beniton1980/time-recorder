@@ -1,6 +1,7 @@
 import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
+import { enforceRateLimit } from "@/lib/api-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ export async function POST(request: Request) {
   if (typeof body.idToken !== "string" || typeof body.storeId !== "string" || !uuidPattern.test(body.storeId)) {
     return Response.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
+  const limited = await enforceRateLimit(request, { scope: "manager-monthly-reports", limit: 60, windowSeconds: 300 }, body.idToken);
+  if (limited) return limited;
   try {
     const identity = await verifyLineIdToken(body.idToken);
     const sql = getSql();

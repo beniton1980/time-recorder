@@ -1,6 +1,7 @@
 import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
+import { enforceRateLimit } from "@/lib/api-security";
 import { calculateClosingPeriod } from "@/lib/monthly-attendance.mjs";
 
 export const runtime = "nodejs";
@@ -30,6 +31,8 @@ export async function POST(request: Request) {
   if (typeof body.idToken !== "string" || typeof body.storeId !== "string" || !uuidPattern.test(body.storeId) || typeof body.periodEnd !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.periodEnd)) {
     return Response.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
+  const limited = await enforceRateLimit(request, { scope: "manager-monthly-csv", limit: 30, windowSeconds: 300 }, body.idToken);
+  if (limited) return limited;
   try {
     const identity = await verifyLineIdToken(body.idToken);
     const sql = getSql();
