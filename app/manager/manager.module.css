@@ -310,11 +310,30 @@
 
 .resolutionDateTime {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
 .resolutionDateTime label { min-width: 0; }
+
+.editPanel {
+  position: fixed;
+  z-index: 20;
+  inset: 12px;
+  width: auto;
+  max-width: 620px;
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 18px 60px rgb(20 52 37 / 28%);
+}
+
+@media (min-width: 640px) {
+  .resolutionDateTime {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
 
 .resolution small {
   color: #68756c;

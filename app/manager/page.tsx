@@ -722,7 +722,7 @@ export default function ManagerPage() {
             </section>
 
             {directEdit && (
-              <section className={styles.section}>
+              <section className={`${styles.section} ${styles.editPanel}`} role="dialog" aria-modal="true" aria-label={`${directEdit.staffName}さんの打刻修正`}>
                 <div className={styles.sectionHeading}>
                   <h2>{directEdit.staffName}さんの打刻修正</h2>
                 </div>
