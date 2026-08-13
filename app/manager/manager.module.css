@@ -296,9 +296,10 @@
 .resolution select,
 .resolution input {
   box-sizing: border-box;
-  width: 100%;
+  width: auto;
   max-width: 100%;
   min-width: 0;
+  justify-self: stretch;
   min-height: 44px;
   padding: 8px 10px;
   border: 1px solid #aebdb2;
