@@ -19,16 +19,6 @@ type IssuedQr = {
   qrPngDataUrl: string;
 };
 
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[character] as string);
-}
-
 async function requestStoreQr(
   action: "STATUS" | "ROTATE" | "REVOKE",
   selectedStoreId: string,
@@ -58,6 +48,7 @@ export default function StoreQrPage() {
   const [message, setMessage] = useState("管理者権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const [a4PngDataUrl, setA4PngDataUrl] = useState<string | null>(null);
   const managerUrl = storeId
     ? `${MANAGER_LIFF_URL}?store_id=${encodeURIComponent(storeId)}`
     : MANAGER_LIFF_URL;
@@ -110,6 +101,7 @@ export default function StoreQrPage() {
   async function changeStore(nextStoreId: string) {
     setStoreId(nextStoreId);
     setIssued(null);
+    setA4PngDataUrl(null);
     setError(null);
     try {
       const status = await requestStoreQr("STATUS", nextStoreId);
@@ -191,17 +183,54 @@ export default function StoreQrPage() {
     }
   }
 
-  function printA4() {
+  async function saveA4Guide() {
     if (!issued) return;
-    const popup = window.open("", "_blank");
-    if (!popup) {
-      setError("印刷画面を開けませんでした。ポップアップを許可してください。");
-      return;
+    setError(null);
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1240;
+      canvas.height = 1754;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("CANVAS_UNAVAILABLE");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.textAlign = "center";
+      context.fillStyle = "#207a45";
+      context.font = "700 36px sans-serif";
+      context.fillText("ONOGAMI 勤怠", 620, 110);
+      context.fillStyle = "#17221b";
+      context.font = "700 52px sans-serif";
+      context.fillText(issued.storeName, 620, 195, 1080);
+      context.font = "32px sans-serif";
+      context.fillText("スタッフ打刻用QRコード", 620, 255);
+      const qrImage = new Image();
+      qrImage.src = issued.qrPngDataUrl;
+      await new Promise<void>((resolve, reject) => {
+        qrImage.onload = () => resolve();
+        qrImage.onerror = () => reject(new Error("QR_IMAGE_UNAVAILABLE"));
+      });
+      context.drawImage(qrImage, 260, 310, 720, 720);
+      context.textAlign = "left";
+      context.font = "34px sans-serif";
+      ["1. LINEでQRコードを読み取る", "2. 店舗名を確認する", "3. 出勤・休憩・退勤を打刻する"]
+        .forEach((line, index) => context.fillText(line, 245, 1130 + index * 72));
+      context.fillStyle = "#526057";
+      context.font = "28px sans-serif";
+      context.fillText("QRが読み取れない場合は管理者へお知らせください。", 245, 1390);
+      const guideDataUrl = canvas.toDataURL("image/png");
+      setA4PngDataUrl(guideDataUrl);
+      const guideBlob = await (await fetch(guideDataUrl)).blob();
+      const safeFileName = issued.storeName.replace(/[\\/:*?"<>|]/g, "-");
+      const guideFile = new File([guideBlob], `${safeFileName}-A4打刻案内.png`, { type: "image/png" });
+      if (typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare({ files: [guideFile] })) {
+        await navigator.share({ files: [guideFile], title: `${issued.storeName}のA4打刻案内` });
+        return;
+      }
+      window.open(guideDataUrl, "_blank");
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setError("A4案内を保存できませんでした。表示されたA4案内画像を長押しして保存してください。");
     }
-    popup.opener = null;
-    const safeStoreName = escapeHtml(issued.storeName);
-    popup.document.write(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${safeStoreName} 打刻QR</title><style>@page{size:A4;margin:18mm}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;text-align:center;color:#17221b}h1{font-size:30px;margin:8mm 0 3mm}.brand{font-weight:800;letter-spacing:.16em;color:#207a45}.qr{width:120mm;height:120mm;margin:8mm auto 5mm}.steps{font-size:18px;line-height:1.8;text-align:left;display:inline-block}.note{font-size:14px;color:#526057;margin-top:8mm}@media print{button{display:none}}</style></head><body><p class="brand">ONOGAMI 勤怠</p><h1>${safeStoreName}</h1><p>スタッフ打刻用QRコード</p><div class="qr">${issued.qrSvg}</div><ol class="steps"><li>LINEでQRコードを読み取る</li><li>店舗名を確認する</li><li>出勤・休憩・退勤を打刻する</li></ol><p class="note">QRが読み取れない場合は管理者へお知らせください。</p><button onclick="window.print()">A4 PDFとして保存・印刷</button><script>window.onload=()=>window.print()<\/script></body></html>`);
-    popup.document.close();
   }
 
   return (
@@ -246,7 +275,12 @@ export default function StoreQrPage() {
             </div>
             <button type="button" onClick={() => void savePng()}>QR画像を保存・共有</button>
             <p className={styles.saveHelp}>保存画面が開かない場合は、上のQR画像を長押しして保存してください。</p>
-            <button type="button" onClick={printA4}>A4案内をPDF保存・印刷</button>
+            <button type="button" onClick={() => void saveA4Guide()}>A4案内画像を保存・共有</button>
+            {a4PngDataUrl && <div className={styles.a4Preview}>
+              <p>保存画面が開かない場合は、下のA4案内画像を長押しして保存してください。</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={a4PngDataUrl} alt={`${issued.storeName}のA4打刻案内`} />
+            </div>}
           </section>
         )}
         <a className={styles.back} href={managerUrl}>管理者画面へ戻る</a>

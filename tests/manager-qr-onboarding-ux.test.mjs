@@ -104,3 +104,14 @@ test("manager QR save supports iPhone share and long-press fallback", async () =
   assert.match(qrManager, /長押しして保存/);
   assert.doesNotMatch(qrManager, /function downloadSvg/);
 });
+
+test("A4 QR guide is generated as a shareable and long-press saveable image", async () => {
+  const qrManager = await source("app/manager/qr/page.tsx");
+  assert.match(qrManager, /canvas\.width = 1240/);
+  assert.match(qrManager, /canvas\.height = 1754/);
+  assert.match(qrManager, /context\.drawImage\(qrImage/);
+  assert.match(qrManager, /navigator\.canShare\(\{ files: \[guideFile\] \}\)/);
+  assert.match(qrManager, /<img src=\{a4PngDataUrl\}/);
+  assert.match(qrManager, /A4案内画像を保存・共有/);
+  assert.doesNotMatch(qrManager, /function printA4/);
+});
