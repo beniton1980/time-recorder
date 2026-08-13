@@ -44,11 +44,13 @@ export default function StoreQrPage() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [storeId, setStoreId] = useState("");
   const [hasActiveQr, setHasActiveQr] = useState(false);
+  const [issuedAt, setIssuedAt] = useState<string | null>(null);
   const [issued, setIssued] = useState<IssuedQr | null>(null);
   const [message, setMessage] = useState("管理者権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [a4PngDataUrl, setA4PngDataUrl] = useState<string | null>(null);
+  const qrResultRef = useRef<HTMLElement>(null);
   const a4PreviewRef = useRef<HTMLDivElement>(null);
   const managerUrl = storeId
     ? `${MANAGER_LIFF_URL}?store_id=${encodeURIComponent(storeId)}`
@@ -58,6 +60,14 @@ export default function StoreQrPage() {
     () => memberships.find((item) => item.store_id === storeId)?.store_name ?? "",
     [memberships, storeId],
   );
+
+  useEffect(() => {
+    if (!issued) return;
+    const frame = window.requestAnimationFrame(() => {
+      qrResultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [issued]);
 
   useEffect(() => {
     if (!a4PngDataUrl) return;
@@ -98,6 +108,7 @@ export default function StoreQrPage() {
         const status = await requestStoreQr("STATUS", selectedStoreId);
         if (!active) return;
         setHasActiveQr(status.token.active);
+        setIssuedAt(status.token.issuedAt ?? null);
         setMessage("");
       } catch (caught) {
         if (active) setError(caught instanceof Error ? caught.message : "画面を読み込めませんでした。");
@@ -115,6 +126,7 @@ export default function StoreQrPage() {
     try {
       const status = await requestStoreQr("STATUS", nextStoreId);
       setHasActiveQr(status.token.active);
+      setIssuedAt(status.token.issuedAt ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "状態を確認できませんでした。");
     }
@@ -137,6 +149,7 @@ export default function StoreQrPage() {
         qrPngDataUrl: data.qrPngDataUrl,
       });
       setHasActiveQr(true);
+      setIssuedAt(new Date().toISOString());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "QRを発行できませんでした。");
     } finally {
@@ -151,6 +164,7 @@ export default function StoreQrPage() {
     try {
       await requestStoreQr("REVOKE", storeId);
       setHasActiveQr(false);
+      setIssuedAt(null);
       setIssued(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "QRを無効にできませんでした。");
@@ -257,11 +271,36 @@ export default function StoreQrPage() {
               </select>
             </label>
             <div className={styles.status}>
-              <strong>{storeName}</strong>
-              <span className={hasActiveQr ? styles.active : styles.inactive}>
-                {hasActiveQr ? "有効なQRがあります" : "有効なQRはありません"}
-              </span>
+              <div>
+                <strong>{storeName}</strong>
+                {hasActiveQr && issuedAt && <small>
+                  発行日時：{new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(new Date(issuedAt))}
+                </small>}
+              </div>
+              <span className={hasActiveQr ? styles.active : styles.inactive}>{hasActiveQr ? "利用中" : "QRなし"}</span>
             </div>
+            {hasActiveQr && !issued && <p className={styles.securityNote}>
+              現在のQRは安全のためサーバーに元データを保存しておらず、再表示できません。保存済みのQRを紛失した場合のみ再発行してください。
+            </p>}
+            {issued && (
+              <section ref={qrResultRef} className={styles.result}>
+                <h2>現在のQR</h2>
+                <p className={styles.warning}>このQRはこの画面を閉じると再表示できません。今すぐ保存してください。</p>
+                <div className={styles.qr}>
+                  {/* The generated PNG must remain directly saveable on iPhone. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={issued.qrPngDataUrl} alt={`${issued.storeName}の打刻QRコード`} />
+                </div>
+                <button type="button" onClick={() => void savePng()}>QR画像を保存・共有</button>
+                <p className={styles.saveHelp}>保存画面が開かない場合は、上のQR画像を長押しして保存してください。</p>
+                <button type="button" onClick={() => void saveA4Guide()}>A4案内画像を保存・共有</button>
+                {a4PngDataUrl && <div ref={a4PreviewRef} className={styles.a4Preview}>
+                  <p role="status">A4案内画像を作成しました。下の画像を長押しして保存してください。</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={a4PngDataUrl} alt={`${issued.storeName}のA4打刻案内`} />
+                </div>}
+              </section>
+            )}
             <button className={styles.primary} type="button" disabled={working} onClick={() => void rotate()}>
               {working ? "処理中…" : hasActiveQr ? "QRを再発行" : "QRを発行"}
             </button>
@@ -271,25 +310,6 @@ export default function StoreQrPage() {
               </button>
             )}
           </>
-        )}
-        {issued && (
-          <section className={styles.result}>
-            <h2>発行しました</h2>
-            <p className={styles.warning}>このQRはこの画面を閉じると再表示できません。今すぐ保存してください。</p>
-            <div className={styles.qr}>
-              {/* The generated PNG must remain directly saveable on iPhone. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={issued.qrPngDataUrl} alt={`${issued.storeName}の打刻QRコード`} />
-            </div>
-            <button type="button" onClick={() => void savePng()}>QR画像を保存・共有</button>
-            <p className={styles.saveHelp}>保存画面が開かない場合は、上のQR画像を長押しして保存してください。</p>
-            <button type="button" onClick={() => void saveA4Guide()}>A4案内画像を保存・共有</button>
-            {a4PngDataUrl && <div ref={a4PreviewRef} className={styles.a4Preview}>
-              <p role="status">A4案内画像を作成しました。下の画像を長押しして保存してください。</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={a4PngDataUrl} alt={`${issued.storeName}のA4打刻案内`} />
-            </div>}
-          </section>
         )}
         <a className={styles.back} href={managerUrl}>管理者画面へ戻る</a>
       </section>
