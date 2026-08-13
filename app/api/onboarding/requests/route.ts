@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { validateOnboardingRequest } from "@/lib/onboarding/validation";
+import { enforceRateLimit } from "@/lib/api-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,12 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  const limited = await enforceRateLimit(
+    request,
+    { scope: "onboarding-request", limit: 5, windowSeconds: 3600 },
+  );
+  if (limited) return limited;
 
   try {
     const sql = getSql();

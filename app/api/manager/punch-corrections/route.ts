@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { LineTokenVerificationError, verifyLineIdToken } from "@/lib/line/verify-id-token";
+import { enforceRateLimit } from "@/lib/api-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,6 +78,13 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
+
+  const limited = await enforceRateLimit(
+    request,
+    { scope: "manager-direct-correction", limit: 20, windowSeconds: 600 },
+    body.idToken,
+  );
+  if (limited) return limited;
 
   if (
     operation !== "VOID" &&
@@ -225,11 +233,7 @@ export async function POST(request: Request) {
       stack: error instanceof Error ? error.stack : undefined,
     });
     return NextResponse.json(
-      {
-        ok: false,
-        code: "CORRECTION_UNAVAILABLE",
-        detail: error instanceof Error ? error.message : "UNKNOWN_ERROR",
-      },
+      { ok: false, code: "CORRECTION_UNAVAILABLE" },
       { status: 503 },
     );
   }
