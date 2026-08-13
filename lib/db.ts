@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import { assertDatabaseEnvironmentSafety } from "@/lib/environment-safety.mjs";
 
 export function getSql() {
   const databaseUrl =
@@ -8,6 +9,8 @@ export function getSql() {
   if (!databaseUrl) {
     throw new Error("A Neon database connection URL is not configured");
   }
+
+  assertDatabaseEnvironmentSafety(databaseUrl);
 
   return neon(databaseUrl);
 }

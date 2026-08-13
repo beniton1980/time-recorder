@@ -1,3 +1,5 @@
+import { isEmailDeliveryAllowed } from "@/lib/environment-safety.mjs";
+
 type ManagerInviteMail = {
   requestId: string;
   recipient: string;
@@ -24,6 +26,10 @@ function escapeHtml(value: string) {
 export async function sendManagerInviteMail(
   mail: ManagerInviteMail,
 ): Promise<ManagerInviteMailResult> {
+  if (!isEmailDeliveryAllowed()) {
+    return { sent: false, code: "EMAIL_NOT_CONFIGURED" };
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
   const domain = process.env.RESEND_EMAIL_DOMAIN;
 
