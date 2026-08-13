@@ -6,6 +6,7 @@ import {
   LineTokenVerificationError,
   verifyLineIdToken,
 } from "@/lib/line/verify-id-token";
+import { enforceRateLimit } from "@/lib/api-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +47,13 @@ export async function POST(request: Request) {
   if (!["STATUS", "ROTATE", "REVOKE"].includes(String(body.action))) {
     return error("INVALID_ACTION", 400);
   }
+
+  const limited = await enforceRateLimit(
+    request,
+    { scope: "manager-store-qr", limit: 10, windowSeconds: 600 },
+    body.idToken,
+  );
+  if (limited) return limited;
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
