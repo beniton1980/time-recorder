@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 
 type RateLimitPolicy = {
   scope: string;
@@ -58,11 +59,8 @@ export async function enforceRateLimit(
         )
       : undefined;
     row = clientRow?.allowed === false ? clientRow : subjectRow ?? clientRow;
-  } catch (error) {
-    console.error("API rate limit check failed", {
-      scope: policy.scope,
-      error: error instanceof Error ? error.name : "UnknownError",
-    });
+  } catch {
+    logServerError("api_rate_limit_check_failed");
     return NextResponse.json(
       { ok: false, code: "RATE_LIMIT_UNAVAILABLE" },
       { status: 503, headers: privateJsonHeaders },

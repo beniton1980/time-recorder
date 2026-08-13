@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import { sendInitialStoreQrMail } from "@/lib/onboarding/send-initial-store-qr";
 import {
   LineTokenVerificationError,
@@ -109,19 +110,13 @@ export async function POST(request: Request) {
             qrPngDataUrl,
             managerUrl: `https://liff.line.me/${LIFF_ID}/manager?store_id=${encodeURIComponent(result.store_id)}`,
           });
-        } catch (mailError) {
-          console.error("Initial store QR email delivery failed", {
-            storeId: result.store_id,
-            error: mailError instanceof Error ? mailError.name : "UnknownError",
-          });
+        } catch {
+          logServerError("initial_store_qr_email_delivery_failed");
           storeQrEmail = { sent: false, code: "EMAIL_DELIVERY_FAILED" };
         }
       }
-    } catch (qrError) {
-      console.error("Initial store QR issuance failed", {
-        storeId: result.store_id,
-        error: qrError instanceof Error ? qrError.name : "UnknownError",
-      });
+    } catch {
+      logServerError("initial_store_qr_issuance_failed");
     }
 
     return NextResponse.json({
@@ -150,7 +145,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Manager invite claim failed", error);
+    logServerError("manager_invite_claim_failed");
     return NextResponse.json(
       { ok: false, code: "MANAGER_INVITE_UNAVAILABLE" },
       { status: 503 },

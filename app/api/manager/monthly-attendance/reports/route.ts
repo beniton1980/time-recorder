@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
 
 export const runtime = "nodejs";
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, reports });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) return Response.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
-    console.error("Monthly report listing failed", error);
+    logServerError("monthly_report_listing_failed");
     return Response.json({ ok: false, code: "REPORT_LIST_UNAVAILABLE" }, { status: 503 });
   }
 }

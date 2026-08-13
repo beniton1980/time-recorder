@@ -98,5 +98,5 @@ test("session bootstrap resolves cross-store state in the membership query", asy
   assert.doesNotMatch(bootstrap, /const activeElsewhere = await sql/);
   assert.match(bootstrap, /lineVerificationMs/);
   assert.match(bootstrap, /databaseMs/);
-  assert.match(bootstrap, /session bootstrap completed/);
+  assert.match(bootstrap, /logServerInfo\("session_bootstrap_completed"/);
 });

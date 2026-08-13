@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
 import { calculateClosingPeriod } from "@/lib/monthly-attendance.mjs";
 import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof LineTokenVerificationError) return Response.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     if (error instanceof RangeError) return Response.json({ ok: false, code: "INVALID_PERIOD_END" }, { status: 400 });
-    console.error("Monthly attendance reissue failed", error);
+    logServerError("monthly_attendance_reissue_failed");
     return Response.json({ ok: false, code: "REISSUE_UNAVAILABLE" }, { status: 503 });
   }
 }

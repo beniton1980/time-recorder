@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -140,7 +141,7 @@ export async function POST(request: Request) {
     if (message.includes("STORE_NOT_ACTIVE")) {
       return error("STORE_NOT_ACTIVE", 409);
     }
-    console.error("Store QR token operation failed", caught);
+    logServerError("store_qr_operation_failed");
     return error("STORE_QR_UNAVAILABLE", 503);
   }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   OperatorAccessError,
   operatorErrorResponse,
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
       return NextResponse.json(response.body, { status: response.status });
     }
 
-    console.error("Onboarding request listing failed", error);
+    logServerError("onboarding_request_listing_failed");
     return NextResponse.json(
       { ok: false, code: "ONBOARDING_LIST_UNAVAILABLE" },
       { status: 503 },

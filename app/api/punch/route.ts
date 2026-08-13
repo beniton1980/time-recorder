@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -435,7 +436,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Punch failed", error);
+    logServerError("punch_failed");
 
     return NextResponse.json(
       { ok: false, code: "PUNCH_UNAVAILABLE" },

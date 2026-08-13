@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
     if (message.includes("STAFF_ALREADY_REGISTERED")) {
       return NextResponse.json({ ok: false, code: "STAFF_ALREADY_REGISTERED" }, { status: 409 });
     }
-    console.error("Staff self-registration failed", caught);
+    logServerError("staff_self_registration_failed");
     return NextResponse.json({ ok: false, code: "SELF_REGISTRATION_UNAVAILABLE" }, { status: 503 });
   }
 }

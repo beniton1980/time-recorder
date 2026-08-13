@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -181,7 +182,7 @@ export async function POST(request: Request) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }
-    console.error("Correction decision failed", error);
+    logServerError("correction_decision_failed");
     return NextResponse.json({ ok: false, code: "DECISION_UNAVAILABLE" }, { status: 503 });
   }
 }

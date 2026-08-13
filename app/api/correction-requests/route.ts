@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -291,7 +292,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Correction request failed", error);
+    logServerError("correction_request_failed");
 
     return NextResponse.json(
       { ok: false, code: "CORRECTION_REQUEST_UNAVAILABLE" },
