@@ -137,10 +137,14 @@ export default function Home() {
   const storeTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setNow(new Date());
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    const updateClock = () => setNow(new Date());
+    const initialTimer = window.setTimeout(updateClock, 0);
+    const timer = window.setInterval(updateClock, 1000);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
