@@ -34,3 +34,9 @@ test("manager QR opens the attendance screen through LIFF", async () => {
   assert.match(route, /https:\/\/liff\.line\.me\/\$\{LIFF_ID\}\?store_token=/);
   assert.doesNotMatch(route, /new URL\([\s\S]*request\.url/);
 });
+
+test("manager QR rotation returns a directly saveable PNG", async () => {
+  const route = await readFile(routePath, "utf8");
+  assert.match(route, /QRCode\.toDataURL\(entryUrl/);
+  assert.match(route, /qrPngDataUrl/);
+});

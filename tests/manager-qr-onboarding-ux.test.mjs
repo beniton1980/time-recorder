@@ -93,3 +93,14 @@ test("newly registered store is selected after membership validation", async () 
   assert.match(qrManager, /\?\.store_id \?\? items\[0\]\.store_id/);
   assert.match(qrManager, /href=\{managerUrl\}>管理者画面へ戻る/);
 });
+
+test("manager QR save supports iPhone share and long-press fallback", async () => {
+  const qrManager = await source("app/manager/qr/page.tsx");
+  assert.match(qrManager, /data\.qrPngDataUrl/);
+  assert.match(qrManager, /navigator\.canShare\(\{ files: \[imageFile\] \}\)/);
+  assert.match(qrManager, /navigator\.share/);
+  assert.match(qrManager, /window\.open\(issued\.qrPngDataUrl/);
+  assert.match(qrManager, /<img src=\{issued\.qrPngDataUrl\}/);
+  assert.match(qrManager, /長押しして保存/);
+  assert.doesNotMatch(qrManager, /function downloadSvg/);
+});

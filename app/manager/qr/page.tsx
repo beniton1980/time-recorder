@@ -16,6 +16,7 @@ type IssuedQr = {
   storeName: string;
   entryUrl: string;
   qrSvg: string;
+  qrPngDataUrl: string;
 };
 
 function escapeHtml(value: string) {
@@ -132,6 +133,7 @@ export default function StoreQrPage() {
         storeName: data.store.store_name,
         entryUrl: data.entryUrl,
         qrSvg: data.qrSvg,
+        qrPngDataUrl: data.qrPngDataUrl,
       });
       setHasActiveQr(true);
     } catch (caught) {
@@ -156,16 +158,37 @@ export default function StoreQrPage() {
     }
   }
 
-  function downloadSvg() {
+  async function savePng() {
     if (!issued) return;
-    const blob = new Blob([issued.qrSvg], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
     const safeFileName = issued.storeName.replace(/[\\/:*?"<>|]/g, "-");
-    anchor.download = `${safeFileName}-打刻QR.svg`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    setError(null);
+    try {
+      const imageBlob = await (await fetch(issued.qrPngDataUrl)).blob();
+      const imageFile = new File([imageBlob], `${safeFileName}-打刻QR.png`, {
+        type: "image/png",
+      });
+      if (
+        typeof navigator.share === "function"
+        && typeof navigator.canShare === "function"
+        && navigator.canShare({ files: [imageFile] })
+      ) {
+        await navigator.share({ files: [imageFile], title: `${issued.storeName}の店舗QR` });
+        return;
+      }
+      const imageWindow = window.open(issued.qrPngDataUrl, "_blank");
+      if (imageWindow) return;
+      const anchor = document.createElement("a");
+      anchor.href = issued.qrPngDataUrl;
+      anchor.download = imageFile.name;
+      anchor.target = "_blank";
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setError("QR画像を保存できませんでした。表示中のQR画像を長押しして保存してください。");
+    }
   }
 
   function printA4() {
@@ -216,8 +239,13 @@ export default function StoreQrPage() {
           <section className={styles.result}>
             <h2>発行しました</h2>
             <p className={styles.warning}>このQRはこの画面を閉じると再表示できません。今すぐ保存してください。</p>
-            <div className={styles.qr} dangerouslySetInnerHTML={{ __html: issued.qrSvg }} />
-            <button type="button" onClick={downloadSvg}>QR画像を保存</button>
+            <div className={styles.qr}>
+              {/* The generated PNG must remain directly saveable on iPhone. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={issued.qrPngDataUrl} alt={`${issued.storeName}の打刻QRコード`} />
+            </div>
+            <button type="button" onClick={() => void savePng()}>QR画像を保存・共有</button>
+            <p className={styles.saveHelp}>保存画面が開かない場合は、上のQR画像を長押しして保存してください。</p>
             <button type="button" onClick={printA4}>A4案内をPDF保存・印刷</button>
           </section>
         )}
