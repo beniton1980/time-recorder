@@ -369,6 +369,31 @@ h1 {
   line-height: 1.6;
 }
 
+.location-guide {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border: 1px solid #d8e4da;
+  border-radius: 12px;
+  background: #f7faf7;
+  color: #52675a;
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.location-guide p {
+  margin: 0;
+}
+
+.location-guide p + p {
+  margin-top: 4px;
+}
+
+.location-guide .location-guide-title {
+  color: #274d38;
+  font-weight: 700;
+}
+
 .spinner {
   display: block;
   width: 28px;
