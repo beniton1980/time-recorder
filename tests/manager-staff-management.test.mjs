@@ -73,3 +73,11 @@ test("multi-store managers can switch stores directly on the dashboard", async (
   assert.match(page, /loadDashboard\(undefined, storeId\)/);
   assert.match(page, /loadMonthlyReports\(loadedDashboard\.manager\.store_id\)/);
 });
+
+test("manager date and time correction fields stay inside the mobile card", async () => {
+  const styles = await source("app/manager/manager.module.css");
+  assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*box-sizing: border-box/);
+  assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*min-width: 0/);
+  assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/);
+  assert.match(styles, /\.resolutionDateTime label \{ min-width: 0; \}/);
+});

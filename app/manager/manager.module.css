@@ -295,7 +295,10 @@
 
 .resolution select,
 .resolution input {
+  box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 44px;
   padding: 8px 10px;
   border: 1px solid #aebdb2;
@@ -307,9 +310,11 @@
 
 .resolutionDateTime {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
 }
+
+.resolutionDateTime label { min-width: 0; }
 
 .resolution small {
   color: #68756c;
