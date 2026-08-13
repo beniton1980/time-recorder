@@ -113,5 +113,8 @@ test("A4 QR guide is generated as a shareable and long-press saveable image", as
   assert.match(qrManager, /navigator\.canShare\(\{ files: \[guideFile\] \}\)/);
   assert.match(qrManager, /<img src=\{a4PngDataUrl\}/);
   assert.match(qrManager, /A4案内画像を保存・共有/);
+  assert.match(qrManager, /a4PreviewRef\.current\?\.scrollIntoView/);
+  assert.doesNotMatch(qrManager, /window\.open\(guideDataUrl/);
+  assert.match(qrManager, /A4案内画像を作成しました。下の画像を長押しして保存してください。/);
   assert.doesNotMatch(qrManager, /function printA4/);
 });
