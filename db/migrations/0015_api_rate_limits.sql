@@ -17,7 +17,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   current_row api_rate_limits%ROWTYPE;
-  current_time timestamptz := clock_timestamp();
+  v_now timestamptz := clock_timestamp();
 BEGIN
   IF p_scope IS NULL OR length(p_scope) < 1
     OR p_fingerprint_hash !~ '^[0-9a-f]{64}$'
@@ -26,13 +26,13 @@ BEGIN
   END IF;
 
   INSERT INTO api_rate_limits (scope, fingerprint_hash, window_started_at, request_count)
-  VALUES (p_scope, p_fingerprint_hash, current_time, 1)
+  VALUES (p_scope, p_fingerprint_hash, v_now, 1)
   ON CONFLICT (scope, fingerprint_hash) DO UPDATE SET
     window_started_at = CASE
-      WHEN api_rate_limits.window_started_at + make_interval(secs => p_window_seconds) <= current_time
-      THEN current_time ELSE api_rate_limits.window_started_at END,
+      WHEN api_rate_limits.window_started_at + make_interval(secs => p_window_seconds) <= v_now
+      THEN v_now ELSE api_rate_limits.window_started_at END,
     request_count = CASE
-      WHEN api_rate_limits.window_started_at + make_interval(secs => p_window_seconds) <= current_time
+      WHEN api_rate_limits.window_started_at + make_interval(secs => p_window_seconds) <= v_now
       THEN 1 ELSE api_rate_limits.request_count + 1 END
   RETURNING * INTO current_row;
 
@@ -40,13 +40,13 @@ BEGIN
   retry_after_seconds := GREATEST(
     1,
     CEIL(EXTRACT(EPOCH FROM (
-      current_row.window_started_at + make_interval(secs => p_window_seconds) - current_time
+      current_row.window_started_at + make_interval(secs => p_window_seconds) - v_now
     )))::integer
   );
 
   IF random() < 0.01 THEN
     DELETE FROM api_rate_limits
-    WHERE window_started_at < current_time - interval '2 days';
+    WHERE window_started_at < v_now - interval '2 days';
   END IF;
 
   RETURN NEXT;
