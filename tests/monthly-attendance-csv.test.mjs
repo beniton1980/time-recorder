@@ -7,8 +7,9 @@ test("CSV is manager-scoped and limited to a sent closing period", async () => {
   const route = await source("app/api/manager/monthly-attendance/csv/route.ts");
   assert.match(route, /verifyLineIdToken\(body\.idToken\)/);
   assert.match(route, /st\.role = 'MANAGER'/);
+  assert.match(route, /st\.store_id = \$\{body\.storeId\}::uuid/);
   assert.match(route, /delivery_version = 'initial' AND status = 'SENT'/);
-  assert.doesNotMatch(route, /body\.storeId/);
+  assert.match(route, /typeof body\.storeId !== "string"/);
 });
 
 test("CSV uses effective punches, business dates, and includes inactive history", async () => {
@@ -40,6 +41,7 @@ test("manager UI exposes CSV only as an action on completed periods", async () =
   const page = await source("app/manager/page.tsx");
   assert.match(page, /monthlyReports\.map/);
   assert.match(page, /periodEnd: report\.period_end/);
+  assert.match(page, /storeId: dashboard\?\.manager\.store_id/);
   assert.match(page, /補助CSV/);
   assert.doesNotMatch(page, /type="month"/);
 });
