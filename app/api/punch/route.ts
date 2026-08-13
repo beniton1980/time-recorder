@@ -127,7 +127,6 @@ export async function POST(request: Request) {
         pe.occurred_at,
         pe.location_status,
         pe.validation_code,
-        pe.distance_from_store_m,
         ss.state
       FROM punch_events pe
       JOIN staff st ON st.id = pe.staff_id
@@ -230,10 +229,6 @@ export async function POST(request: Request) {
           occurred_at,
           business_date,
           client_request_id,
-          latitude,
-          longitude,
-          gps_accuracy_m,
-          distance_from_store_m,
           location_status,
           validation_status,
           validation_code,
@@ -266,10 +261,6 @@ export async function POST(request: Request) {
             )
           END,
           ${body.clientRequestId},
-          l.client_latitude,
-          l.client_longitude,
-          l.client_accuracy,
-          l.distance_m,
           CASE
             WHEN l.client_latitude IS NULL OR l.client_longitude IS NULL
               THEN 'UNAVAILABLE'
@@ -309,8 +300,7 @@ export async function POST(request: Request) {
           event_type,
           occurred_at,
           location_status,
-          validation_code,
-          distance_from_store_m
+          validation_code
       )
       UPDATE staff_states ss
       SET
@@ -326,7 +316,6 @@ export async function POST(request: Request) {
         ie.occurred_at,
         ie.location_status,
         ie.validation_code,
-        ie.distance_from_store_m,
         ss.state
     `;
 
