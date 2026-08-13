@@ -5,16 +5,18 @@ import test from "node:test";
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("only an active manager can change a STAFF membership in the same store", async () => {
-  const migration = await source("db/migrations/0010_manager_staff_status.sql");
+  const migration = await source("db/migrations/0014_multi_store_manager_boundaries.sql");
   const route = await source("app/api/manager/staff/status/route.ts");
   assert.match(route, /verifyLineIdToken\(body\.idToken\)/);
+  assert.match(route, /typeof body\.storeId !== "string"/);
+  assert.match(route, /\$\{body\.storeId\}::uuid/);
   assert.match(migration, /st\.role = 'MANAGER'/);
-  assert.match(migration, /st\.store_id = manager_store_id/);
+  assert.match(migration, /st\.store_id = p_store_id/);
   assert.match(migration, /st\.role = 'STAFF'/);
 });
 
 test("active work blocks deactivation and history is never deleted", async () => {
-  const migration = await source("db/migrations/0010_manager_staff_status.sql");
+  const migration = await source("db/migrations/0014_multi_store_manager_boundaries.sql");
   assert.match(migration, /JOIN staff_states ss ON ss\.staff_id = st\.id/);
   assert.doesNotMatch(migration, /LEFT JOIN staff_states ss/);
   assert.match(migration, /FOR UPDATE OF st, ss/);
@@ -22,6 +24,11 @@ test("active work blocks deactivation and history is never deleted", async () =>
   assert.match(migration, /STAFF_ACTIVE_WORK/);
   assert.match(migration, /UPDATE staff st[\s\S]*SET status = p_status/);
   assert.doesNotMatch(migration, /DELETE FROM/);
+});
+
+test("staff status changes require the selected store in the manager UI", async () => {
+  const page = await source("app/manager/page.tsx");
+  assert.match(page, /storeId: dashboard\?\.manager\.store_id/);
 });
 
 test("an inactive membership cannot self-register again", async () => {

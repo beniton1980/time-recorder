@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 type Body = {
   idToken?: unknown;
+  storeId?: unknown;
   staffId?: unknown;
   status?: unknown;
 };
@@ -27,6 +28,8 @@ export async function POST(request: Request) {
 
   if (
     typeof body.idToken !== "string" ||
+    typeof body.storeId !== "string" ||
+    !uuidPattern.test(body.storeId) ||
     typeof body.staffId !== "string" ||
     !uuidPattern.test(body.staffId) ||
     (body.status !== "active" && body.status !== "inactive")
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
     const sql = getSql();
     const rows = await sql`
       SELECT * FROM set_staff_membership_status(
-        ${identity.sub}, ${body.staffId}, ${body.status}
+        ${identity.sub}, ${body.storeId}::uuid, ${body.staffId}, ${body.status}
       )
     `;
     return NextResponse.json({ ok: true, staff: rows[0] });

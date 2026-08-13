@@ -186,15 +186,16 @@ export default function ManagerPage() {
     setDashboard(data as Dashboard);
     setSelectedDate(data.businessDate as string);
     setMessage("");
+    return data as Dashboard;
   }, []);
 
-  const loadMonthlyReports = useCallback(async () => {
+  const loadMonthlyReports = useCallback(async (storeId: string) => {
     const idToken = liff.getIDToken();
     if (!idToken) return;
     const response = await fetch("/api/manager/monthly-attendance/reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify({ idToken, storeId }),
     });
     const data = await response.json();
     if (response.ok && data.ok) setMonthlyReports(data.reports as MonthlyReport[]);
@@ -210,7 +211,10 @@ export default function ManagerPage() {
           liff.login({ redirectUri: window.location.href });
           return;
         }
-        if (active) await Promise.all([loadDashboard(selectedDate), loadMonthlyReports()]);
+        if (active) {
+          const loadedDashboard = await loadDashboard(selectedDate);
+          await loadMonthlyReports(loadedDashboard.manager.store_id);
+        }
       } catch (caught) {
         if (active) {
           setError(caught instanceof Error ? caught.message : "管理者画面を読み込めませんでした。");
@@ -397,7 +401,12 @@ export default function ManagerPage() {
       const response = await fetch("/api/manager/staff/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken, staffId: staff.staff_id, status: nextStatus }),
+        body: JSON.stringify({
+          idToken,
+          storeId: dashboard?.manager.store_id,
+          staffId: staff.staff_id,
+          status: nextStatus,
+        }),
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -423,7 +432,11 @@ export default function ManagerPage() {
       const response = await fetch("/api/manager/monthly-attendance/csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken, periodEnd: report.period_end }),
+        body: JSON.stringify({
+          idToken,
+          storeId: dashboard?.manager.store_id,
+          periodEnd: report.period_end,
+        }),
       });
       if (!response.ok) throw new Error("CSVを作成できませんでした。");
       const blob = await response.blob();
@@ -453,12 +466,17 @@ export default function ManagerPage() {
       const response = await fetch("/api/manager/monthly-attendance/reissue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken, periodEnd: report.period_end, requestId: crypto.randomUUID() }),
+        body: JSON.stringify({
+          idToken,
+          storeId: dashboard?.manager.store_id,
+          periodEnd: report.period_end,
+          requestId: crypto.randomUUID(),
+        }),
       });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error("勤怠表を再発行できませんでした。時間をおいて再度お試しください。");
       setReissueMessage("最新の勤怠表を登録メールへ送信しました。");
-      await loadMonthlyReports();
+      if (dashboard) await loadMonthlyReports(dashboard.manager.store_id);
     } catch (caught) {
       setReissueMessage(caught instanceof Error ? caught.message : "勤怠表を再発行できませんでした。");
     } finally {

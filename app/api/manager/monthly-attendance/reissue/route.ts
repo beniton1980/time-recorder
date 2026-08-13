@@ -10,14 +10,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-type Body = { idToken?: unknown; periodEnd?: unknown; requestId?: unknown };
+type Body = { idToken?: unknown; storeId?: unknown; periodEnd?: unknown; requestId?: unknown };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request) {
   let body: Body;
   try { body = await request.json() as Body; }
   catch { return Response.json({ ok: false, code: "INVALID_JSON" }, { status: 400 }); }
-  if (typeof body.idToken !== "string" || typeof body.periodEnd !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.periodEnd) || typeof body.requestId !== "string" || !uuidPattern.test(body.requestId)) {
+  if (typeof body.idToken !== "string" || typeof body.storeId !== "string" || !uuidPattern.test(body.storeId) || typeof body.periodEnd !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.periodEnd) || typeof body.requestId !== "string" || !uuidPattern.test(body.requestId)) {
     return Response.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
   try {
@@ -36,8 +36,12 @@ export async function POST(request: Request) {
           )
         ) AS contact_email
       FROM staff st JOIN stores s ON s.id = st.store_id
-      WHERE st.line_user_id = ${identity.sub} AND st.status = 'active' AND st.role = 'MANAGER' AND s.status = 'active'
-      ORDER BY st.created_at LIMIT 1
+      WHERE st.line_user_id = ${identity.sub}
+        AND st.store_id = ${body.storeId}::uuid
+        AND st.status = 'active'
+        AND st.role = 'MANAGER'
+        AND s.status = 'active'
+      LIMIT 1
     `;
     if (managers.length === 0) return Response.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
     const store = managers[0];
