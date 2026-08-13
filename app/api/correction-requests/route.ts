@@ -73,13 +73,14 @@ export async function POST(request: Request) {
         s.id AS store_id,
         st.id AS staff_id,
         ss.last_event_id,
-        pe.event_type AS last_event_type,
-        pe.occurred_at AS last_event_at
+        epe.event_type AS last_event_type,
+        epe.occurred_at AS last_event_at
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       JOIN store_entry_tokens setk ON setk.store_id = s.id
       JOIN staff_states ss ON ss.staff_id = st.id
-      LEFT JOIN punch_events pe ON pe.id = ss.last_event_id
+      LEFT JOIN effective_punch_events epe
+        ON epe.original_event_id = ss.last_event_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
         AND s.status = 'active'
@@ -124,14 +125,15 @@ export async function POST(request: Request) {
             ss.staff_id,
             st.store_id,
             ss.last_event_id,
-            pe.event_type,
-            pe.occurred_at
+            epe.event_type,
+            epe.occurred_at
           FROM staff st
           JOIN staff_states ss ON ss.staff_id = st.id
-          JOIN punch_events pe ON pe.id = ss.last_event_id
+          JOIN effective_punch_events epe
+            ON epe.original_event_id = ss.last_event_id
           WHERE st.id = ${String(member.staff_id)}::uuid
             AND ss.last_event_id = ${String(member.last_event_id)}::uuid
-            AND pe.event_type IN ('CHECK_OUT', 'BREAK_START')
+            AND epe.event_type IN ('CHECK_OUT', 'BREAK_START')
           FOR UPDATE OF ss
         ),
         inserted AS (
