@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
       }
     }
 
-    console.error("Manager staff status update failed", caught);
+    logServerError("manager_staff_status_update_failed");
     return NextResponse.json({ ok: false, code: "STAFF_STATUS_UNAVAILABLE" }, { status: 503 });
   }
 }

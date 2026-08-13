@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +16,8 @@ export async function GET() {
       database: "connected",
       databaseTime,
     });
-  } catch (error) {
-    console.error("Database health check failed", error);
+  } catch {
+    logServerError("database_health_check_failed");
 
     return NextResponse.json(
       {

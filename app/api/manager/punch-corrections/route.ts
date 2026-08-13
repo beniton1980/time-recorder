@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import { LineTokenVerificationError, verifyLineIdToken } from "@/lib/line/verify-id-token";
 import { enforceRateLimit } from "@/lib/api-security";
 
@@ -228,10 +229,7 @@ export async function POST(request: Request) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }
-    console.error("Manager direct correction failed", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    logServerError("manager_direct_correction_failed");
     return NextResponse.json(
       { ok: false, code: "CORRECTION_UNAVAILABLE" },
       { status: 503 },

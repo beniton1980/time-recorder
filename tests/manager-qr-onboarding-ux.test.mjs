@@ -48,7 +48,7 @@ test("initial QR is generated, downloaded, and emailed as PNG", async () => {
 
   assert.match(claim, /QRCode\.toDataURL/);
   assert.match(claim, /qrPngDataUrl/);
-  assert.match(claim, /catch \(mailError\)/);
+  assert.match(claim, /logServerError\("initial_store_qr_email_delivery_failed"\)/);
   assert.match(page, /navigator\.canShare\(\{ files: \[imageFile\] \}\)/);
   assert.match(page, /navigator\.share/);
   assert.match(page, /anchor\.href = qrPngDataUrl/);

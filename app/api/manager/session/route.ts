@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Manager session failed", error);
+    logServerError("manager_session_failed");
 
     return NextResponse.json(
       { ok: false, code: "MANAGER_SESSION_UNAVAILABLE" },

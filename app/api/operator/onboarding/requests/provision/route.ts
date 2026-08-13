@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   OperatorAccessError,
   operatorErrorResponse,
@@ -76,11 +77,8 @@ export async function POST(request: Request) {
         inviteUrl,
         expiresAt: result.invite_expires_at,
       });
-    } catch (mailError) {
-      console.error("Manager invite email delivery failed", {
-        requestId: body.requestId,
-        error: mailError instanceof Error ? mailError.name : "UnknownError",
-      });
+    } catch {
+      logServerError("manager_invite_email_delivery_failed");
       email = { sent: false, code: "EMAIL_DELIVERY_FAILED" };
     }
 
@@ -127,7 +125,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Onboarding provisioning failed", error);
+    logServerError("onboarding_provisioning_failed");
     return NextResponse.json(
       { ok: false, code: "ONBOARDING_PROVISIONING_UNAVAILABLE" },
       { status: 503 },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import {
   OperatorAccessError,
   operatorErrorResponse,
@@ -96,10 +97,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Onboarding test store deletion failed", {
-      requestId: body.requestId,
-      error: error instanceof Error ? error.name : "UnknownError",
-    });
+    logServerError("onboarding_test_store_deletion_failed");
     return NextResponse.json(
       { ok: false, code: "TEST_STORE_DELETION_UNAVAILABLE" },
       { status: 503 },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError } from "@/lib/safe-log";
 import { validateOnboardingRequest } from "@/lib/onboarding/validation";
 import { enforceRateLimit } from "@/lib/api-security";
 
@@ -82,8 +83,8 @@ export async function POST(request: Request) {
       },
       { status: inserted.length > 0 ? 201 : 200 },
     );
-  } catch (error) {
-    console.error("Onboarding request submission failed", error);
+  } catch {
+    logServerError("onboarding_request_submission_failed");
     return NextResponse.json(
       { ok: false, code: "ONBOARDING_REQUEST_UNAVAILABLE" },
       { status: 503 },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { logServerError, logServerInfo } from "@/lib/safe-log";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -182,14 +183,12 @@ export async function POST(request: Request) {
     const databaseMs = Date.now() - databaseStartedAt;
     const activeStoreConflict = memberships[0].active_store_conflict ?? null;
 
-    console.log(JSON.stringify({
-      level: "info",
-      msg: "session bootstrap completed",
+    logServerInfo("session_bootstrap_completed", {
       route: "/api/session/bootstrap",
       lineVerificationMs,
       databaseMs,
-      totalMs: Date.now() - startedAt,
-    }));
+      durationMs: Date.now() - startedAt,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -205,7 +204,10 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Session bootstrap failed", error);
+    logServerError("session_bootstrap_failed", {
+      route: "/api/session/bootstrap",
+      durationMs: Date.now() - startedAt,
+    });
 
     return NextResponse.json(
       { ok: false, code: "BOOTSTRAP_UNAVAILABLE" },
