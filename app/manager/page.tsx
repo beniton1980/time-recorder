@@ -58,6 +58,11 @@ type Dashboard = {
   businessDate: string;
 };
 
+type ManagerMembership = {
+  store_id: string;
+  store_name: string;
+};
+
 type MonthlyReport = {
   period_start: string;
   period_end: string;
@@ -148,6 +153,8 @@ function currentBusinessDate() {
 
 export default function ManagerPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [managerMemberships, setManagerMemberships] = useState<ManagerMembership[]>([]);
+  const [switchingStore, setSwitchingStore] = useState(false);
   const [message, setMessage] = useState("管理者権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
@@ -164,11 +171,12 @@ export default function ManagerPage() {
   const [reissueMessage, setReissueMessage] = useState<string | null>(null);
   const [exportingPeriod, setExportingPeriod] = useState<string | null>(null);
 
-  const loadDashboard = useCallback(async (businessDate?: string) => {
+  const loadDashboard = useCallback(async (businessDate?: string, requestedStoreId?: string) => {
     const idToken = liff.getIDToken();
     if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
 
-    const storeId = new URLSearchParams(window.location.search).get("store_id");
+    const storeId = requestedStoreId
+      ?? new URLSearchParams(window.location.search).get("store_id");
     const response = await fetch("/api/manager/dashboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -187,6 +195,23 @@ export default function ManagerPage() {
     setSelectedDate(data.businessDate as string);
     setMessage("");
     return data as Dashboard;
+  }, []);
+
+  const loadManagerMemberships = useCallback(async () => {
+    const idToken = liff.getIDToken();
+    if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+    const response = await fetch("/api/manager/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error("管理者権限を確認できませんでした。");
+    }
+    const memberships = data.manager.memberships as ManagerMembership[];
+    setManagerMemberships(memberships);
+    return memberships;
   }, []);
 
   const loadMonthlyReports = useCallback(async (storeId: string) => {
@@ -212,7 +237,13 @@ export default function ManagerPage() {
           return;
         }
         if (active) {
-          const loadedDashboard = await loadDashboard(selectedDate);
+          const memberships = await loadManagerMemberships();
+          const requestedStoreId = new URLSearchParams(window.location.search)
+            .get("store_id");
+          const initialStoreId = memberships.find(
+            (item) => item.store_id === requestedStoreId,
+          )?.store_id ?? memberships[0]?.store_id;
+          const loadedDashboard = await loadDashboard(selectedDate, initialStoreId);
           await loadMonthlyReports(loadedDashboard.manager.store_id);
         }
       } catch (caught) {
@@ -226,7 +257,27 @@ export default function ManagerPage() {
     return () => {
       active = false;
     };
-  }, [loadDashboard, loadMonthlyReports, selectedDate]);
+  }, [loadDashboard, loadManagerMemberships, loadMonthlyReports, selectedDate]);
+
+  async function changeStore(storeId: string) {
+    if (!dashboard || storeId === dashboard.manager.store_id) return;
+    setSwitchingStore(true);
+    setError(null);
+    setSelectedStaffId("ALL");
+    setMonthlyReports([]);
+    setReissueMessage(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("store_id", storeId);
+      window.history.replaceState(null, "", url);
+      const loadedDashboard = await loadDashboard(undefined, storeId);
+      await loadMonthlyReports(loadedDashboard.manager.store_id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "店舗を切り替えられませんでした。");
+    } finally {
+      setSwitchingStore(false);
+    }
+  }
 
   function updateReviewDraft(id: string, values: Partial<ReviewDraft>) {
     setFieldErrors((current) => {
@@ -496,7 +547,25 @@ export default function ManagerPage() {
           <h1>管理者画面</h1>
           {dashboard && (
             <>
-              <p className={styles.store}>{dashboard.manager.store_name}</p>
+              {managerMemberships.length > 1 ? (
+                <label className={styles.storeSelector}>
+                  表示する店舗
+                  <select
+                    value={dashboard.manager.store_id}
+                    disabled={switchingStore}
+                    onChange={(event) => void changeStore(event.target.value)}
+                  >
+                    {managerMemberships.map((membership) => (
+                      <option key={membership.store_id} value={membership.store_id}>
+                        {membership.store_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <p className={styles.store}>{dashboard.manager.store_name}</p>
+              )}
+              {switchingStore && <p className={styles.switchingStore} role="status">店舗を切り替えています…</p>}
               <p className={styles.manager}>{dashboard.manager.legal_name}さん</p>
               <a href={`${MANAGER_QR_LIFF_URL}?store_id=${encodeURIComponent(dashboard.manager.store_id)}`}>店舗QRを発行・再発行</a>
             </>

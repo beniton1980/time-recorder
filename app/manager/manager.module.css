@@ -37,6 +37,35 @@
 .store { color: #627269; }
 .manager { font-weight: 700; }
 
+.storeSelector {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 10px;
+  color: #627269;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.storeSelector select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid #aabcb0;
+  border-radius: 10px;
+  background: #fff;
+  color: #173326;
+  font: inherit;
+  font-size: 16px;
+}
+
+.storeSelector select:disabled { opacity: .6; }
+
+.switchingStore {
+  margin: 0 0 8px;
+  color: #347a57;
+  font-size: 13px;
+}
+
 .loading, .error {
   margin: 20px 0;
   padding: 18px;
