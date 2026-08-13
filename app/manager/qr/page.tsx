@@ -286,15 +286,17 @@ export default function StoreQrPage() {
               <section ref={qrResultRef} className={styles.result}>
                 <h2>現在のQR</h2>
                 <p className={styles.warning}>このQRはこの画面を閉じると再表示できません。今すぐ保存してください。</p>
-                <div className={styles.qr}>
-                  {/* The generated PNG must remain directly saveable on iPhone. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={issued.qrPngDataUrl} alt={`${issued.storeName}の打刻QRコード`} />
-                </div>
                 <button type="button" onClick={() => void savePng()}>QR画像を保存・共有</button>
-                <p className={styles.saveHelp}>保存画面が開かない場合は、上のQR画像を長押しして保存してください。</p>
+                <div className={styles.imagePreview}>
+                  <p>保存画面が開かない場合は、下のQR画像を長押しして保存してください。</p>
+                  <div className={styles.qr}>
+                    {/* The generated PNG must remain directly saveable on iPhone. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={issued.qrPngDataUrl} alt={`${issued.storeName}の打刻QRコード`} />
+                  </div>
+                </div>
                 <button type="button" onClick={() => void saveA4Guide()}>A4案内画像を保存・共有</button>
-                {a4PngDataUrl && <div ref={a4PreviewRef} className={styles.a4Preview}>
+                {a4PngDataUrl && <div ref={a4PreviewRef} className={styles.imagePreview}>
                   <p role="status">A4案内画像を作成しました。下の画像を長押しして保存してください。</p>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={a4PngDataUrl} alt={`${issued.storeName}のA4打刻案内`} />
