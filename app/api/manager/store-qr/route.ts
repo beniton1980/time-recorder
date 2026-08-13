@@ -121,12 +121,18 @@ export async function POST(request: Request) {
       margin: 2,
       width: 720,
     });
+    const qrPngDataUrl = await QRCode.toDataURL(entryUrl, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 720,
+    });
 
     return NextResponse.json({
       ok: true,
       store: manager,
       entryUrl,
       qrSvg,
+      qrPngDataUrl,
       token: {
         id: rotated[0].entry_token_id,
         revokedCount: Number(rotated[0].revoked_count),
