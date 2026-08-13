@@ -62,3 +62,14 @@ test("manager dashboard and correction actions stay on the selected store", asyn
   assert.match(page, /new URLSearchParams\(window\.location\.search\)\.get\("store_id"\)/);
   assert.match(page, /storeId: dashboard\?\.manager\.store_id/);
 });
+
+test("multi-store managers can switch stores directly on the dashboard", async () => {
+  const page = await source("app/manager/page.tsx");
+  assert.match(page, /fetch\("\/api\/manager\/session"/);
+  assert.match(page, /managerMemberships\.length > 1/);
+  assert.match(page, /表示する店舗/);
+  assert.match(page, /void changeStore\(event\.target\.value\)/);
+  assert.match(page, /url\.searchParams\.set\("store_id", storeId\)/);
+  assert.match(page, /loadDashboard\(undefined, storeId\)/);
+  assert.match(page, /loadMonthlyReports\(loadedDashboard\.manager\.store_id\)/);
+});
