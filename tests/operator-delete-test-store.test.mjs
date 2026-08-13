@@ -49,7 +49,7 @@ test("eligible test store relations are deleted in foreign-key-safe order", asyn
   );
 
   const states = migration.indexOf("DELETE FROM staff_states");
-  const staff = migration.indexOf("DELETE FROM staff\n");
+  const staff = migration.search(/DELETE FROM staff\r?\n/);
   const tokens = migration.indexOf("DELETE FROM store_entry_tokens");
   const invites = migration.indexOf("DELETE FROM onboarding_manager_invites");
   const request = migration.indexOf("DELETE FROM onboarding_requests");

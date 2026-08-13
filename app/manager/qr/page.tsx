@@ -28,6 +28,27 @@ function escapeHtml(value: string) {
   })[character] as string);
 }
 
+async function requestStoreQr(
+  action: "STATUS" | "ROTATE" | "REVOKE",
+  selectedStoreId: string,
+) {
+  const idToken = liff.getIDToken();
+  if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+  const response = await fetch("/api/manager/store-qr", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idToken, storeId: selectedStoreId, action }),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    if (data.code === "MANAGER_ACCESS_REQUIRED") {
+      throw new Error("この店舗のQRを管理する権限がありません。");
+    }
+    throw new Error("店舗QRを処理できませんでした。");
+  }
+  return data;
+}
+
 export default function StoreQrPage() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [storeId, setStoreId] = useState("");
@@ -44,24 +65,6 @@ export default function StoreQrPage() {
     () => memberships.find((item) => item.store_id === storeId)?.store_name ?? "",
     [memberships, storeId],
   );
-
-  async function request(action: "STATUS" | "ROTATE" | "REVOKE", selectedStoreId = storeId) {
-    const idToken = liff.getIDToken();
-    if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
-    const response = await fetch("/api/manager/store-qr", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken, storeId: selectedStoreId, action }),
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) {
-      if (data.code === "MANAGER_ACCESS_REQUIRED") {
-        throw new Error("この店舗のQRを管理する権限がありません。");
-      }
-      throw new Error("店舗QRを処理できませんでした。");
-    }
-    return data;
-  }
 
   useEffect(() => {
     let active = true;
@@ -91,7 +94,7 @@ export default function StoreQrPage() {
         )?.store_id ?? items[0].store_id;
         setMemberships(items);
         setStoreId(selectedStoreId);
-        const status = await request("STATUS", selectedStoreId);
+        const status = await requestStoreQr("STATUS", selectedStoreId);
         if (!active) return;
         setHasActiveQr(status.token.active);
         setMessage("");
@@ -108,7 +111,7 @@ export default function StoreQrPage() {
     setIssued(null);
     setError(null);
     try {
-      const status = await request("STATUS", nextStoreId);
+      const status = await requestStoreQr("STATUS", nextStoreId);
       setHasActiveQr(status.token.active);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "状態を確認できませんでした。");
@@ -124,7 +127,7 @@ export default function StoreQrPage() {
     setError(null);
     setIssued(null);
     try {
-      const data = await request("ROTATE");
+      const data = await requestStoreQr("ROTATE", storeId);
       setIssued({
         storeName: data.store.store_name,
         entryUrl: data.entryUrl,
@@ -143,7 +146,7 @@ export default function StoreQrPage() {
     setWorking(true);
     setError(null);
     try {
-      await request("REVOKE");
+      await requestStoreQr("REVOKE", storeId);
       setHasActiveQr(false);
       setIssued(null);
     } catch (caught) {

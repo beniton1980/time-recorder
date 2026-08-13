@@ -128,6 +128,8 @@ export default function ManagerInvitePage() {
       {qrPngDataUrl ? <>
         <p className={styles.tokenWarning}>店舗の打刻QRを発行しました。この画面を閉じる前に保存してください。</p>
         <div className={styles.qrPreview}>
+          {/* The QR is a generated data URL and must be displayed without image optimization. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={qrPngDataUrl} alt={`${storeName}の打刻QRコード`} />
         </div>
         {qrEmailSent && <p className={styles.notice}>同じQR画像を登録メールアドレスにも送信しました。</p>}
