@@ -78,7 +78,9 @@ test("manager date and time correction fields stay inside the mobile card", asyn
   const page = await source("app/manager/page.tsx");
   const styles = await source("app/manager/manager.module.css");
   assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*box-sizing: border-box/);
+  assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*width: auto/);
   assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*min-width: 0/);
+  assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*justify-self: stretch/);
   assert.match(styles, /\.resolutionDateTime\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
   assert.match(styles, /\.resolutionDateTime label \{ min-width: 0; \}/);
   assert.match(page, /styles\.editPanel/);
