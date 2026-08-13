@@ -100,3 +100,24 @@ test("session bootstrap resolves cross-store state in the membership query", asy
   assert.match(bootstrap, /databaseMs/);
   assert.match(bootstrap, /logServerInfo\("session_bootstrap_completed"/);
 });
+
+test("self-service mistake correction toggles the effective last punch", async () => {
+  const correction = await source("app/api/correction-requests/route.ts");
+
+  assert.match(
+    correction,
+    /epe\.event_type AS last_event_type/,
+  );
+  assert.match(
+    correction,
+    /JOIN effective_punch_events epe\s+ON epe\.original_event_id = ss\.last_event_id/,
+  );
+  assert.match(
+    correction,
+    /WHEN t\.event_type = 'CHECK_OUT' THEN 'BREAK_START'\s+ELSE 'CHECK_OUT'/,
+  );
+  assert.doesNotMatch(
+    correction,
+    /\bpe\.event_type AS last_event_type/,
+  );
+});
