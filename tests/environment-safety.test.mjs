@@ -5,6 +5,7 @@ import {
   assertDatabaseEnvironmentSafety,
   isEmailDeliveryAllowed,
 } from "../lib/environment-safety.mjs";
+import { readFile } from "node:fs/promises";
 
 const MANAGED_KEYS = [
   "VERCEL_ENV",
@@ -79,4 +80,11 @@ test("preview email delivery is disabled unless explicitly enabled", () => {
   }, () => {
     assert.equal(isEmailDeliveryAllowed(), true);
   });
+});
+
+test("database access fails closed instead of falling back to integration owner credentials", async () => {
+  const databaseModule = await readFile(new URL("../lib/db.ts", import.meta.url), "utf8");
+  assert.match(databaseModule, /const databaseUrl = process\.env\.DATABASE_URL/);
+  assert.doesNotMatch(databaseModule, /time_recorder_POSTGRES_URL_NON_POOLING/);
+  assert.match(databaseModule, /DATABASE_URL is not configured/);
 });

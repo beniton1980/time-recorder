@@ -39,3 +39,5 @@ Previewのメール送信は既定で停止し、安全なテスト送信先を�
 ## 本番DBの権限分離
 
 `db/migrations/0017_least_privilege_app_role.sql` は、所有者権限を持たない`onogami_app`権限グループを作成し、ONOGAMI固有関数の`PUBLIC`実行権限を取り消します。アプリ接続の切り替え時は、リポジトリへパスワードを保存せず、Neonで専用LOGINロールを別途作成して`onogami_app`へ所属させ、その接続URLをVercel Productionの`DATABASE_URL`へ設定します。`neondb_owner`はマイグレーション専用としてアプリから分離します。
+
+アプリは`DATABASE_URL`だけを参照し、Neon連携が作成する所有者接続変数へフォールバックしません。ProductionとPreviewには、それぞれ最小権限ロールと分離済みDB branchの`DATABASE_URL`を必ず設定します。未設定時は所有者接続へ戻らず、安全側に停止します。
