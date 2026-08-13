@@ -632,17 +632,6 @@ export default function Home() {
             <p className="status">{view.membership.legal_name}さん</p>
             <p className="state">{stateLabels[view.membership.state]}</p>
 
-            <aside className="location-guide" aria-label="位置情報の利用について">
-              <p className="location-guide-title">位置情報について</p>
-              <p>
-                打刻時に店舗からの距離を確認します。位置情報を取得できない場合や
-                店舗から離れている場合も、打刻は記録されます。
-              </p>
-              <p>
-                管理者には不正の断定ではなく、確認の目安として表示されます。
-              </p>
-            </aside>
-
             {view.membership.last_event_at &&
               view.membership.last_event_type && (
                 <p className="last-punch">
@@ -670,6 +659,20 @@ export default function Home() {
                 </button>
               ))}
             </div>
+
+            <details className="location-guide">
+              <summary>
+                位置情報は距離確認に使用します（取得できなくても打刻できます）
+              </summary>
+              <div className="location-guide-detail">
+                <p>
+                  店舗から離れている場合も打刻は記録されます。
+                </p>
+                <p>
+                  管理者には不正の断定ではなく、確認の目安として表示されます。
+                </p>
+              </div>
+            </details>
 
 
             {!showCorrection && (

@@ -370,8 +370,8 @@ h1 {
 }
 
 .location-guide {
-  margin: 18px 0 0;
-  padding: 14px 16px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
   border: 1px solid #d8e4da;
   border-radius: 12px;
   background: #f7faf7;
@@ -381,17 +381,23 @@ h1 {
   text-align: left;
 }
 
-.location-guide p {
+.location-guide summary {
+  color: #274d38;
+  cursor: pointer;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.location-guide-detail {
+  padding-top: 8px;
+}
+
+.location-guide-detail p {
   margin: 0;
 }
 
-.location-guide p + p {
+.location-guide-detail p + p {
   margin-top: 4px;
-}
-
-.location-guide .location-guide-title {
-  color: #274d38;
-  font-weight: 700;
 }
 
 .spinner {
