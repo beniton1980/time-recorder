@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationPath = new URL("../db/migrations/0017_least_privilege_app_role.sql", import.meta.url);
+const hardeningPath = new URL("../db/migrations/0018_fail_closed_app_privileges.sql", import.meta.url);
 
 test("application database role cannot own or administer the database", async () => {
   const migration = await readFile(migrationPath, "utf8");
@@ -26,4 +27,38 @@ test("future owner-created objects preserve least privilege defaults", async () 
   assert.match(migration, /ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner/);
   assert.match(migration, /REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC/);
   assert.match(migration, /GRANT EXECUTE ON FUNCTIONS TO onogami_app/);
+});
+
+test("legacy multi-store function overload is removed", async () => {
+  const migration = await readFile(hardeningPath, "utf8");
+  assert.match(
+    migration,
+    /DROP FUNCTION IF EXISTS public\.set_staff_membership_status\(TEXT, UUID, TEXT\)/,
+  );
+  assert.doesNotMatch(
+    migration,
+    /DROP FUNCTION IF EXISTS public\.set_staff_membership_status\(TEXT, UUID, UUID, TEXT\)/,
+  );
+});
+
+test("append-only and derived attendance data cannot be mutated unnecessarily", async () => {
+  const migration = await readFile(hardeningPath, "utf8");
+  assert.match(migration, /REVOKE UPDATE, DELETE ON TABLE public\.punch_events/);
+  assert.match(migration, /REVOKE DELETE ON TABLE public\.correction_requests/);
+  assert.match(migration, /REVOKE DELETE ON TABLE public\.monthly_attendance_deliveries/);
+  assert.match(
+    migration,
+    /REVOKE INSERT, UPDATE, DELETE ON TABLE public\.effective_punch_events/,
+  );
+});
+
+test("future database objects fail closed until explicitly granted", async () => {
+  const migration = await readFile(hardeningPath, "utf8");
+  assert.match(
+    migration,
+    /REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM onogami_app/,
+  );
+  assert.match(migration, /REVOKE USAGE, SELECT ON SEQUENCES FROM onogami_app/);
+  assert.match(migration, /REVOKE EXECUTE ON FUNCTIONS FROM onogami_app/);
+  assert.doesNotMatch(migration, /GRANT .* ON (TABLES|SEQUENCES|FUNCTIONS)/);
 });
