@@ -34,8 +34,11 @@ export async function POST(request: Request) {
   if (limited) return limited;
 
   try {
-    const sql = getSql();
     const input = validated.value;
+    const sql = getSql({
+      mode: "onboarding_public",
+      clientRequestId: input.clientRequestId,
+    });
 
     const inserted = await sql`
       INSERT INTO onboarding_requests (

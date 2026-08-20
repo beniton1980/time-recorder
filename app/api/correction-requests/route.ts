@@ -66,7 +66,11 @@ export async function POST(request: Request) {
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const sql = getSql({
+      mode: "staff",
+      lineIdentity: identity.sub,
+      storeTokenHash: tokenHash,
+    });
 
     const membership = await sql`
       SELECT

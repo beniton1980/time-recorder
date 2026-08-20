@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 
   try {
     const operator = await verifyOperator(body.idToken);
-    const sql = getSql();
+    const sql = getSql({ mode: "operator", lineIdentity: operator.sub });
 
     const updated = await sql`
       UPDATE onboarding_requests

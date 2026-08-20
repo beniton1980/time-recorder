@@ -56,7 +56,11 @@ export async function POST(request: Request) {
     const verificationStartedAt = Date.now();
     const identity = await verifyLineIdToken(body.idToken);
     const lineVerificationMs = Date.now() - verificationStartedAt;
-    const sql = getSql();
+    const sql = getSql({
+      mode: "staff",
+      lineIdentity: identity.sub,
+      storeTokenHash: tokenHash,
+    });
     const databaseStartedAt = Date.now();
 
     const memberships = await sql`

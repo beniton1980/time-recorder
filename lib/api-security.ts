@@ -28,7 +28,7 @@ async function consume(
   limit: number,
   windowSeconds: number,
 ) {
-  const sql = getSql();
+  const sql = getSql({ mode: "rate_limit" });
   const result = await sql`
     SELECT * FROM consume_api_rate_limit(
       ${scope}, ${fingerprintHash}, ${limit}, ${windowSeconds}

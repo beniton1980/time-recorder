@@ -63,12 +63,17 @@ export async function POST(request: Request) {
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const inviteTokenHash = tokenHash(body.inviteToken);
+    const sql = getSql({
+      mode: "invite_claim",
+      lineIdentity: identity.sub,
+      inviteTokenHash,
+    });
 
     const claimed = await sql`
       SELECT *
       FROM claim_onboarding_manager_invite(
-        ${tokenHash(body.inviteToken)},
+        ${inviteTokenHash},
         ${identity.sub}
       )
     `;
