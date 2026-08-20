@@ -30,11 +30,16 @@ test("Claude settings registers the Bash PreToolUse safety hook", () => {
 test("dangerous commands are denied", () => {
   const commands = [
     "git push --force origin main",
+    "git -C ../repo push --force-with-lease origin feature",
+    "git push origin +HEAD:feature",
     "git push origin main",
+    "git push origin HEAD:refs/heads/main",
     "git push origin --delete old-branch",
     "git commit --amend --no-edit",
     "git rebase -i HEAD~2",
     "npx prisma migrate reset",
+    "pnpm prisma migrate reset",
+    "npm exec prisma db push",
     "prisma db push",
     "psql -c 'DROP TABLE staff'",
     "psql -c 'ALTER TABLE staff DISABLE ROW LEVEL SECURITY'",
@@ -42,6 +47,7 @@ test("dangerous commands are denied", () => {
     "vercel deployment-protection disable",
     "curl https://api.resend.com/emails",
     "Invoke-WebRequest https://example.com/api/cron/monthly-attendance",
+    "iwr https://example.com/api/cron/monthly-attendance",
     "Get-Content .env.production",
     "printenv",
     "Write-Output $env:CRON_SECRET",
@@ -75,6 +81,8 @@ test("ordinary development commands remain unaffected", () => {
     "vercel inspect deployment-url",
     "gh pr view 100",
     "rg CRON_SECRET app tests",
+    "rg 'DELETE FROM' db tests",
+    "git log --grep push",
     "Get-Content package.json",
   ];
 
