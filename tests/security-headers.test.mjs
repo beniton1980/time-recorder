@@ -32,3 +32,8 @@ test("API cache protection remains in addition to browser headers", () => {
   assert.match(config, /source: "\/api\/:path\*"/);
   assert.match(config, /private, no-store, max-age=0/);
 });
+
+test("referrer headers never forward bearer tokens from QR and invite URLs", () => {
+  assert.match(config, /key: "Referrer-Policy", value: "no-referrer"/);
+  assert.doesNotMatch(config, /strict-origin-when-cross-origin/);
+});

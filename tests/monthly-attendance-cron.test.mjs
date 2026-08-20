@@ -51,3 +51,9 @@ test("store-level monthly report email is preferred with onboarding fallback", a
   assert.match(route, /s\.monthly_report_email/);
   assert.match(route, /MONTHLY_REPORT_EMAIL_NOT_CONFIGURED/);
 });
+
+test("cron persists only normalized delivery error codes", async () => {
+  const route = await source("app/api/cron/monthly-attendance/route.ts");
+  assert.match(route, /monthlyAttendanceDeliveryErrorCode\(error\)/);
+  assert.doesNotMatch(route, /error\.message\.slice/);
+});
