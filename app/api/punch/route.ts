@@ -118,7 +118,11 @@ export async function POST(request: Request) {
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const sql = getSql({
+      mode: "staff",
+      lineIdentity: identity.sub,
+      storeTokenHash: tokenHash,
+    });
 
     const existing = await sql`
       SELECT
@@ -149,7 +153,8 @@ export async function POST(request: Request) {
       });
     }
 
-    const punchQuery = sql`
+    type TransactionSql = Parameters<Parameters<typeof sql.transaction>[0]>[0];
+    const createPunchQuery = (transactionSql: TransactionSql) => transactionSql`
       WITH target AS (
         SELECT
           ss.staff_id,
@@ -319,18 +324,16 @@ export async function POST(request: Request) {
         ss.state
     `;
 
-    const result =
-      eventType === "CHECK_IN"
-        ? (
-            await sql.transaction(
-              [
-                sql`SELECT pg_advisory_xact_lock(hashtextextended(${identity.sub}, 0))`,
-                punchQuery,
-              ],
-              { isolationLevel: "ReadCommitted" },
-            )
-          )[1]
-        : await punchQuery;
+    const punchTransaction = await sql.transaction(
+      (transactionSql) => [
+        ...(eventType === "CHECK_IN"
+          ? [transactionSql`SELECT pg_advisory_xact_lock(hashtextextended(${identity.sub}, 0))`]
+          : []),
+        createPunchQuery(transactionSql),
+      ],
+      { isolationLevel: "ReadCommitted" },
+    );
+    const result = punchTransaction[eventType === "CHECK_IN" ? 1 : 0];
 
     if (result.length === 1) {
       return NextResponse.json({

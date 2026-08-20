@@ -36,7 +36,11 @@ export async function POST(request: Request) {
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const sql = getSql({
+      mode: "manager",
+      lineIdentity: identity.sub,
+      storeId: typeof body.storeId === "string" ? body.storeId : undefined,
+    });
 
     const managers = await sql`
       SELECT st.id AS staff_id, st.legal_name, s.id AS store_id, s.name AS store_name

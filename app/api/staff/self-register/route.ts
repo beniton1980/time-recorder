@@ -40,7 +40,11 @@ export async function POST(request: Request) {
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const sql = getSql({
+      mode: "registration",
+      lineIdentity: identity.sub,
+      storeTokenHash: tokenHash,
+    });
     const rows = await sql`
       SELECT * FROM self_register_staff(
         ${tokenHash}, ${identity.sub}, ${legalName}

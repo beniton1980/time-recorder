@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   try {
     const operator = await verifyOperator(body.idToken);
     const rawToken = randomBytes(32).toString("base64url");
-    const sql = getSql();
+    const sql = getSql({ mode: "operator", lineIdentity: operator.sub });
 
     const provisioned = await sql`
       SELECT *

@@ -22,7 +22,11 @@ export async function POST(request: Request) {
   if (limited) return limited;
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const sql = getSql({
+      mode: "manager",
+      lineIdentity: identity.sub,
+      storeId: body.storeId as string,
+    });
     const reports = await sql`
       SELECT d.period_start::text, d.period_end::text, d.sent_at,
         COUNT(*) FILTER (WHERE all_versions.delivery_version LIKE 'reissue-%' AND all_versions.status = 'SENT')::int AS reissue_count

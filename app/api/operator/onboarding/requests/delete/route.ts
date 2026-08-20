@@ -54,8 +54,8 @@ export async function POST(request: Request) {
   if (limited) return limited;
 
   try {
-    await verifyOperator(body.idToken);
-    const sql = getSql();
+    const operator = await verifyOperator(body.idToken);
+    const sql = getSql({ mode: "operator", lineIdentity: operator.sub });
     const deleted = await sql`
       SELECT *
       FROM delete_onboarding_test_store(

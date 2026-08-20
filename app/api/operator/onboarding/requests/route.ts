@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   if (limited) return limited;
 
   try {
-    await verifyOperator(body.idToken);
+    const operator = await verifyOperator(body.idToken);
 
     const status = body.status ?? "PENDING";
     if (typeof status !== "string" || !allowedStatuses.has(status)) {
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const sql = getSql();
+    const sql = getSql({ mode: "operator", lineIdentity: operator.sub });
     const requests = await sql`
       SELECT
         id,

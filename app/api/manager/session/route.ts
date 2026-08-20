@@ -42,7 +42,7 @@ export async function POST(request: Request) {
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const sql = getSql({ mode: "manager", lineIdentity: identity.sub });
 
     const memberships = await sql`
       SELECT

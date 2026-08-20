@@ -44,7 +44,11 @@ export async function POST(request: Request) {
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const sql = getSql({
+      mode: "manager",
+      lineIdentity: identity.sub,
+      storeId: body.storeId as string,
+    });
     const rows = await sql`
       SELECT * FROM set_staff_membership_status(
         ${identity.sub}, ${body.storeId}::uuid, ${body.staffId}, ${body.status}

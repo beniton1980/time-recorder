@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ ok: false, code: "UNAUTHORIZED" }, { status: 401 });
   }
-  const sql = getSql();
+  const sql = getSql({ mode: "cron" });
   const stores = await sql`
     WITH candidates AS (
       SELECT s.id,

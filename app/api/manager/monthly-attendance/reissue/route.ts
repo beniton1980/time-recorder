@@ -27,7 +27,11 @@ export async function POST(request: Request) {
   if (limited) return limited;
   try {
     const identity = await verifyLineIdToken(body.idToken);
-    const sql = getSql();
+    const sql = getSql({
+      mode: "manager",
+      lineIdentity: identity.sub,
+      storeId: body.storeId as string,
+    });
     const managers = await sql`
       SELECT s.id, s.name, s.timezone, s.closing_rule,
         COALESCE(
