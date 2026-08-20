@@ -6,6 +6,7 @@ import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
 import { buildMonthlyAttendanceReport } from "@/lib/monthly-attendance-report.mjs";
 import { generateMonthlyAttendancePdf } from "@/lib/monthly-attendance-pdf.mjs";
 import { sendMonthlyAttendanceEmail } from "@/lib/monthly-attendance-email.mjs";
+import { monthlyAttendanceDeliveryErrorCode } from "@/lib/monthly-attendance-delivery-error.mjs";
 import { enforceRateLimit } from "@/lib/api-security";
 
 export const runtime = "nodejs";
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
       await sql`UPDATE monthly_attendance_deliveries SET status = 'SENT', provider_email_id = ${email.emailId}, sent_at = NOW(), updated_at = NOW() WHERE id = ${claimed[0].id}::uuid`;
       return Response.json({ ok: true, status: "SENT", period });
     } catch (error) {
-      const code = error instanceof Error ? error.message.slice(0, 100) : "UNKNOWN_ERROR";
+      const code = monthlyAttendanceDeliveryErrorCode(error);
       await sql`UPDATE monthly_attendance_deliveries SET status = 'FAILED', last_error_code = ${code}, updated_at = NOW() WHERE id = ${claimed[0].id}::uuid`;
       return Response.json({ ok: false, code: "REISSUE_FAILED" }, { status: 503 });
     }

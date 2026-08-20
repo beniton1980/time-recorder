@@ -4,6 +4,7 @@ import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
 import { buildMonthlyAttendanceReport } from "@/lib/monthly-attendance-report.mjs";
 import { generateMonthlyAttendancePdf } from "@/lib/monthly-attendance-pdf.mjs";
 import { sendMonthlyAttendanceEmail } from "@/lib/monthly-attendance-email.mjs";
+import { monthlyAttendanceDeliveryErrorCode } from "@/lib/monthly-attendance-delivery-error.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,7 +83,7 @@ export async function GET(request: Request) {
       await sql`UPDATE monthly_attendance_deliveries SET status = 'SENT', provider_email_id = ${email.emailId}, sent_at = NOW(), updated_at = NOW() WHERE id = ${claimed[0].id}::uuid`;
       results.push({ storeId: store.id, status: "SENT" });
     } catch (error) {
-      const code = error instanceof Error ? error.message.slice(0, 100) : "UNKNOWN_ERROR";
+      const code = monthlyAttendanceDeliveryErrorCode(error);
       await sql`UPDATE monthly_attendance_deliveries SET status = 'FAILED', last_error_code = ${code}, updated_at = NOW() WHERE id = ${claimed[0].id}::uuid`;
       results.push({ storeId: store.id, status: "FAILED", code });
     }

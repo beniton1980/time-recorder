@@ -47,3 +47,9 @@ test("reissue uses the store monthly email with onboarding fallback", async () =
   assert.match(route, /ORDER BY r\.created_at DESC/);
   assert.match(route, /MONTHLY_REPORT_EMAIL_NOT_CONFIGURED/);
 });
+
+test("reissue persists only normalized delivery error codes", async () => {
+  const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
+  assert.match(route, /monthlyAttendanceDeliveryErrorCode\(error\)/);
+  assert.doesNotMatch(route, /error\.message\.slice/);
+});
