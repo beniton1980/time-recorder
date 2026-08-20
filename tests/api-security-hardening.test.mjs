@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -8,6 +8,13 @@ test("all API responses are private and non-cacheable", async () => {
   const config = await read("next.config.ts");
   assert.match(config, /source: "\/api\/:path\*"/);
   assert.match(config, /private, no-store, max-age=0/);
+});
+
+test("database diagnostics are not exposed as a public API", async () => {
+  await assert.rejects(
+    access(new URL("../app/api/db-health/route.ts", import.meta.url)),
+    { code: "ENOENT" },
+  );
 });
 
 test("sensitive public operations use persistent rate limits", async () => {
