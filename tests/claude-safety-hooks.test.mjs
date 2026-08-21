@@ -20,23 +20,31 @@ function evaluate(command, payload = null) {
   return result.stdout ? JSON.parse(result.stdout).hookSpecificOutput : null;
 }
 
-test("Claude settings registers the Bash PreToolUse safety hook", () => {
+test("Claude settings registers the shell safety hook with an absolute project path", () => {
   const settings = JSON.parse(readFileSync(".claude/settings.json", "utf8"));
   const entry = settings.hooks.PreToolUse[0];
-  assert.equal(entry.matcher, "Bash");
-  assert.equal(entry.hooks[0].command, `node ${hookPath}`);
+  assert.equal(entry.matcher, "Bash|PowerShell");
+  assert.equal(entry.hooks[0].command, "node");
+  assert.deepEqual(entry.hooks[0].args, [`\${CLAUDE_PROJECT_DIR}/${hookPath}`]);
 });
 
 test("dangerous commands are denied", () => {
   const commands = [
     "git push --force origin main",
+    "/usr/bin/git push --force origin main",
+    "/usr/bin/git push origin main",
+    `"C:\\Program Files\\Git\\cmd\\git.exe" push --force origin main`,
+    "& $git push --force origin main",
     "git -C ../repo push --force-with-lease origin feature",
+    "git -C . push origin main",
     "git push origin +HEAD:feature",
     "git push origin main",
     "git push origin HEAD:refs/heads/main",
     "git push origin --delete old-branch",
     "git commit --amend --no-edit",
     "git rebase -i HEAD~2",
+    "git -C . rebase -i HEAD~2",
+    "/usr/bin/git -C . commit --amend --no-edit",
     "npx prisma migrate reset",
     "pnpm prisma migrate reset",
     "npm exec prisma db push",
@@ -61,9 +69,19 @@ test("dangerous commands are denied", () => {
 });
 
 test("high-impact commands require human confirmation", () => {
-  for (const command of ["git reset --hard HEAD~1", "vercel deploy --prod", "gh pr merge 123 --squash"]) {
+  for (const command of ["git push origin", "git reset --hard HEAD~1", "git -C . reset --hard HEAD~1", "vercel deploy --prod", "gh pr merge 123 --squash"]) {
     assert.equal(evaluate(command).permissionDecision, "ask", command);
   }
+});
+
+test("PowerShell tool calls receive the same safety decisions", () => {
+  const payload = {
+    hook_event_name: "PreToolUse",
+    tool_name: "PowerShell",
+    tool_input: { command: "git push --force origin main" },
+  };
+  assert.equal(evaluate("", payload).permissionDecision, "deny");
+  assert.equal(evaluate("", { ...payload, tool_input: { command: "Get-Content package.json" } }), null);
 });
 
 test("ordinary development commands remain unaffected", () => {
@@ -71,6 +89,7 @@ test("ordinary development commands remain unaffected", () => {
     "git status",
     "git diff --check",
     "git push -u origin feature/claude-safety-hooks",
+    "git push origin main:refs/heads/feature-from-main",
     "git branch -d merged-local-branch",
     "git log --oneline -5",
     "npm test",
@@ -93,6 +112,7 @@ test("ordinary development commands remain unaffected", () => {
 
 test("invalid or unexpected input fails closed", () => {
   assert.equal(evaluate("", "not-json").permissionDecision, "deny");
-  assert.equal(evaluate("", { tool_name: "Bash", tool_input: {} }).permissionDecision, "deny");
+  assert.equal(evaluate("", { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {} }).permissionDecision, "deny");
+  assert.equal(evaluate("", { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { command: "git status" } }).permissionDecision, "deny");
 });
 
