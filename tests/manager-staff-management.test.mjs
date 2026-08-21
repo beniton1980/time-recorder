@@ -56,10 +56,18 @@ test("manager dashboard and correction actions stay on the selected store", asyn
   const decision = await source("app/api/manager/corrections/decision/route.ts");
   const direct = await source("app/api/manager/punch-corrections/route.ts");
   const page = await source("app/manager/page.tsx");
-  assert.match(dashboard, /st\.store_id = \$\{typeof body\.storeId/);
+  assert.match(dashboard, /typeof body\.storeId !== "string" \|\| !uuidPattern\.test\(body\.storeId\)/);
+  assert.match(dashboard, /storeId: body\.storeId/);
+  assert.match(dashboard, /st\.store_id = \$\{body\.storeId\}::uuid/);
+  assert.doesNotMatch(dashboard, /body\.storeId !== undefined/);
+  assert.doesNotMatch(dashboard, /::uuid IS NULL/);
   assert.match(decision, /st\.store_id = \$\{body\.storeId\}::uuid/);
   assert.match(direct, /st\.store_id = \$\{body\.storeId\}::uuid/);
-  assert.match(page, /new URLSearchParams\(window\.location\.search\)\.get\("store_id"\)/);
+  assert.match(page, /new URLSearchParams\(window\.location\.search\)\s*\.get\("store_id"\)/);
+  assert.match(page, /if \(!initialStoreId\)/);
+  assert.match(page, /JSON\.stringify\(\{ idToken, businessDate, storeId \}\)/);
+  assert.match(page, /loadDashboard\(businessDate, dashboard\.manager\.store_id\)/);
+  assert.doesNotMatch(page, /await loadDashboard\(selectedDate\);/);
   assert.match(page, /storeId: dashboard\?\.manager\.store_id/);
 });
 

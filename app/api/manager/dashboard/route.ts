@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, code: "ID_TOKEN_REQUIRED" }, { status: 400 });
   }
 
-  if (body.storeId !== undefined && (typeof body.storeId !== "string" || !uuidPattern.test(body.storeId))) {
+  if (typeof body.storeId !== "string" || !uuidPattern.test(body.storeId)) {
     return NextResponse.json({ ok: false, code: "INVALID_STORE_ID" }, { status: 400 });
   }
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     const sql = getSql({
       mode: "manager",
       lineIdentity: identity.sub,
-      storeId: typeof body.storeId === "string" ? body.storeId : undefined,
+      storeId: body.storeId,
     });
 
     const managers = await sql`
@@ -55,8 +55,7 @@ export async function POST(request: Request) {
         AND st.status = 'active'
         AND st.role = 'MANAGER'
         AND s.status = 'active'
-        AND (${typeof body.storeId === "string" ? body.storeId : null}::uuid IS NULL
-          OR st.store_id = ${typeof body.storeId === "string" ? body.storeId : null}::uuid)
+        AND st.store_id = ${body.storeId}::uuid
       ORDER BY st.created_at ASC
       LIMIT 1
     `;
