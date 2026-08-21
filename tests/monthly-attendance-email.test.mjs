@@ -9,9 +9,21 @@ const mail = {
 };
 
 test("normal, review, and zero-attendance messages are explicit", () => {
-  assert.doesNotMatch(createMonthlyAttendanceEmail(mail).subject, /要確認/);
-  assert.match(createMonthlyAttendanceEmail({ ...mail, gpsIssueCount: 1 }).subject, /^【要確認】/);
+  assert.match(createMonthlyAttendanceEmail(mail).subject, /^【確認事項なし】/);
+  assert.match(createMonthlyAttendanceEmail({ ...mail, gpsIssueCount: 1 }).subject, /^【GPS確認1件】/);
+  assert.match(createMonthlyAttendanceEmail({ ...mail, attendanceIssueDays: 2 }).subject, /^【要確認2件】/);
   assert.match(createMonthlyAttendanceEmail({ ...mail, staffCount: 0 }).html, /勤怠記録がありませんでした/);
+});
+
+test("attendance issues identify the staff, business date, and reason in the email", () => {
+  const content = createMonthlyAttendanceEmail({
+    ...mail,
+    attendanceIssueDays: 1,
+    attendanceIssues: [{ staffName: "佐藤 健", businessDate: "2026-08-20", reasons: ["UNCLOSED_SHIFT"] }],
+  });
+  assert.match(content.html, /佐藤 健/);
+  assert.match(content.html, /2026-08-20/);
+  assert.match(content.html, /退勤の打刻がありません/);
 });
 
 test("sends the PDF with a deterministic idempotency key", async () => {

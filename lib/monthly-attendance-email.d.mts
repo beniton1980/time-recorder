@@ -6,6 +6,7 @@ export type MonthlyAttendanceEmail = {
   period: { start: string; end: string };
   staffCount: number;
   attendanceIssueDays: number;
+  attendanceIssues?: Array<{ staffName: string; businessDate: string; reasons: string[] }>;
   gpsIssueCount: number;
   deliveryVersion: string;
   pdf: Uint8Array;

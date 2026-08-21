@@ -3,6 +3,9 @@ import { logServerError } from "@/lib/safe-log";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
 import { enforceRateLimit } from "@/lib/api-security";
 import { calculateClosingPeriod } from "@/lib/monthly-attendance.mjs";
+import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
+import { buildMonthlyAttendanceReport } from "@/lib/monthly-attendance-report.mjs";
+import { createMonthlyAttendanceCsv } from "@/lib/monthly-attendance-csv.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,19 +13,6 @@ export const dynamic = "force-dynamic";
 type Body = { idToken?: unknown; storeId?: unknown; periodEnd?: unknown };
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const eventLabels: Record<string, string> = { CHECK_IN: "出勤", BREAK_START: "休憩開始", BREAK_END: "休憩終了", CHECK_OUT: "退勤" };
-const locationLabels: Record<string, string> = {
-  OUTSIDE_STORE_RADIUS: "店舗範囲外",
-  LOW_GPS_ACCURACY: "GPS精度不足",
-  CLIENT_LOCATION_UNAVAILABLE: "位置情報取得不可",
-  STORE_LOCATION_UNAVAILABLE: "店舗位置未設定",
-};
-
-function csvCell(value: unknown) {
-  let text = String(value ?? "");
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
-  return `"${text.replaceAll('"', '""')}"`;
-}
 
 export async function POST(request: Request) {
   let body: Body;
@@ -59,21 +49,20 @@ export async function POST(request: Request) {
         AND delivery_version = 'initial' AND status = 'SENT' LIMIT 1
     `;
     if (reports.length === 0) return Response.json({ ok: false, code: "MONTHLY_REPORT_NOT_FOUND" }, { status: 404 });
-    const rows = await sql`
-      SELECT epe.business_date::text, st.legal_name, epe.event_type,
-        to_char(epe.occurred_at AT TIME ZONE ${store.timezone}, 'YYYY-MM-DD HH24:MI:SS') AS occurred_at_local,
-        epe.corrected, epe.validation_code
-      FROM effective_punch_events epe JOIN staff st ON st.id = epe.staff_id
-      WHERE epe.store_id = ${store.id}::uuid AND epe.business_date BETWEEN ${period.start}::date AND ${period.end}::date
-      ORDER BY epe.business_date, st.legal_name, epe.occurred_at, epe.effective_id
-    `;
-    const lines = [
-      ["営業日", "スタッフ名", "打刻種類", "打刻日時", "訂正", "位置情報"].map(csvCell).join(","),
-      ...rows.map((row) => [row.business_date, row.legal_name, eventLabels[String(row.event_type)] ?? row.event_type, row.occurred_at_local, row.corrected ? "訂正あり" : "", locationLabels[String(row.validation_code)] ?? ""].map(csvCell).join(",")),
-    ];
+    const monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
+    const report = buildMonthlyAttendanceReport({
+      storeName: String(store.name),
+      timezone: String(store.timezone),
+      label: `${period.end.slice(5, 7)}月度`,
+      period,
+      generatedAt: new Date(),
+      events: monthly.events as never,
+      days: monthly.dailyAttendanceRecords,
+    });
+    const csv = createMonthlyAttendanceCsv(report);
     const label = `${period.end.slice(0, 7)}-${period.end.slice(8, 10)}締め`;
     const filename = encodeURIComponent(`${store.name}-${label}-勤怠.csv`);
-    return new Response(`\uFEFF${lines.join("\r\n")}\r\n`, { headers: {
+    return new Response(csv, { headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="attendance-${period.end}.csv"; filename*=UTF-8''${filename}`,
       "Cache-Control": "no-store",
