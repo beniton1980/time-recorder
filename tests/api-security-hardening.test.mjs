@@ -33,10 +33,12 @@ test("sensitive public operations use persistent rate limits", async () => {
     "app/api/manager/monthly-attendance/reports/route.ts",
     "app/api/manager/monthly-attendance/reissue/route.ts",
     "app/api/onboarding/requests/route.ts",
+    "app/api/onboarding/email-verification/route.ts",
     "app/api/onboarding/manager-invite/claim/route.ts",
     "app/api/operator/onboarding/requests/route.ts",
     "app/api/operator/onboarding/requests/decision/route.ts",
     "app/api/operator/onboarding/requests/provision/route.ts",
+    "app/api/operator/onboarding/requests/email-verification/route.ts",
     "app/api/operator/onboarding/requests/delete/route.ts",
   ];
   for (const route of routes) {

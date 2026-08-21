@@ -67,13 +67,14 @@ test("initial QR is generated, downloaded, and emailed as PNG", async () => {
   assert.doesNotMatch(mailer, /image\/svg\+xml/);
 });
 
-test("operator approval continues directly to provisioning and invite creation", async () => {
+test("operator approval requires verified email before provisioning", async () => {
   const page = await source("app/operator/onboarding/page.tsx");
 
   assert.match(page, /if \(decision === "APPROVED"\) \{/);
-  assert.match(page, /await provision\(item, false\)/);
+  assert.match(page, /await requestEmailVerification\(item\)/);
   assert.match(page, /async function provision\(item: Item, confirmFirst = true\)/);
-  assert.match(page, /承認し、店舗と管理者招待を作成しますか/);
+  assert.match(page, /!item\.contact_email_verified_at/);
+  assert.match(page, /承認し、連絡先メールの所有確認を送信しますか/);
 });
 
 
