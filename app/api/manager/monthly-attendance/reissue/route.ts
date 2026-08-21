@@ -3,7 +3,7 @@ import { logServerError } from "@/lib/safe-log";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
 import { calculateClosingPeriod } from "@/lib/monthly-attendance.mjs";
 import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
-import { buildMonthlyAttendanceReport } from "@/lib/monthly-attendance-report.mjs";
+import { buildMonthlyAttendanceReport, monthlyAttendanceIssues } from "@/lib/monthly-attendance-report.mjs";
 import { generateMonthlyAttendancePdf } from "@/lib/monthly-attendance-pdf.mjs";
 import { sendMonthlyAttendanceEmail } from "@/lib/monthly-attendance-email.mjs";
 import { monthlyAttendanceDeliveryErrorCode } from "@/lib/monthly-attendance-delivery-error.mjs";
@@ -73,8 +73,8 @@ export async function POST(request: Request) {
     try {
       const monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
       const report = buildMonthlyAttendanceReport({ storeName: String(store.name), timezone: String(store.timezone), label: `${period.end.slice(5, 7)}月度`, period, generatedAt: new Date(), events: monthly.events as never, days: monthly.days });
-      const pdf = generateMonthlyAttendancePdf(report);
-      const email = await sendMonthlyAttendanceEmail({ storeId: String(store.id), storeName: String(store.name), recipient: String(claimed[0].recipient), label: report.label, period, staffCount: report.staff.length, attendanceIssueDays: report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0), gpsIssueCount: report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0), deliveryVersion: `${version}-${claimed[0].attempt_id}`, pdf });
+      const pdf = await generateMonthlyAttendancePdf(report);
+      const email = await sendMonthlyAttendanceEmail({ storeId: String(store.id), storeName: String(store.name), recipient: String(claimed[0].recipient), label: report.label, period, staffCount: report.staff.length, attendanceIssueDays: report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0), attendanceIssues: monthlyAttendanceIssues(report), gpsIssueCount: report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0), deliveryVersion: `${version}-${claimed[0].attempt_id}`, pdf });
       if (!email.sent) throw new Error(email.code);
       await sql`SELECT finish_monthly_attendance_delivery_attempt(${claimed[0].attempt_id}::uuid, TRUE, ${email.emailId}, NULL)`;
       return Response.json({ ok: true, status: "SENT", period });

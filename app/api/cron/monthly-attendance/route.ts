@@ -1,7 +1,7 @@
 import { getSql } from "@/lib/db";
 import { calculateClosingPeriod } from "@/lib/monthly-attendance.mjs";
 import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
-import { buildMonthlyAttendanceReport } from "@/lib/monthly-attendance-report.mjs";
+import { buildMonthlyAttendanceReport, monthlyAttendanceIssues } from "@/lib/monthly-attendance-report.mjs";
 import { generateMonthlyAttendancePdf } from "@/lib/monthly-attendance-pdf.mjs";
 import { sendMonthlyAttendanceEmail } from "@/lib/monthly-attendance-email.mjs";
 import { monthlyAttendanceDeliveryErrorCode } from "@/lib/monthly-attendance-delivery-error.mjs";
@@ -71,10 +71,10 @@ export async function GET(request: Request) {
     try {
       const monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
       const report = buildMonthlyAttendanceReport({ storeName: String(store.name), timezone: String(store.timezone), label: `${period.end.slice(5, 7)}月度`, period, generatedAt: new Date(), events: monthly.events as never, days: monthly.days });
-      const pdf = generateMonthlyAttendancePdf(report);
+      const pdf = await generateMonthlyAttendancePdf(report);
       const issueDays = report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0);
       const gpsIssues = report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0);
-      const email = await sendMonthlyAttendanceEmail({ storeId: String(store.id), storeName: String(store.name), recipient: String(claimed[0].recipient), label: report.label, period, staffCount: report.staff.length, attendanceIssueDays: issueDays, gpsIssueCount: gpsIssues, deliveryVersion: `initial-${claimed[0].attempt_id}`, pdf });
+      const email = await sendMonthlyAttendanceEmail({ storeId: String(store.id), storeName: String(store.name), recipient: String(claimed[0].recipient), label: report.label, period, staffCount: report.staff.length, attendanceIssueDays: issueDays, attendanceIssues: monthlyAttendanceIssues(report), gpsIssueCount: gpsIssues, deliveryVersion: `initial-${claimed[0].attempt_id}`, pdf });
       if (!email.sent) throw new Error(email.code);
       await sql`SELECT finish_monthly_attendance_delivery_attempt(${claimed[0].attempt_id}::uuid, TRUE, ${email.emailId}, NULL)`;
       results.push({ storeId: store.id, status: "SENT" });
