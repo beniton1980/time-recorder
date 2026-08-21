@@ -113,77 +113,24 @@ export async function POST(request: Request) {
     }
 
     const updated = await sql`
-      UPDATE correction_requests
-      SET
-        operation = CASE
-          WHEN ${isManualResolution} THEN 'ADD'
-          ELSE operation
-        END,
-        requested_event_type = CASE
-          WHEN ${isManualResolution} THEN ${isManualResolution ? body.resolvedEventType : null}
-          ELSE requested_event_type
-        END,
-        requested_occurred_at = CASE
-          WHEN ${isManualResolution} THEN ${resolvedOccurredAt}
-          ELSE requested_occurred_at
-        END,
-        status = ${body.decision},
-        approved_by = CASE
-          WHEN ${body.decision} = 'APPROVED' THEN ${manager.staff_id}::text
-          ELSE approved_by
-        END,
-        approved_at = CASE
-          WHEN ${body.decision} = 'APPROVED' THEN NOW()
-          ELSE approved_at
-        END,
-        rejected_at = CASE
-          WHEN ${body.decision} = 'REJECTED' THEN NOW()
-          ELSE rejected_at
-        END
-      WHERE id = ${body.requestId}
-        AND status = 'PENDING'
-      RETURNING id, staff_id, status, operation, requested_event_type, requested_occurred_at
+      SELECT
+        correction_id AS id,
+        staff_id,
+        status,
+        operation,
+        requested_event_type,
+        requested_occurred_at
+      FROM public.decide_manager_correction(
+        ${manager.store_id}::uuid,
+        ${body.requestId}::uuid,
+        ${body.decision},
+        ${isManualResolution ? body.resolvedEventType : null},
+        ${resolvedOccurredAt}::timestamptz
+      )
     `;
 
     if (updated.length === 0) {
       return NextResponse.json({ ok: false, code: "REQUEST_ALREADY_DECIDED" }, { status: 409 });
-    }
-
-    if (body.decision === "APPROVED") {
-      const latest = await sql`
-        SELECT event_type, occurred_at, original_event_id
-        FROM effective_punch_events
-        WHERE staff_id = ${correction.staff_id}
-        ORDER BY occurred_at DESC, effective_id DESC
-        LIMIT 1
-      `;
-
-      if (latest.length > 0) {
-        const eventType = latest[0].event_type as string;
-        const nextState =
-          eventType === "CHECK_OUT"
-            ? "OFF_DUTY"
-            : eventType === "BREAK_START"
-              ? "ON_BREAK"
-              : "WORKING";
-
-        await sql`
-          INSERT INTO staff_states (staff_id, state, last_event_id, last_event_at, updated_at)
-          VALUES (
-            ${correction.staff_id},
-            ${nextState},
-            ${latest[0].original_event_id},
-            ${latest[0].occurred_at},
-            NOW()
-          )
-          ON CONFLICT (staff_id) DO UPDATE
-          SET
-            state = EXCLUDED.state,
-            last_event_id = EXCLUDED.last_event_id,
-            last_event_at = EXCLUDED.last_event_at,
-            updated_at = NOW()
-        `;
-      }
     }
 
     return NextResponse.json({ ok: true, request: updated[0] });
