@@ -11,3 +11,9 @@ export function buildMonthlyAttendanceReport(input: {
   days: AttendanceDayAssessment[];
 }): MonthlyAttendancePdfReport;
 
+export function monthlyAttendanceIssues(report: MonthlyAttendancePdfReport): Array<{
+  staffName: string;
+  businessDate: string;
+  reasons: string[];
+}>;
+
