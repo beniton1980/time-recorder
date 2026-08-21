@@ -1,7 +1,34 @@
 import process from "node:process";
 
-const GIT_PREFIX = String.raw`(?:^|\s)git\s+(?:(?:(?:-c|-C|--git-dir|--work-tree|--namespace)\s+\S+|--(?:git-dir|work-tree|namespace)=\S+)\s+)*`;
+// Defense in depth: Claude Code permissions and remote service protections remain the primary boundary.
+const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
+const GIT_GLOBAL_OPTIONS = String.raw`(?:(?:(?:-c|-C|--git-dir|--work-tree|--namespace)\s+\S+|--(?:git-dir|work-tree|namespace)=\S+)\s+)*`;
+const GIT_PREFIX = String.raw`(?:^|[\s;&|])git\s+${GIT_GLOBAL_OPTIONS}`;
 const GIT_PUSH = new RegExp(`${GIT_PREFIX}push\\b[^\\r\\n]*`);
+
+function normalizeCommand(raw) {
+  return raw
+    .toLowerCase()
+    .replace(/[\u0000`]/g, "")
+    .replace(/(["'])(?:[a-z]:[\\/]|\/)[^"'\r\n]*[\\/]git(?:\.exe)?\1/g, "git")
+    .replace(/(?:[a-z]:[\\/]|\/)(?:[^\s;&|"']+[\\/])*git(?:\.exe)?/g, "git")
+    .replace(
+      /(^|[;&|]\s*)&\s*\$[a-z_][\w:]*\s+(?=(?:(?:(?:-c|-C|--git-dir|--work-tree|--namespace)\s+\S+|--(?:git-dir|work-tree|namespace)=\S+)\s+)*(?:push|filter-branch|filter-repo|replace|commit|rebase)\b)/g,
+      "$1git ",
+    )
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+function isAmbiguousPush(command) {
+  const push = command.match(GIT_PUSH)?.[0];
+  if (!push) return false;
+
+  const args = push.slice(push.search(/\bpush\b/) + "push".length).trim();
+  if (!args) return true;
+  const positional = args.split(/\s+/).filter((token) => !token.startsWith("-"));
+  return positional.length <= 1;
+}
 
 const DENY_RULES = [
   [(command) => {
@@ -16,7 +43,7 @@ const DENY_RULES = [
     const push = command.match(GIT_PUSH)?.[0];
     return Boolean(push && /(?:--delete(?:=|\b)|(?:^|\s)-d(?:\s|$)|(?:^|\s):\S+)/.test(push));
   }, "Deleting remote branches is prohibited."],
-  [/(?:^|\s)git\s+(?:filter-branch|filter-repo|replace)\b|(?:^|\s)git\s+commit\b[^\r\n]*--amend\b|(?:^|\s)git\s+rebase\b/, "Git history rewrites are prohibited."],
+  [new RegExp(`${GIT_PREFIX}(?:filter-branch|filter-repo|replace|rebase)\\b|${GIT_PREFIX}commit\\b[^\\r\\n]*--amend\\b`), "Git history rewrites are prohibited."],
   [/(?:^|\s)(?:(?:npx|pnpm|yarn|bunx)\s+|npm\s+exec\s+)?prisma\s+(?:migrate\s+reset|db\s+push)\b/, "Destructive or schema-pushing Prisma commands are prohibited."],
   [(command) => /(?:^|\s)(?:psql|pgcli)\b/.test(command) && /\b(?:drop\s+(?:database|schema|table|view|role)|truncate\s+(?:table\s+)?|delete\s+from|alter\s+table\b[^;\r\n]*\bdisable\s+row\s+level\s+security)\b/.test(command), "Destructive SQL and RLS disabling are prohibited."],
   [/\bneondb_owner\b|\b(?:postgres_url_non_pooling|database_url_unpooled)\b/, "Owner database credentials must not be used."],
@@ -27,7 +54,8 @@ const DENY_RULES = [
 ];
 
 const ASK_RULES = [
-  [/(?:^|\s)git\s+reset\b[^\r\n]*--hard\b/, "Hard reset requires explicit human confirmation."],
+  [isAmbiguousPush, "A push without an explicit refspec requires human confirmation."],
+  [new RegExp(`${GIT_PREFIX}reset\\b[^\\r\\n]*--hard\\b`), "Hard reset requires explicit human confirmation."],
   [/(?:^|\s)vercel\s+(?:deploy\s+)?(?:--prod(?:uction)?\b|deploy\b[^\r\n]*--prod(?:uction)?\b)/, "Production deployment requires explicit human confirmation."],
   [/(?:^|\s)gh\s+pr\s+merge\b/, "PR merge requires explicit human confirmation."],
 ];
@@ -55,12 +83,12 @@ async function main() {
     return;
   }
 
-  if (input?.tool_name !== "Bash" || typeof input?.tool_input?.command !== "string") {
+  if (input?.hook_event_name !== "PreToolUse" || !SHELL_TOOLS.has(input?.tool_name) || typeof input?.tool_input?.command !== "string") {
     output("deny", "Safety hook received an unexpected tool payload and failed closed.");
     return;
   }
 
-  const command = input.tool_input.command.toLowerCase().replace(/[`\u0000]/g, "").replace(/[ \t]+/g, " ").trim();
+  const command = normalizeCommand(input.tool_input.command);
 
   for (const [matcher, reason] of DENY_RULES) {
     if (typeof matcher === "function" ? matcher(command) : matcher.test(command)) {
@@ -69,8 +97,8 @@ async function main() {
     }
   }
 
-  for (const [pattern, reason] of ASK_RULES) {
-    if (pattern.test(command)) {
+  for (const [matcher, reason] of ASK_RULES) {
+    if (typeof matcher === "function" ? matcher(command) : matcher.test(command)) {
       output("ask", reason);
       return;
     }

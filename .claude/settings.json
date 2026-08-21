@@ -13,11 +13,12 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/pretooluse-safety.mjs"
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/pretooluse-safety.mjs"]
           }
         ]
       }
