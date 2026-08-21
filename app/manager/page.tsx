@@ -574,9 +574,13 @@ export default function ManagerPage() {
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
-        throw new Error(data.code === "INVALID_EMAIL"
-          ? "正しいメールアドレスを入力してください。"
-          : "確認メールを送信できませんでした。");
+        throw new Error(
+          data.code === "INVALID_EMAIL"
+            ? "正しいメールアドレスを入力してください。"
+            : data.code === "MONTHLY_REPORT_DELIVERY_IN_PROGRESS"
+              ? "勤怠表を送信中です。送信完了後に送信先を変更してください。"
+              : "確認メールを送信できませんでした。",
+        );
       }
       if (data.email.sent !== true) {
         throw new Error("確認メールを送信できませんでした。設定を確認して再送してください。");

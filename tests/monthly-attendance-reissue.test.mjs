@@ -8,7 +8,7 @@ test("reissue requires the selected manager store and ignores a client recipient
   assert.match(route, /verifyLineIdToken\(body\.idToken\)/);
   assert.match(route, /st\.role = 'MANAGER'/);
   assert.match(route, /st\.store_id = \$\{body\.storeId\}::uuid/);
-  assert.match(route, /recipient: String\(store\.monthly_report_email\)/);
+  assert.match(route, /recipient: String\(claimed\[0\]\.recipient\)/);
   assert.doesNotMatch(route, /body\.recipient/);
 });
 
@@ -20,10 +20,13 @@ test("only a previously sent initial report can be reissued", async () => {
 
 test("request IDs make retries idempotent and failed delivery retryable", async () => {
   const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
+  const migration = await source("db/migrations/0023_monthly_report_recipient_generations.sql");
   assert.match(route, /reissue-\$\{body\.requestId\}/);
-  assert.match(route, /ON CONFLICT \(store_id, period_start, period_end, delivery_version\)/);
-  assert.match(route, /WHERE monthly_attendance_deliveries\.status = 'FAILED'/);
-  assert.match(route, /recipient = EXCLUDED\.recipient/);
+  assert.match(route, /claim_monthly_attendance_delivery/);
+  assert.match(route, /attempt_id/);
+  assert.match(migration, /SET status = 'PROCESSING'/);
+  assert.match(migration, /UNIQUE \(delivery_id, attempt_number\)/);
+  assert.doesNotMatch(route, /recipient = EXCLUDED\.recipient/);
 });
 
 test("report listing is manager-scoped and returns only successful initial periods", async () => {

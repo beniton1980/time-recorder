@@ -78,3 +78,13 @@ test("cross-store attendance references are rejected by database constraints", a
   assert.match(migration, /FOREIGN KEY \(target_correction_id, staff_id, store_id\)/);
   assert.match(migration, /VALIDATE CONSTRAINT fk_punch_events_staff_store/);
 });
+
+test("recipient generations use RLS and store-scoped privileged functions", async () => {
+  const migration = await source("db/migrations/0023_monthly_report_recipient_generations.sql");
+  assert.match(migration, /ALTER TABLE public\.monthly_report_recipient_versions ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /ALTER TABLE public\.monthly_attendance_delivery_attempts ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /app_manager_store_allowed\(p_store_id\)/);
+  assert.match(migration, /app_request_setting\('mode'\) IS DISTINCT FROM 'cron'/);
+  assert.match(migration, /version\.store_id = p_store_id/);
+  assert.match(migration, /delivery\.store_id = p_store_id/);
+});

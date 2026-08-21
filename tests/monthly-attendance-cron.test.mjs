@@ -28,12 +28,14 @@ test("failed initial deliveries are selected on later daily runs", async () => {
 
 test("delivery claims are durable, unique, and recover stale work", async () => {
   const migration = await source("db/migrations/0011_monthly_attendance_deliveries.sql");
+  const generations = await source("db/migrations/0023_monthly_report_recipient_generations.sql");
   const route = await source("app/api/cron/monthly-attendance/route.ts");
   assert.match(migration, /UNIQUE \(store_id, period_start, period_end, delivery_version\)/);
-  assert.match(route, /ON CONFLICT \(store_id, period_start, period_end, delivery_version\)/);
-  assert.match(route, /status = 'FAILED'/);
-  assert.match(route, /INTERVAL '15 minutes'/);
-  assert.match(route, /recipient = EXCLUDED\.recipient/);
+  assert.match(route, /claim_monthly_attendance_delivery/);
+  assert.match(generations, /SET status = 'PROCESSING'/);
+  assert.match(generations, /INTERVAL '15 minutes'/);
+  assert.match(generations, /monthly_attendance_delivery_attempts/);
+  assert.doesNotMatch(route, /recipient = EXCLUDED\.recipient/);
 });
 
 test("runner composes assessment, PDF, and email without changing punch state", async () => {
@@ -51,6 +53,8 @@ test("cron uses only a confirmed and consented store-level recipient", async () 
   assert.match(route, /s\.monthly_report_email_verified_at/);
   assert.match(route, /s\.monthly_report_email_consented_at/);
   assert.match(route, /MONTHLY_REPORT_RECIPIENT_NOT_CONFIRMED/);
+  assert.match(route, /monthly_report_recipient_version_id/);
+  assert.match(route, /recipient: String\(claimed\[0\]\.recipient\)/);
   assert.doesNotMatch(route, /onboarding_requests/);
   assert.doesNotMatch(route, /COALESCE\(/);
 });

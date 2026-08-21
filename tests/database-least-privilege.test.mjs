@@ -4,6 +4,10 @@ import test from "node:test";
 
 const migrationPath = new URL("../db/migrations/0017_least_privilege_app_role.sql", import.meta.url);
 const hardeningPath = new URL("../db/migrations/0018_fail_closed_app_privileges.sql", import.meta.url);
+const recipientGenerationsPath = new URL(
+  "../db/migrations/0023_monthly_report_recipient_generations.sql",
+  import.meta.url,
+);
 
 test("application database role cannot own or administer the database", async () => {
   const migration = await readFile(migrationPath, "utf8");
@@ -61,4 +65,14 @@ test("future database objects fail closed until explicitly granted", async () =>
   assert.match(migration, /REVOKE USAGE, SELECT ON SEQUENCES FROM onogami_app/);
   assert.match(migration, /REVOKE EXECUTE ON FUNCTIONS FROM onogami_app/);
   assert.doesNotMatch(migration, /GRANT .* ON (TABLES|SEQUENCES|FUNCTIONS)/);
+});
+
+test("recipient generations and delivery attempts are function-only records", async () => {
+  const migration = await readFile(recipientGenerationsPath, "utf8");
+  assert.match(migration, /REVOKE ALL ON TABLE public\.monthly_report_recipient_versions FROM PUBLIC/);
+  assert.match(migration, /REVOKE ALL ON TABLE public\.monthly_attendance_delivery_attempts FROM PUBLIC/);
+  assert.doesNotMatch(migration, /GRANT .* ON TABLE public\.monthly_report_recipient_versions/);
+  assert.doesNotMatch(migration, /GRANT .* ON TABLE public\.monthly_attendance_delivery_attempts/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.claim_monthly_attendance_delivery[\s\S]*FROM PUBLIC/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.claim_monthly_attendance_delivery[\s\S]*TO onogami_app/);
 });

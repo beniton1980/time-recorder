@@ -75,3 +75,52 @@ test("manager UI explains personal data and blocks reissue until confirmation", 
   assert.match(page, /!monthlyRecipientConfirmed \|\| reissuingPeriod/);
   assert.match(page, /確認完了まで月次勤怠表は送信されません/);
 });
+
+test("recipient generations are append-only and serialize changes with delivery claims", async () => {
+  const migration = await source(
+    "db/migrations/0023_monthly_report_recipient_generations.sql",
+  );
+
+  assert.match(migration, /CREATE TABLE public\.monthly_report_recipient_versions/);
+  assert.match(migration, /UNIQUE \(store_id, version_number\)/);
+  assert.match(migration, /status IN \('PENDING', 'CONFIRMED', 'REVOKED'\)/);
+  assert.match(migration, /monthly_report_recipient_version_id UUID/);
+  assert.match(migration, /PERFORM 1 FROM public\.stores WHERE id = p_store_id FOR UPDATE/);
+  assert.match(migration, /MONTHLY_REPORT_DELIVERY_IN_PROGRESS/);
+  assert.match(migration, /SET status = 'REVOKED'/);
+  assert.match(migration, /INSERT INTO public\.monthly_report_recipient_versions/);
+  assert.doesNotMatch(migration, /DELETE FROM public\.monthly_report_recipient_versions/);
+});
+
+test("delivery attempts retain the actual recipient and use per-attempt idempotency", async () => {
+  const migration = await source(
+    "db/migrations/0023_monthly_report_recipient_generations.sql",
+  );
+  const cron = await source("app/api/cron/monthly-attendance/route.ts");
+  const reissue = await source(
+    "app/api/manager/monthly-attendance/reissue/route.ts",
+  );
+
+  assert.match(migration, /CREATE TABLE public\.monthly_attendance_delivery_attempts/);
+  assert.match(migration, /recipient_version_id UUID NOT NULL/);
+  assert.match(migration, /recipient TEXT NOT NULL/);
+  assert.match(migration, /UNIQUE \(delivery_id, attempt_number\)/);
+  assert.match(migration, /claim_monthly_attendance_delivery/);
+  assert.match(migration, /finish_monthly_attendance_delivery_attempt/);
+  assert.match(migration, /FOR UPDATE OF attempt, delivery/);
+  assert.match(cron, /`initial-\$\{claimed\[0\]\.attempt_id\}`/);
+  assert.match(reissue, /`\$\{version\}-\$\{claimed\[0\]\.attempt_id\}`/);
+  assert.doesNotMatch(cron, /recipient = EXCLUDED\.recipient/);
+  assert.doesNotMatch(reissue, /recipient = EXCLUDED\.recipient/);
+});
+
+test("recipient changes fail closed while a delivery is in progress", async () => {
+  const route = await source(
+    "app/api/manager/monthly-attendance/recipient/route.ts",
+  );
+  const page = await source("app/manager/page.tsx");
+
+  assert.match(route, /MONTHLY_REPORT_DELIVERY_IN_PROGRESS/);
+  assert.match(route, /status: 409/);
+  assert.match(page, /勤怠表を送信中です。送信完了後に送信先を変更してください。/);
+});

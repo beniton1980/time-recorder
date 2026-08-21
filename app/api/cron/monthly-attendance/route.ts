@@ -43,6 +43,7 @@ export async function GET(request: Request) {
       s.monthly_report_email_verified_at,
       s.monthly_report_email_consented_at,
       s.monthly_report_email_consent_version,
+      s.monthly_report_recipient_version_id,
       candidates.period_start, candidates.period_end
     FROM candidates
     JOIN stores s ON s.id = candidates.id
@@ -58,14 +59,13 @@ export async function GET(request: Request) {
       ? { start: String(store.period_start), end: String(store.period_end) }
       : calculateClosingPeriod(String(store.closing_rule), String(store.period_end));
     const claimed = await sql`
-      INSERT INTO monthly_attendance_deliveries (store_id, period_start, period_end, recipient)
-      VALUES (${store.id}::uuid, ${period.start}::date, ${period.end}::date, ${store.monthly_report_email})
-      ON CONFLICT (store_id, period_start, period_end, delivery_version)
-      DO UPDATE SET status = 'PROCESSING', recipient = EXCLUDED.recipient,
-        attempt_count = monthly_attendance_deliveries.attempt_count + 1, updated_at = NOW()
-      WHERE monthly_attendance_deliveries.status = 'FAILED'
-        OR (monthly_attendance_deliveries.status = 'PROCESSING' AND monthly_attendance_deliveries.updated_at < NOW() - INTERVAL '15 minutes')
-      RETURNING id
+      SELECT * FROM claim_monthly_attendance_delivery(
+        ${store.id}::uuid,
+        ${period.start}::date,
+        ${period.end}::date,
+        'initial',
+        ${store.monthly_report_recipient_version_id}::uuid
+      )
     `;
     if (claimed.length === 0) { results.push({ storeId: store.id, status: "SKIPPED" }); continue; }
     try {
@@ -74,13 +74,13 @@ export async function GET(request: Request) {
       const pdf = generateMonthlyAttendancePdf(report);
       const issueDays = report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0);
       const gpsIssues = report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0);
-      const email = await sendMonthlyAttendanceEmail({ storeId: String(store.id), storeName: String(store.name), recipient: String(store.monthly_report_email), label: report.label, period, staffCount: report.staff.length, attendanceIssueDays: issueDays, gpsIssueCount: gpsIssues, deliveryVersion: "initial", pdf });
+      const email = await sendMonthlyAttendanceEmail({ storeId: String(store.id), storeName: String(store.name), recipient: String(claimed[0].recipient), label: report.label, period, staffCount: report.staff.length, attendanceIssueDays: issueDays, gpsIssueCount: gpsIssues, deliveryVersion: `initial-${claimed[0].attempt_id}`, pdf });
       if (!email.sent) throw new Error(email.code);
-      await sql`UPDATE monthly_attendance_deliveries SET status = 'SENT', provider_email_id = ${email.emailId}, sent_at = NOW(), updated_at = NOW() WHERE id = ${claimed[0].id}::uuid`;
+      await sql`SELECT finish_monthly_attendance_delivery_attempt(${claimed[0].attempt_id}::uuid, TRUE, ${email.emailId}, NULL)`;
       results.push({ storeId: store.id, status: "SENT" });
     } catch (error) {
       const code = monthlyAttendanceDeliveryErrorCode(error);
-      await sql`UPDATE monthly_attendance_deliveries SET status = 'FAILED', last_error_code = ${code}, updated_at = NOW() WHERE id = ${claimed[0].id}::uuid`;
+      await sql`SELECT finish_monthly_attendance_delivery_attempt(${claimed[0].attempt_id}::uuid, FALSE, NULL, ${code})`;
       results.push({ storeId: store.id, status: "FAILED", code });
     }
   }

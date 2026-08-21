@@ -116,6 +116,12 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
+    if (message.includes("MONTHLY_REPORT_DELIVERY_IN_PROGRESS")) {
+      return Response.json(
+        { ok: false, code: "MONTHLY_REPORT_DELIVERY_IN_PROGRESS" },
+        { status: 409 },
+      );
+    }
     logServerError("monthly_report_recipient_delivery_failed");
     return Response.json(
       { ok: false, code: "MONTHLY_REPORT_RECIPIENT_UNAVAILABLE" },

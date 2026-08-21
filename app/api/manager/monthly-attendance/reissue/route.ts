@@ -38,7 +38,8 @@ export async function POST(request: Request) {
         s.monthly_report_email,
         s.monthly_report_email_verified_at,
         s.monthly_report_email_consented_at,
-        s.monthly_report_email_consent_version
+        s.monthly_report_email_consent_version,
+        s.monthly_report_recipient_version_id
       FROM staff st JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.store_id = ${body.storeId}::uuid
@@ -60,26 +61,26 @@ export async function POST(request: Request) {
     if (initial.length === 0) return Response.json({ ok: false, code: "MONTHLY_REPORT_NOT_FOUND" }, { status: 404 });
     const version = `reissue-${body.requestId}`;
     const claimed = await sql`
-      INSERT INTO monthly_attendance_deliveries (store_id, period_start, period_end, delivery_version, recipient)
-      VALUES (${store.id}::uuid, ${period.start}::date, ${period.end}::date, ${version}, ${store.monthly_report_email})
-      ON CONFLICT (store_id, period_start, period_end, delivery_version)
-      DO UPDATE SET status = 'PROCESSING', recipient = EXCLUDED.recipient,
-        attempt_count = monthly_attendance_deliveries.attempt_count + 1, updated_at = NOW()
-      WHERE monthly_attendance_deliveries.status = 'FAILED'
-      RETURNING id
+      SELECT * FROM claim_monthly_attendance_delivery(
+        ${store.id}::uuid,
+        ${period.start}::date,
+        ${period.end}::date,
+        ${version},
+        ${store.monthly_report_recipient_version_id}::uuid
+      )
     `;
     if (claimed.length === 0) return Response.json({ ok: true, status: "ALREADY_PROCESSED" });
     try {
       const monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
       const report = buildMonthlyAttendanceReport({ storeName: String(store.name), timezone: String(store.timezone), label: `${period.end.slice(5, 7)}月度`, period, generatedAt: new Date(), events: monthly.events as never, days: monthly.days });
       const pdf = generateMonthlyAttendancePdf(report);
-      const email = await sendMonthlyAttendanceEmail({ storeId: String(store.id), storeName: String(store.name), recipient: String(store.monthly_report_email), label: report.label, period, staffCount: report.staff.length, attendanceIssueDays: report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0), gpsIssueCount: report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0), deliveryVersion: version, pdf });
+      const email = await sendMonthlyAttendanceEmail({ storeId: String(store.id), storeName: String(store.name), recipient: String(claimed[0].recipient), label: report.label, period, staffCount: report.staff.length, attendanceIssueDays: report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0), gpsIssueCount: report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0), deliveryVersion: `${version}-${claimed[0].attempt_id}`, pdf });
       if (!email.sent) throw new Error(email.code);
-      await sql`UPDATE monthly_attendance_deliveries SET status = 'SENT', provider_email_id = ${email.emailId}, sent_at = NOW(), updated_at = NOW() WHERE id = ${claimed[0].id}::uuid`;
+      await sql`SELECT finish_monthly_attendance_delivery_attempt(${claimed[0].attempt_id}::uuid, TRUE, ${email.emailId}, NULL)`;
       return Response.json({ ok: true, status: "SENT", period });
     } catch (error) {
       const code = monthlyAttendanceDeliveryErrorCode(error);
-      await sql`UPDATE monthly_attendance_deliveries SET status = 'FAILED', last_error_code = ${code}, updated_at = NOW() WHERE id = ${claimed[0].id}::uuid`;
+      await sql`SELECT finish_monthly_attendance_delivery_attempt(${claimed[0].attempt_id}::uuid, FALSE, NULL, ${code})`;
       return Response.json({ ok: false, code: "REISSUE_FAILED" }, { status: 503 });
     }
   } catch (error) {
