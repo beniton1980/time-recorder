@@ -9,11 +9,33 @@ export type PdfPunchEvent = {
 export type PdfStaffSummary = {
   name: string;
   workDays: number;
+  workMinutes: number;
+  breakMinutes: number;
+  lateNightMinutes: number;
   workDuration: string;
   breakDuration: string;
+  lateNightDuration: string;
   attendanceIssueDays: number;
   gpsIssueCount: number;
   attendanceReasons?: string[];
+  dailyAttendance: Array<{
+    businessDate: string;
+    status: "CONFIRMED" | "NEEDS_REVIEW";
+    workedMinutes: number | null;
+    breakMinutes: number | null;
+    lateNightMinutes: number | null;
+    attendanceReasons: string[];
+    gpsIssueCount: number;
+    hasCorrection: boolean;
+    workIntervals: Array<{ start: string; end: string }>;
+    breakIntervals: Array<{ start: string; end: string }>;
+    checkIn: string;
+    checkOut: string;
+    breakPeriods: string[];
+    workedDuration?: string;
+    breakDuration?: string;
+    lateNightDuration?: string;
+  }>;
   events: PdfPunchEvent[];
 };
 
@@ -27,5 +49,5 @@ export type MonthlyAttendancePdfReport = {
 
 export function generateMonthlyAttendancePdf(
   report: MonthlyAttendancePdfReport,
-): Uint8Array;
+): Promise<Uint8Array>;
 
