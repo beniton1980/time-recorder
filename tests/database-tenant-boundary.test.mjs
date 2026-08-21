@@ -29,6 +29,8 @@ test("every runtime database client supplies an explicit request context", async
     "app/api/manager/monthly-attendance/csv/route.ts",
     "app/api/manager/monthly-attendance/reports/route.ts",
     "app/api/manager/monthly-attendance/reissue/route.ts",
+    "app/api/manager/monthly-attendance/recipient/route.ts",
+    "app/api/monthly-attendance/email-verification/route.ts",
     "app/api/onboarding/requests/route.ts",
     "app/api/onboarding/email-verification/route.ts",
     "app/api/onboarding/manager-invite/claim/route.ts",

@@ -51,6 +51,11 @@ type Dashboard = {
     legal_name: string;
     store_id: string;
     store_name: string;
+    monthly_report_email: string | null;
+    monthly_report_email_verification_sent_at: string | null;
+    monthly_report_email_verified_at: string | null;
+    monthly_report_email_consented_at: string | null;
+    monthly_report_email_consent_version: string | null;
   };
   attendance: Attendance[];
   corrections: Correction[];
@@ -167,6 +172,9 @@ export default function ManagerPage() {
   const [selectedStaffId, setSelectedStaffId] = useState("ALL");
   const [updatingStaffId, setUpdatingStaffId] = useState<string | null>(null);
   const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
+  const [monthlyRecipientEmail, setMonthlyRecipientEmail] = useState("");
+  const [monthlyRecipientWorking, setMonthlyRecipientWorking] = useState(false);
+  const [monthlyRecipientMessage, setMonthlyRecipientMessage] = useState<string | null>(null);
   const [reissuingPeriod, setReissuingPeriod] = useState<string | null>(null);
   const [reissueMessage, setReissueMessage] = useState<string | null>(null);
   const [exportingPeriod, setExportingPeriod] = useState<string | null>(null);
@@ -192,6 +200,7 @@ export default function ManagerPage() {
     }
 
     setDashboard(data as Dashboard);
+    setMonthlyRecipientEmail(String(data.manager.monthly_report_email ?? ""));
     setSelectedDate(data.businessDate as string);
     setMessage("");
     return data as Dashboard;
@@ -525,7 +534,11 @@ export default function ManagerPage() {
         }),
       });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error("勤怠表を再発行できませんでした。時間をおいて再度お試しください。");
+      if (!response.ok || !data.ok) {
+        throw new Error(data.code === "MONTHLY_REPORT_RECIPIENT_NOT_CONFIRMED"
+          ? "月次勤怠表の送信先確認と受信同意が完了していません。"
+          : "勤怠表を再発行できませんでした。時間をおいて再度お試しください。");
+      }
       setReissueMessage("最新の勤怠表を登録メールへ送信しました。");
       if (dashboard) await loadMonthlyReports(dashboard.manager.store_id);
     } catch (caught) {
@@ -535,9 +548,57 @@ export default function ManagerPage() {
     }
   }
 
+  async function sendMonthlyRecipientVerification() {
+    const email = monthlyRecipientEmail.trim();
+    if (!email) {
+      setMonthlyRecipientMessage("送信先メールアドレスを入力してください。");
+      return;
+    }
+    if (!window.confirm(
+      `${email}を月次勤怠表の送信先として確認しますか？\n\nスタッフ氏名・打刻時刻・勤務時間等を含むPDFの受信同意が必要です。`,
+    )) return;
+
+    setMonthlyRecipientWorking(true);
+    setMonthlyRecipientMessage(null);
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken || !dashboard) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/monthly-attendance/recipient", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idToken,
+          storeId: dashboard.manager.store_id,
+          email,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.code === "INVALID_EMAIL"
+          ? "正しいメールアドレスを入力してください。"
+          : "確認メールを送信できませんでした。");
+      }
+      if (data.email.sent !== true) {
+        throw new Error("確認メールを送信できませんでした。設定を確認して再送してください。");
+      }
+      setMonthlyRecipientMessage("確認メールを送信しました。メール内で受信への同意を完了してください。");
+      await loadDashboard(selectedDate, dashboard.manager.store_id);
+    } catch (caught) {
+      setMonthlyRecipientMessage(caught instanceof Error ? caught.message : "確認メールを送信できませんでした。");
+    } finally {
+      setMonthlyRecipientWorking(false);
+    }
+  }
+
   const visibleAttendance = dashboard?.attendance.filter(
     (staff) => selectedStaffId === "ALL" || staff.staff_id === selectedStaffId,
   ) ?? [];
+  const monthlyRecipientConfirmed = Boolean(
+    dashboard?.manager.monthly_report_email
+    && dashboard.manager.monthly_report_email_verified_at
+    && dashboard.manager.monthly_report_email_consented_at
+    && dashboard.manager.monthly_report_email_consent_version === "2026-08-21-v1",
+  );
 
   return (
     <main className={styles.page}>
@@ -582,6 +643,35 @@ export default function ManagerPage() {
                 <h2>月次勤怠表</h2>
                 <span>{monthlyReports.length}件</span>
               </div>
+              <p className={styles.sectionNote}>確認・同意済みの店舗別メールだけへ、締め日の翌朝に勤怠表を送信します。</p>
+              <div className={styles.monthlyRecipient}>
+                <label>
+                  月次勤怠表の送信先
+                  <input
+                    type="email"
+                    maxLength={254}
+                    value={monthlyRecipientEmail}
+                    onChange={(event) => setMonthlyRecipientEmail(event.target.value)}
+                    placeholder="manager@example.com"
+                  />
+                </label>
+                <p className={monthlyRecipientConfirmed ? styles.recipientConfirmed : styles.recipientPending}>
+                  {monthlyRecipientConfirmed
+                    ? "メール確認・受信同意済みです。"
+                    : dashboard.manager.monthly_report_email_verification_sent_at
+                      ? "確認メール送信済みです。メール内で受信に同意してください。"
+                      : "未確認です。確認完了まで月次勤怠表は送信されません。"}
+                </p>
+                <p className={styles.recipientDisclosure}>PDFにはスタッフ氏名、打刻時刻、勤務・休憩時間、勤怠の要確認状態が含まれます。送信先を変更すると再確認が必要です。</p>
+                <button type="button" disabled={monthlyRecipientWorking || (monthlyRecipientConfirmed && monthlyRecipientEmail === dashboard.manager.monthly_report_email)} onClick={()=>void sendMonthlyRecipientVerification()}>
+                  {monthlyRecipientWorking
+                    ? "送信中…"
+                    : monthlyRecipientConfirmed && monthlyRecipientEmail === dashboard.manager.monthly_report_email
+                      ? "確認済み"
+                      : "この送信先を確認"}
+                </button>
+                {monthlyRecipientMessage && <p className={styles.reissueMessage} role="status">{monthlyRecipientMessage}</p>}
+              </div>
               <p className={styles.sectionNote}>打刻を修正した後、対象期間の勤怠表を最新データで再発行できます。</p>
               {reissueMessage && <p className={styles.reissueMessage} role="status">{reissueMessage}</p>}
               {monthlyReports.length === 0 ? (
@@ -598,7 +688,7 @@ export default function ManagerPage() {
                         <button type="button" className={styles.csvButton} disabled={exportingPeriod !== null || reissuingPeriod !== null} onClick={() => void exportMonthlyCsv(report)}>
                           {exportingPeriod === report.period_end ? "CSV作成中…" : "補助CSV"}
                         </button>
-                        <button type="button" disabled={reissuingPeriod !== null || exportingPeriod !== null} onClick={() => void reissueMonthlyReport(report)}>
+                        <button type="button" disabled={!monthlyRecipientConfirmed || reissuingPeriod !== null || exportingPeriod !== null} onClick={() => void reissueMonthlyReport(report)}>
                           {reissuingPeriod === report.period_end ? "再発行中…" : "再発行して送信"}
                         </button>
                       </div>

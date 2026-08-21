@@ -43,7 +43,12 @@ export async function POST(request: Request) {
     });
 
     const managers = await sql`
-      SELECT st.id AS staff_id, st.legal_name, s.id AS store_id, s.name AS store_name
+      SELECT st.id AS staff_id, st.legal_name, s.id AS store_id, s.name AS store_name,
+        s.monthly_report_email,
+        s.monthly_report_email_verification_sent_at,
+        s.monthly_report_email_verified_at,
+        s.monthly_report_email_consented_at,
+        s.monthly_report_email_consent_version
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}

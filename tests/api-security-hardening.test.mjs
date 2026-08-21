@@ -32,6 +32,8 @@ test("sensitive public operations use persistent rate limits", async () => {
     "app/api/manager/monthly-attendance/csv/route.ts",
     "app/api/manager/monthly-attendance/reports/route.ts",
     "app/api/manager/monthly-attendance/reissue/route.ts",
+    "app/api/manager/monthly-attendance/recipient/route.ts",
+    "app/api/monthly-attendance/email-verification/route.ts",
     "app/api/onboarding/requests/route.ts",
     "app/api/onboarding/email-verification/route.ts",
     "app/api/onboarding/manager-invite/claim/route.ts",
