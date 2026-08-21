@@ -76,7 +76,7 @@ export default function OnboardingApplyPage() {
     return <main className={styles.page}><section className={[styles.shell, styles.center].join(" ")}>
       <p className={styles.brand}>ONOGAMI</p>
       <h1>申請を受け付けました</h1>
-      <p className={styles.success}>内容を審査後、連絡先メールアドレスへご案内します。申請直後に店舗やQRが作成されることはありません。</p>
+      <p className={styles.success}>内容を審査後、連絡先メールアドレスの確認メールをお送りします。確認が完了するまで、管理者招待や店舗QRは作成されません。</p>
       <p className={styles.help}>受付番号：{requestId}</p>
     </section></main>;
   }
@@ -89,7 +89,7 @@ export default function OnboardingApplyPage() {
       <label className={styles.field}>店舗名<input required maxLength={120} value={form.storeName} onChange={(e)=>update("storeName",e.target.value)} /></label>
       <div className={styles.grid}>
         <label className={styles.field}>管理者氏名<input required maxLength={120} value={form.managerLegalName} onChange={(e)=>update("managerLegalName",e.target.value)} /><span className={styles.help}>後ほどLINE本人確認を行う方</span></label>
-        <label className={styles.field}>連絡先メール<input required type="email" maxLength={254} value={form.contactEmail} onChange={(e)=>update("contactEmail",e.target.value)} /><span className={styles.help}>管理者招待と月次レポートの初期送信先</span></label>
+        <label className={styles.field}>連絡先メール<input required type="email" maxLength={254} value={form.contactEmail} onChange={(e)=>update("contactEmail",e.target.value)} /><span className={styles.help}>審査後に所有確認を行い、確認済みアドレスだけへ管理者招待を送信します</span></label>
       </div>
       <label className={styles.field}>店舗住所<textarea required maxLength={300} rows={3} value={form.storeAddress} onChange={(e)=>update("storeAddress",e.target.value)} /></label>
       <label className={styles.field}>締め日<select value={form.closingRule} onChange={(e)=>update("closingRule",e.target.value)}><option value="month_end">月末</option><option value="day_15">15日</option><option value="day_25">25日</option></select></label>

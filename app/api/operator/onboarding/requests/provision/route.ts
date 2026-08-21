@@ -69,7 +69,15 @@ export async function POST(request: Request) {
       SELECT contact_email, manager_legal_name
       FROM onboarding_requests
       WHERE id = ${body.requestId}::uuid
+        AND contact_email_verified_at IS NOT NULL
     `;
+
+    if (recipients.length === 0) {
+      return NextResponse.json(
+        { ok: false, code: "CONTACT_EMAIL_NOT_VERIFIED" },
+        { status: 409 },
+      );
+    }
     let email: Awaited<ReturnType<typeof sendManagerInviteMail>>;
 
     try {
@@ -113,6 +121,7 @@ export async function POST(request: Request) {
       "ONBOARDING_REQUEST_NOT_FOUND",
       "ONBOARDING_REQUEST_ALREADY_PROVISIONED",
       "ONBOARDING_REQUEST_NOT_APPROVED",
+      "CONTACT_EMAIL_NOT_VERIFIED",
     ];
     const code = knownCodes.find((candidate) => message.includes(candidate));
 
@@ -124,7 +133,9 @@ export async function POST(request: Request) {
             ? 404
             : code === "ONBOARDING_REQUEST_ALREADY_PROVISIONED"
               ? 409
-              : 422,
+              : code === "CONTACT_EMAIL_NOT_VERIFIED"
+                ? 409
+                : 422,
         },
       );
     }

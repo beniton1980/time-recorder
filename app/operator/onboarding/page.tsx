@@ -18,6 +18,8 @@ type Item = {
   status: Status;
   submitted_at: string;
   rejection_reason: string | null;
+  contact_email_verification_sent_at: string | null;
+  contact_email_verified_at: string | null;
 };
 
 const labels: Record<Status, string> = {
@@ -39,6 +41,7 @@ export default function OperatorOnboardingPage() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [invites, setInvites] = useState<Record<string, string>>({});
   const [emailSent, setEmailSent] = useState<Record<string, boolean>>({});
+  const [verificationSent, setVerificationSent] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +101,40 @@ export default function OperatorOnboardingPage() {
     setStatus(next);
     setInvites({});
     setEmailSent({});
+    setVerificationSent({});
     await load(next);
+  }
+
+  async function requestEmailVerification(item: Item) {
+    const response = await fetch("/api/operator/onboarding/requests/email-verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: idToken(), requestId: item.id }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error("メールアドレス確認を送信できませんでした。");
+    }
+    setVerificationSent((current) => ({
+      ...current,
+      [item.id]: data.email.sent === true,
+    }));
+    return data.email.sent === true;
+  }
+
+  async function sendEmailVerification(item: Item) {
+    if (!window.confirm(item.contact_email + "へ確認メールを送信しますか？")) return;
+    setWorking(item.id);
+    setError(null);
+    try {
+      const sent = await requestEmailVerification(item);
+      await load("APPROVED");
+      if (!sent) setError("確認メールを送信できませんでした。設定を確認して再送してください。");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "メールアドレス確認を送信できませんでした。");
+    } finally {
+      setWorking(null);
+    }
   }
 
   async function decide(item: Item, decision: "APPROVED" | "REJECTED") {
@@ -108,7 +144,7 @@ export default function OperatorOnboardingPage() {
       return;
     }
     const confirmation = decision === "APPROVED"
-      ? item.store_name + "の申請を承認し、店舗と管理者招待を作成しますか？"
+      ? item.store_name + "の申請を承認し、連絡先メールの所有確認を送信しますか？"
       : item.store_name + "の申請を却下しますか？";
     if (!window.confirm(confirmation)) return;
     setWorking(item.id);
@@ -131,7 +167,15 @@ export default function OperatorOnboardingPage() {
           : "申請を更新できませんでした。");
       }
       if (decision === "APPROVED") {
-        await provision(item, false);
+        setStatus("APPROVED");
+        try {
+          const sent = await requestEmailVerification(item);
+          await load("APPROVED");
+          if (!sent) setError("申請は承認しましたが、確認メールを送信できませんでした。承認済み一覧から再送してください。");
+        } catch {
+          await load("APPROVED");
+          setError("申請は承認しましたが、確認メールを送信できませんでした。承認済み一覧から再送してください。");
+        }
         return;
       }
       await load(status);
@@ -145,7 +189,7 @@ export default function OperatorOnboardingPage() {
   async function provision(item: Item, confirmFirst = true) {
     if (
       confirmFirst
-      && !window.confirm(item.store_name + "を作成し、管理者招待を発行しますか？")
+      && !window.confirm(item.store_name + "を作成し、確認済みメールへ管理者招待を発行しますか？")
     ) return;
     setWorking(item.id);
     setError(null);
@@ -157,9 +201,13 @@ export default function OperatorOnboardingPage() {
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
-        throw new Error(data.code === "ONBOARDING_REQUEST_ALREADY_PROVISIONED"
-          ? "この申請は既に店舗作成済みです。"
-          : "店舗と招待を作成できませんでした。");
+        throw new Error(
+          data.code === "ONBOARDING_REQUEST_ALREADY_PROVISIONED"
+            ? "この申請は既に店舗作成済みです。"
+            : data.code === "CONTACT_EMAIL_NOT_VERIFIED"
+              ? "連絡先メールの所有確認が完了していません。"
+              : "店舗と招待を作成できませんでした。",
+        );
       }
       setInvites((current) => ({ ...current, [item.id]: data.managerInvite.url as string }));
       setEmailSent((current) => ({ ...current, [item.id]: data.managerInvite.email.sent === true }));
@@ -217,7 +265,7 @@ export default function OperatorOnboardingPage() {
   return <main className={styles.page}><section className={styles.shell}>
     <p className={styles.brand}>ONOGAMI OPERATOR</p>
     <h1>店舗申請管理</h1>
-    <p className={styles.lead}>申請内容を確認して承認すると、店舗作成と一度限りの管理者招待まで続けて実行します。</p>
+    <p className={styles.lead}>申請を承認すると連絡先の確認メールを送信します。受信者の確認完了後にだけ、店舗と一度限りの管理者招待を作成できます。</p>
     <nav className={styles.tabs} aria-label="申請状態">
       {(Object.keys(labels) as Status[]).map((value) =>
         <button key={value} className={status === value ? styles.selected : ""} type="button" onClick={()=>void switchStatus(value)}>{labels[value]}</button>
@@ -244,9 +292,21 @@ export default function OperatorOnboardingPage() {
             <button className={styles.danger} type="button" disabled={working !== null} onClick={()=>void decide(item,"REJECTED")}>理由を付けて却下</button>
           </div>
         </>}
-        {status === "APPROVED" && <div className={styles.actions}>
-          <button className={styles.primary} type="button" disabled={working !== null || Boolean(invites[item.id])} onClick={()=>void provision(item)}>店舗と管理者招待を作成</button>
-        </div>}
+        {status === "APPROVED" && <>
+          <p className={item.contact_email_verified_at ? styles.success : styles.notice}>
+            {item.contact_email_verified_at
+              ? "連絡先メールの所有確認が完了しています。"
+              : verificationSent[item.id] || item.contact_email_verification_sent_at
+                ? "確認メールを送信済みです。受信者の確認を待っています。"
+                : "確認メールはまだ送信されていません。"}
+          </p>
+          <div className={styles.actions}>
+            {!item.contact_email_verified_at && <button className={styles.secondary} type="button" disabled={working !== null} onClick={()=>void sendEmailVerification(item)}>
+              {item.contact_email_verification_sent_at ? "確認メールを再送" : "確認メールを送信"}
+            </button>}
+            <button className={styles.primary} type="button" disabled={working !== null || Boolean(invites[item.id]) || !item.contact_email_verified_at} onClick={()=>void provision(item)}>店舗と管理者招待を作成</button>
+          </div>
+        </>}
         {status === "PROVISIONED" && <div className={styles.actions}>
           <button className={styles.danger} type="button" disabled={working !== null} onClick={()=>void deleteTestStore(item)}>テスト店舗データを削除</button>
         </div>}

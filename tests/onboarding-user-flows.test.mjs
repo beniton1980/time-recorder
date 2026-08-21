@@ -14,12 +14,14 @@ test("application screen submits the validated onboarding fields with an idempot
   assert.match(source, /termsAccepted: form\.termsAccepted/);
 });
 
-test("operator approval continues to provisioning with a confirmed fallback action", async () => {
+test("operator approval verifies email ownership before provisioning", async () => {
   const source = await readFile(operatorPath, "utf8");
   assert.match(source, /requests\/decision/);
+  assert.match(source, /requests\/email-verification/);
   assert.match(source, /requests\/provision/);
-  assert.match(source, /承認し、店舗と管理者招待を作成しますか/);
-  assert.match(source, /await provision\(item, false\)/);
+  assert.match(source, /承認し、連絡先メールの所有確認を送信しますか/);
+  assert.match(source, /requestEmailVerification\(item\)/);
+  assert.match(source, /!item\.contact_email_verified_at/);
   assert.match(source, /confirmFirst/);
   assert.match(source, /7日間有効・一度だけ利用可能/);
   assert.match(source, /管理者招待メールを送信しました/);
