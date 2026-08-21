@@ -311,6 +311,21 @@ export default function StoreQrPage() {
                 現在のQRを無効化
               </button>
             )}
+            {hasActiveQr && <section className={styles.incidentGuide} aria-labelledby="qr-incident-guide-title">
+              <h2 id="qr-incident-guide-title">QRが外部に漏れた・紛失したとき</h2>
+              <ol>
+                <li>
+                  通常は「QRを再発行」を押してください。新しいQRの発行と同時に、古いQRは使えなくなります。
+                </li>
+                <li>
+                  すぐに新しいQRを掲示できない場合は「現在のQRを無効化」を押し、打刻受付を一時停止してください。
+                </li>
+                <li>
+                  掲示物・保存画像・共有済みデータを新しいQRへ差し替え、管理者画面で心当たりのないスタッフ登録がないか確認してください。
+                </li>
+              </ol>
+              <p>心当たりのない登録がある場合は、そのスタッフを利用停止にして、発見時刻と対応内容を記録してください。</p>
+            </section>}
           </>
         )}
         <a className={styles.back} href={managerUrl}>管理者画面へ戻る</a>

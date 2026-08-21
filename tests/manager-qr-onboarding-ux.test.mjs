@@ -124,3 +124,18 @@ test("A4 QR guide is generated as a shareable and long-press saveable image", as
   assert.match(qrManager, /A4案内画像を作成しました。下の画像を長押しして保存してください。/);
   assert.doesNotMatch(qrManager, /function printA4/);
 });
+
+test("manager QR screen explains the complete leak response without changing the A4 guide", async () => {
+  const qrManager = await source("app/manager/qr/page.tsx");
+  const styles = await source("app/manager/qr/qr.module.css");
+
+  assert.match(qrManager, /QRが外部に漏れた・紛失したとき/);
+  assert.match(qrManager, /新しいQRの発行と同時に、古いQRは使えなくなります/);
+  assert.match(qrManager, /現在のQRを無効化/);
+  assert.match(qrManager, /心当たりのないスタッフ登録がないか確認/);
+  assert.match(qrManager, /そのスタッフを利用停止/);
+  assert.match(qrManager, /\{hasActiveQr && <section className=\{styles\.incidentGuide\}/);
+  assert.match(styles, /\.incidentGuide\{/);
+  assert.match(qrManager, /canvas\.width = 1240/);
+  assert.match(qrManager, /canvas\.height = 1754/);
+});
