@@ -179,16 +179,14 @@ export default function ManagerPage() {
   const [reissueMessage, setReissueMessage] = useState<string | null>(null);
   const [exportingPeriod, setExportingPeriod] = useState<string | null>(null);
 
-  const loadDashboard = useCallback(async (businessDate?: string, requestedStoreId?: string) => {
+  const loadDashboard = useCallback(async (businessDate: string | undefined, storeId: string) => {
     const idToken = liff.getIDToken();
     if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
 
-    const storeId = requestedStoreId
-      ?? new URLSearchParams(window.location.search).get("store_id");
     const response = await fetch("/api/manager/dashboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken, businessDate, storeId: storeId ?? undefined }),
+      body: JSON.stringify({ idToken, businessDate, storeId }),
     });
     const data = await response.json();
 
@@ -205,6 +203,11 @@ export default function ManagerPage() {
     setMessage("");
     return data as Dashboard;
   }, []);
+
+  const reloadDashboard = useCallback(async (businessDate?: string) => {
+    if (!dashboard) throw new Error("表示中の店舗を確認できませんでした。");
+    return loadDashboard(businessDate, dashboard.manager.store_id);
+  }, [dashboard, loadDashboard]);
 
   const loadManagerMemberships = useCallback(async () => {
     const idToken = liff.getIDToken();
@@ -252,6 +255,9 @@ export default function ManagerPage() {
           const initialStoreId = memberships.find(
             (item) => item.store_id === requestedStoreId,
           )?.store_id ?? memberships[0]?.store_id;
+          if (!initialStoreId) {
+            throw new Error("管理対象の店舗を確認できませんでした。");
+          }
           const loadedDashboard = await loadDashboard(selectedDate, initialStoreId);
           await loadMonthlyReports(loadedDashboard.manager.store_id);
         }
@@ -376,7 +382,7 @@ export default function ManagerPage() {
         throw new Error(messages[data.code] ?? `打刻履歴を修正できませんでした（${data.code ?? "不明なエラー"}）`);
       }
       setDirectEdit(null);
-      await loadDashboard(selectedDate);
+      await reloadDashboard(selectedDate);
     } catch (caught) {
       setDirectError(caught instanceof Error ? caught.message : "打刻履歴を修正できませんでした。");
     } finally {
@@ -440,7 +446,7 @@ export default function ManagerPage() {
         delete next[correction.id];
         return next;
       });
-      await loadDashboard(selectedDate);
+      await reloadDashboard(selectedDate);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "申請を更新できませんでした。");
     } finally {
@@ -475,7 +481,7 @@ export default function ManagerPage() {
         }
         throw new Error(`${action}できませんでした。`);
       }
-      await loadDashboard(selectedDate);
+      await reloadDashboard(selectedDate);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : `${action}できませんでした。`);
     } finally {
@@ -740,7 +746,7 @@ export default function ManagerPage() {
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
                 <h2>勤務状況</h2>
-                <button type="button" onClick={() => void loadDashboard(selectedDate)}>更新</button>
+                <button type="button" onClick={() => void reloadDashboard(selectedDate)}>更新</button>
               </div>
               <label className={styles.dateSelector}>
                 表示する営業日
