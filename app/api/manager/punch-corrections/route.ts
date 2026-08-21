@@ -204,38 +204,18 @@ export async function POST(request: Request) {
     }
 
     const inserted = await sql`
-      INSERT INTO correction_requests (
-        store_id, staff_id, operation, target_event_id, target_correction_id,
-        requested_event_type, requested_occurred_at, reason, status,
-        requested_at, approved_by, approved_at, created_at
-      )
-      VALUES (
-        ${manager.store_id}, ${body.staffId}, ${operation},
-        ${targetEventId}, ${targetCorrectionId},
+      SELECT correction_id AS id, operation, status
+      FROM public.apply_manager_direct_correction(
+        ${manager.store_id}::uuid,
+        ${body.staffId}::uuid,
+        ${operation},
+        ${targetEventId}::uuid,
+        ${targetCorrectionId}::uuid,
         ${operation === "VOID" ? null : eventType},
-        ${operation === "VOID" ? null : parsedOccurredAt!.toISOString()},
-        ${reason}, 'APPROVED', NOW(), ${manager.manager_id}::text, NOW(), NOW()
+        ${operation === "VOID" ? null : parsedOccurredAt!.toISOString()}::timestamptz,
+        ${reason}
       )
-      RETURNING id, operation, status
     `;
-
-    const latest = await sql`
-      SELECT event_type, occurred_at, original_event_id
-      FROM effective_punch_events
-      WHERE staff_id = ${body.staffId}
-      ORDER BY occurred_at DESC, effective_id DESC LIMIT 1
-    `;
-    if (latest.length > 0) {
-      const lastType = latest[0].event_type as string;
-      const state = lastType === "CHECK_OUT" ? "OFF_DUTY" : lastType === "BREAK_START" ? "ON_BREAK" : "WORKING";
-      await sql`
-        INSERT INTO staff_states (staff_id, state, last_event_id, last_event_at, updated_at)
-        VALUES (${body.staffId}, ${state}, ${latest[0].original_event_id}, ${latest[0].occurred_at}, NOW())
-        ON CONFLICT (staff_id) DO UPDATE SET
-          state = EXCLUDED.state, last_event_id = EXCLUDED.last_event_id,
-          last_event_at = EXCLUDED.last_event_at, updated_at = NOW()
-      `;
-    }
 
     return NextResponse.json({ ok: true, correction: inserted[0] });
   } catch (error) {
