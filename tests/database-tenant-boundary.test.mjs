@@ -88,3 +88,13 @@ test("recipient generations use RLS and store-scoped privileged functions", asyn
   assert.match(migration, /version\.store_id = p_store_id/);
   assert.match(migration, /delivery\.store_id = p_store_id/);
 });
+
+test("manager database authorization fails closed without a complete context", async () => {
+  const migration = await source("db/migrations/0024_fail_closed_manager_context.sql");
+  assert.match(migration, /SELECT COALESCE\(/);
+  assert.match(migration, /app_request_setting\('mode'\) = 'manager'/);
+  assert.match(migration, /,\s*FALSE\s*\)/);
+  assert.match(migration, /SET search_path = pg_catalog, public/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.app_manager_store_allowed\(UUID\) FROM PUBLIC/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.app_manager_store_allowed\(UUID\) TO onogami_app/);
+});
