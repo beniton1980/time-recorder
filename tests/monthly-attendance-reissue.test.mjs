@@ -8,7 +8,7 @@ test("reissue requires the selected manager store and ignores a client recipient
   assert.match(route, /verifyLineIdToken\(body\.idToken\)/);
   assert.match(route, /st\.role = 'MANAGER'/);
   assert.match(route, /st\.store_id = \$\{body\.storeId\}::uuid/);
-  assert.match(route, /recipient: String\(store\.contact_email\)/);
+  assert.match(route, /recipient: String\(claimed\[0\]\.recipient\)/);
   assert.doesNotMatch(route, /body\.recipient/);
 });
 
@@ -20,9 +20,13 @@ test("only a previously sent initial report can be reissued", async () => {
 
 test("request IDs make retries idempotent and failed delivery retryable", async () => {
   const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
+  const migration = await source("db/migrations/0023_monthly_report_recipient_generations.sql");
   assert.match(route, /reissue-\$\{body\.requestId\}/);
-  assert.match(route, /ON CONFLICT \(store_id, period_start, period_end, delivery_version\)/);
-  assert.match(route, /WHERE monthly_attendance_deliveries\.status = 'FAILED'/);
+  assert.match(route, /claim_monthly_attendance_delivery/);
+  assert.match(route, /attempt_id/);
+  assert.match(migration, /SET status = 'PROCESSING'/);
+  assert.match(migration, /UNIQUE \(delivery_id, attempt_number\)/);
+  assert.doesNotMatch(route, /recipient = EXCLUDED\.recipient/);
 });
 
 test("report listing is manager-scoped and returns only successful initial periods", async () => {
@@ -37,15 +41,16 @@ test("manager UI requires confirmation and disables duplicate clicks", async () 
   assert.match(page, /window\.confirm/);
   assert.match(page, /crypto\.randomUUID\(\)/);
   assert.match(page, /storeId: dashboard\?\.manager\.store_id/);
-  assert.match(page, /disabled=\{reissuingPeriod !== null \|\| exportingPeriod !== null\}/);
+  assert.match(page, /disabled=\{!monthlyRecipientConfirmed \|\| reissuingPeriod !== null \|\| exportingPeriod !== null\}/);
   assert.match(page, /再発行して送信/);
 });
 
-test("reissue uses the store monthly email with onboarding fallback", async () => {
+test("reissue uses only the confirmed and consented store monthly email", async () => {
   const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
   assert.match(route, /s\.monthly_report_email/);
-  assert.match(route, /ORDER BY r\.created_at DESC/);
-  assert.match(route, /MONTHLY_REPORT_EMAIL_NOT_CONFIGURED/);
+  assert.match(route, /isConfirmedMonthlyReportRecipient/);
+  assert.match(route, /MONTHLY_REPORT_RECIPIENT_NOT_CONFIRMED/);
+  assert.doesNotMatch(route, /onboarding_requests/);
 });
 
 test("reissue persists only normalized delivery error codes", async () => {

@@ -229,6 +229,59 @@
   line-height: 1.6;
 }
 
+.monthlyRecipient {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #cbd9cf;
+  border-radius: 12px;
+  background: #f8fbf9;
+}
+
+.monthlyRecipient label {
+  display: grid;
+  gap: 7px;
+  color: #4d5d53;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.monthlyRecipient input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid #aebdb2;
+  border-radius: 9px;
+  background: #fff;
+  color: #173326;
+  font: inherit;
+}
+
+.monthlyRecipient > button {
+  min-height: 44px;
+  border: 1px solid #347a57;
+  border-radius: 9px;
+  background: #347a57;
+  color: #fff;
+  font-weight: 800;
+}
+
+.monthlyRecipient > button:disabled { opacity: .5; }
+
+.recipientConfirmed,
+.recipientPending,
+.recipientDisclosure {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.recipientConfirmed { color: #21653f; font-weight: 800; }
+.recipientPending { color: #8a5e00; font-weight: 800; }
+.recipientDisclosure { color: #68756c; }
+
 .staffManagementList {
   margin: 0;
   padding: 0;

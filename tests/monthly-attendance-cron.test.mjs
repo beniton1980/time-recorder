@@ -28,11 +28,14 @@ test("failed initial deliveries are selected on later daily runs", async () => {
 
 test("delivery claims are durable, unique, and recover stale work", async () => {
   const migration = await source("db/migrations/0011_monthly_attendance_deliveries.sql");
+  const generations = await source("db/migrations/0023_monthly_report_recipient_generations.sql");
   const route = await source("app/api/cron/monthly-attendance/route.ts");
   assert.match(migration, /UNIQUE \(store_id, period_start, period_end, delivery_version\)/);
-  assert.match(route, /ON CONFLICT \(store_id, period_start, period_end, delivery_version\)/);
-  assert.match(route, /status = 'FAILED'/);
-  assert.match(route, /INTERVAL '15 minutes'/);
+  assert.match(route, /claim_monthly_attendance_delivery/);
+  assert.match(generations, /SET status = 'PROCESSING'/);
+  assert.match(generations, /INTERVAL '15 minutes'/);
+  assert.match(generations, /monthly_attendance_delivery_attempts/);
+  assert.doesNotMatch(route, /recipient = EXCLUDED\.recipient/);
 });
 
 test("runner composes assessment, PDF, and email without changing punch state", async () => {
@@ -43,13 +46,17 @@ test("runner composes assessment, PDF, and email without changing punch state", 
   assert.doesNotMatch(route, /UPDATE staff_states|INSERT INTO punch_events/);
 });
 
-test("store-level monthly report email is preferred with onboarding fallback", async () => {
+test("cron uses only a confirmed and consented store-level recipient", async () => {
   const route = await source("app/api/cron/monthly-attendance/route.ts");
-  const migration = await source("db/migrations/0012_store_monthly_report_email.sql");
-  assert.match(migration, /ADD COLUMN monthly_report_email TEXT/);
-  assert.match(route, /COALESCE\(/);
+  assert.match(route, /isConfirmedMonthlyReportRecipient/);
   assert.match(route, /s\.monthly_report_email/);
-  assert.match(route, /MONTHLY_REPORT_EMAIL_NOT_CONFIGURED/);
+  assert.match(route, /s\.monthly_report_email_verified_at/);
+  assert.match(route, /s\.monthly_report_email_consented_at/);
+  assert.match(route, /MONTHLY_REPORT_RECIPIENT_NOT_CONFIRMED/);
+  assert.match(route, /monthly_report_recipient_version_id/);
+  assert.match(route, /recipient: String\(claimed\[0\]\.recipient\)/);
+  assert.doesNotMatch(route, /onboarding_requests/);
+  assert.doesNotMatch(route, /COALESCE\(/);
 });
 
 test("cron persists only normalized delivery error codes", async () => {
