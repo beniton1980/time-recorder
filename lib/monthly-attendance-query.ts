@@ -13,7 +13,7 @@ type SqlClient = (
 export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, period: Period) {
   const [events, pendingCorrections] = await Promise.all([
     sql`
-      SELECT epe.*, st.legal_name
+      SELECT epe.*, epe.business_date::text AS business_date, st.legal_name
       FROM effective_punch_events epe
       JOIN staff st ON st.id = epe.staff_id
       WHERE epe.store_id = ${storeId}::uuid
