@@ -109,7 +109,8 @@ export async function POST(request: Request) {
     try {
       pdf = await generateMonthlyAttendancePdf(report);
     } catch (error) {
-      logServerError("monthly_attendance_acceptance_pdf_failed", safeErrorClassification(error));
+      const diagnosticFields = safeErrorClassification(error);
+      logServerError("monthly_attendance_acceptance_pdf_failed", diagnosticFields);
       return Response.json({ ok: false, code: "MONTHLY_PDF_FAILED" }, { status: 503 });
     }
 
