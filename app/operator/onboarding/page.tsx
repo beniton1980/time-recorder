@@ -220,16 +220,16 @@ export default function OperatorOnboardingPage() {
 
   async function deleteTestStore(item: Item) {
     const confirmationStoreName = window.prompt(
-      "削除する店舗名を正確に入力してください。\n\n" + item.store_name,
+      "無効化する店舗名を正確に入力してください。\n\n" + item.store_name,
     );
     if (confirmationStoreName === null) return;
     if (confirmationStoreName.trim() !== item.store_name) {
-      setError("店舗名が一致しません。削除は実行されませんでした。");
+      setError("店舗名が一致しません。無効化は実行されませんでした。");
       return;
     }
     if (!window.confirm(
       item.store_name
-      + "の申請・招待・QR・管理者データを完全に削除します。元に戻せません。実行しますか？",
+      + "を無効化します。申請・招待・QR・管理者データは監査のため保持され、通常画面から利用できなくなります。実行しますか？",
     )) return;
 
     setWorking(item.id);
@@ -247,16 +247,16 @@ export default function OperatorOnboardingPage() {
       const data = await response.json();
       if (!response.ok || !data.ok) {
         if (data.code === "TEST_STORE_HAS_ATTENDANCE_HISTORY") {
-          throw new Error("勤怠・訂正・月次送信履歴があるため、この店舗は削除できません。");
+          throw new Error("勤怠・訂正・月次送信履歴があるため、この店舗は無効化できません。");
         }
         if (data.code === "STORE_NAME_CONFIRMATION_MISMATCH") {
-          throw new Error("店舗名が一致しません。削除は実行されませんでした。");
+          throw new Error("店舗名が一致しません。無効化は実行されませんでした。");
         }
-        throw new Error("テスト店舗を削除できませんでした。");
+        throw new Error("テスト店舗を無効化できませんでした。");
       }
       await load("PROVISIONED");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "テスト店舗を削除できませんでした。");
+      setError(caught instanceof Error ? caught.message : "テスト店舗を無効化できませんでした。");
     } finally {
       setWorking(null);
     }
@@ -308,7 +308,7 @@ export default function OperatorOnboardingPage() {
           </div>
         </>}
         {status === "PROVISIONED" && <div className={styles.actions}>
-          <button className={styles.danger} type="button" disabled={working !== null} onClick={()=>void deleteTestStore(item)}>テスト店舗データを削除</button>
+          <button className={styles.danger} type="button" disabled={working !== null} onClick={()=>void deleteTestStore(item)}>テスト店舗を無効化</button>
         </div>}
         {invites[item.id] && <div className={styles.invite}>
           <strong>{emailSent[item.id] ? "管理者招待メールを送信しました" : "メールを送信できませんでした。招待リンクを手動で送ってください"}</strong>

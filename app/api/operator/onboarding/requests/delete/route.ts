@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      deletedStore: {
+      archivedStore: {
         id: deleted[0].deleted_store_id,
         name: deleted[0].deleted_store_name,
       },
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
       );
     }
 
-    logServerError("onboarding_test_store_deletion_failed");
+    logServerError("onboarding_test_store_archival_failed");
     return NextResponse.json(
       { ok: false, code: "TEST_STORE_DELETION_UNAVAILABLE" },
       { status: 503 },

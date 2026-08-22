@@ -69,6 +69,7 @@ export async function POST(request: Request) {
         contact_email_verified_at
       FROM onboarding_requests
       WHERE status = ${status}
+        AND archived_at IS NULL
       ORDER BY submitted_at ASC
       LIMIT 100
     `;
