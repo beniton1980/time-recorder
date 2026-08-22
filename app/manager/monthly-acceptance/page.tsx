@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./monthly-acceptance.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
+const REAUTH_SESSION_KEY = "onogami-monthly-acceptance-reauth";
 
 type Membership = {
   store_id: string;
@@ -54,6 +55,17 @@ function closingRuleLabel(closingRule: string) {
   return "設定済みの締め日";
 }
 
+function redirectToFreshLineLogin() {
+  if (window.sessionStorage.getItem(REAUTH_SESSION_KEY) === "1") {
+    window.sessionStorage.removeItem(REAUTH_SESSION_KEY);
+    return false;
+  }
+  window.sessionStorage.setItem(REAUTH_SESSION_KEY, "1");
+  liff.logout();
+  liff.login({ redirectUri: window.location.href });
+  return true;
+}
+
 export default function MonthlyAcceptancePage() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [storeId, setStoreId] = useState("");
@@ -93,7 +105,14 @@ export default function MonthlyAcceptancePage() {
           body: JSON.stringify({ idToken }),
         });
         const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error("管理者権限を確認できませんでした。");
+        if (!response.ok || !data.ok) {
+          if (data.code === "INVALID_ID_TOKEN") {
+            if (redirectToFreshLineLogin()) return;
+            throw new Error("LINE認証を更新できませんでした。LINEから管理者画面を開き直して、もう一度お試しください。");
+          }
+          throw new Error("管理者権限を確認できませんでした。");
+        }
+        window.sessionStorage.removeItem(REAUTH_SESSION_KEY);
         if (!active) return;
         const items = data.manager.memberships as Membership[];
         const requested = new URLSearchParams(window.location.search).get("store_id");
@@ -125,6 +144,7 @@ export default function MonthlyAcceptancePage() {
           body: JSON.stringify({ idToken, storeId }),
         });
         const data = await response.json();
+        if (data.code === "INVALID_ID_TOKEN" && redirectToFreshLineLogin()) return;
         if (active && response.ok && data.ok) {
           const next = data as Dashboard;
           setDashboard(next);
@@ -159,6 +179,10 @@ export default function MonthlyAcceptancePage() {
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
+        if (data.code === "INVALID_ID_TOKEN") {
+          if (redirectToFreshLineLogin()) return;
+          throw new Error("LINE認証を更新できませんでした。LINEから管理者画面を開き直して、もう一度お試しください。");
+        }
         const messages: Record<string, string> = {
           MONTHLY_REPORT_RECIPIENT_NOT_CONFIRMED: "月次メールの送信先確認が完了していません。管理画面で送信先を確認してください。",
           INVALID_PERIOD_END: `締め日が店舗設定と一致していません。${closingRuleLabel(dashboard?.manager.closing_rule ?? "")}のため ${expectedClosingDate || "設定された締め日"} を指定してください。`,
@@ -173,6 +197,7 @@ export default function MonthlyAcceptancePage() {
         };
         throw new Error(messages[data.code] ?? `受入テストを完了できませんでした（${data.code ?? "不明なエラー"}）。`);
       }
+      window.sessionStorage.removeItem(REAUTH_SESSION_KEY);
       setMessage(`送信しました。対象期間 ${data.period.start} 〜 ${data.period.end}、スタッフ ${data.staffCount}名、勤怠要確認 ${data.attendanceIssueDays}日分、GPS確認 ${data.gpsIssueCount}件です。`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "受入テストメールを送信できませんでした。");
