@@ -18,6 +18,17 @@ test("confirmed work and breaks are totaled while issue days are excluded", () =
   assert.equal(report.staff[0].attendanceIssueDays, 1);
 });
 
+test("database Date business dates are normalized before report sorting", () => {
+  const events = [
+    { staff_id: "s1", legal_name: "山田 花子", business_date: new Date("2026-08-24T00:00:00Z"), event_type: "CHECK_IN", occurred_at: "2026-08-24T00:00:00Z", effective_id: "1" },
+    { staff_id: "s1", legal_name: "山田 花子", business_date: new Date("2026-08-24T00:00:00Z"), event_type: "CHECK_OUT", occurred_at: "2026-08-24T09:00:00Z", effective_id: "2" },
+  ];
+  const days = deriveDailyAttendanceRecords(events.map((event) => ({ ...event, business_date: "2026-08-24" })));
+  const report = buildMonthlyAttendanceReport({ storeName: "店舗", timezone: "Asia/Tokyo", label: "8月度", period: { start: "2026-07-26", end: "2026-08-25" }, generatedAt: new Date("2026-08-26T00:00:00Z"), events, days });
+  assert.equal(report.staff[0].dailyAttendance[0].businessDate, "2026-08-24");
+  assert.equal(report.staff[0].events[0].businessDate, "2026-08-24");
+});
+
 test("staff with only a pending correction still appears as requiring attention", () => {
   const report = buildMonthlyAttendanceReport({
     storeName: "店舗",
