@@ -78,15 +78,21 @@ export async function POST(request: Request) {
       return Response.json({ ok: false, code: "MONTHLY_AGGREGATION_FAILED" }, { status: 503 });
     }
 
-    const report = buildMonthlyAttendanceReport({
-      storeName: String(store.name),
-      timezone: String(store.timezone),
-      label: `${period.end.slice(5, 7)}月度`,
-      period,
-      generatedAt: new Date(),
-      events: monthly.events as never,
-      days: monthly.days,
-    });
+    let report;
+    try {
+      report = buildMonthlyAttendanceReport({
+        storeName: String(store.name),
+        timezone: String(store.timezone),
+        label: `${period.end.slice(5, 7)}月度`,
+        period,
+        generatedAt: new Date(),
+        events: monthly.events as never,
+        days: monthly.days,
+      });
+    } catch {
+      logServerError("monthly_attendance_acceptance_report_failed");
+      return Response.json({ ok: false, code: "MONTHLY_REPORT_BUILD_FAILED" }, { status: 503 });
+    }
 
     let pdf: Uint8Array;
     try {
@@ -96,22 +102,38 @@ export async function POST(request: Request) {
       return Response.json({ ok: false, code: "MONTHLY_PDF_FAILED" }, { status: 503 });
     }
 
-    const attendanceIssueDays = report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0);
-    const gpsIssueCount = report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0);
-    const email = await sendMonthlyAttendanceEmail({
-      storeId: String(store.id),
-      storeName: String(store.name),
-      recipient: String(store.monthly_report_email),
-      label: report.label,
-      period,
-      staffCount: report.staff.length,
-      attendanceIssueDays,
-      attendanceIssues: monthlyAttendanceIssues(report),
-      gpsIssueCount,
-      deliveryVersion: `acceptance-${body.requestId}`,
-      acceptanceTest: true,
-      pdf,
-    });
+    let attendanceIssueDays: number;
+    let gpsIssueCount: number;
+    let attendanceIssues;
+    try {
+      attendanceIssueDays = report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0);
+      gpsIssueCount = report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0);
+      attendanceIssues = monthlyAttendanceIssues(report);
+    } catch {
+      logServerError("monthly_attendance_acceptance_summary_failed");
+      return Response.json({ ok: false, code: "MONTHLY_REPORT_SUMMARY_FAILED" }, { status: 503 });
+    }
+
+    let email;
+    try {
+      email = await sendMonthlyAttendanceEmail({
+        storeId: String(store.id),
+        storeName: String(store.name),
+        recipient: String(store.monthly_report_email),
+        label: report.label,
+        period,
+        staffCount: report.staff.length,
+        attendanceIssueDays,
+        attendanceIssues,
+        gpsIssueCount,
+        deliveryVersion: `acceptance-${body.requestId}`,
+        acceptanceTest: true,
+        pdf,
+      });
+    } catch {
+      logServerError("monthly_attendance_acceptance_email_exception");
+      return Response.json({ ok: false, code: "EMAIL_DELIVERY_FAILED" }, { status: 503 });
+    }
     if (!email.sent) {
       return Response.json({ ok: false, code: email.code }, { status: 503 });
     }
