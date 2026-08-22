@@ -16,6 +16,17 @@ export const maxDuration = 60;
 type Body = { idToken?: unknown; storeId?: unknown; periodEnd?: unknown; requestId?: unknown };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function classifyFailure(value: unknown) {
+  if (!(value instanceof Error)) return {};
+  const code = "code" in value && typeof (value as Error & { code?: unknown }).code === "string"
+    ? (value as Error & { code: string }).code
+    : undefined;
+  return {
+    failureName: value.name.slice(0, 80),
+    ...(code ? { failureCode: code.slice(0, 80) } : {}),
+  };
+}
+
 export async function POST(request: Request) {
   let body: Body;
   try { body = await request.json() as Body; }
@@ -97,8 +108,9 @@ export async function POST(request: Request) {
     let pdf: Uint8Array;
     try {
       pdf = await generateMonthlyAttendancePdf(report);
-    } catch {
-      logServerError("monthly_attendance_acceptance_pdf_failed");
+    } catch (failure) {
+      const safeFields = classifyFailure(failure);
+      logServerError("monthly_attendance_acceptance_pdf_failed", safeFields);
       return Response.json({ ok: false, code: "MONTHLY_PDF_FAILED" }, { status: 503 });
     }
 
