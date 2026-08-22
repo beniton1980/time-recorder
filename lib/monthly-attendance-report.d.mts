@@ -17,3 +17,15 @@ export function monthlyAttendanceIssues(report: MonthlyAttendancePdfReport): Arr
   reasons: string[];
 }>;
 
+export function monthlyAttendanceGpsIssues(report: MonthlyAttendancePdfReport): Array<{
+  staffName: string;
+  businessDate: string;
+}>;
+
+export function monthlyAttendanceStaffSummaries(report: MonthlyAttendancePdfReport): Array<{
+  name: string;
+  workDays: number;
+  workMinutes: number;
+  lateNightMinutes: number;
+}>;
+

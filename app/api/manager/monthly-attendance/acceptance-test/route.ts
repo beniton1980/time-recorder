@@ -3,7 +3,7 @@ import { logServerError } from "@/lib/safe-log";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
 import { calculateClosingPeriod } from "@/lib/monthly-attendance.mjs";
 import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
-import { buildMonthlyAttendanceReport, monthlyAttendanceIssues } from "@/lib/monthly-attendance-report.mjs";
+import { buildMonthlyAttendanceReport, monthlyAttendanceGpsIssues, monthlyAttendanceIssues, monthlyAttendanceStaffSummaries } from "@/lib/monthly-attendance-report.mjs";
 import { generateMonthlyAttendancePdf } from "@/lib/monthly-attendance-pdf.mjs";
 import { sendMonthlyAttendanceEmail } from "@/lib/monthly-attendance-email.mjs";
 import { enforceRateLimit } from "@/lib/api-security";
@@ -138,6 +138,8 @@ export async function POST(request: Request) {
         attendanceIssueDays,
         attendanceIssues,
         gpsIssueCount,
+        gpsIssues: monthlyAttendanceGpsIssues(report),
+        staffSummaries: monthlyAttendanceStaffSummaries(report),
         deliveryVersion: `acceptance-${body.requestId}`,
         acceptanceTest: true,
         pdf,
