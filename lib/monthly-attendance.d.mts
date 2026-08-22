@@ -31,6 +31,7 @@ export type AttendanceDayAssessment = {
   lateNightMinutes: number | null;
   hasCorrection: boolean;
   attendanceReasons: string[];
+  reviewReasons: string[];
   gpsIssues: Array<{ effectiveId: string; reason: string }>;
   sourceEventIds: string[];
   calculationSpecVersion: string;

@@ -25,12 +25,15 @@ export type PdfStaffSummary = {
     breakMinutes: number | null;
     lateNightMinutes: number | null;
     attendanceReasons: string[];
+    reviewReasons: string[];
     gpsIssueCount: number;
     hasCorrection: boolean;
     workIntervals: Array<{ start: string; end: string }>;
     breakIntervals: Array<{ start: string; end: string }>;
     checkIn: string;
     checkOut: string;
+    detailCheckIn: string;
+    detailCheckOut: string;
     breakPeriods: string[];
     workedDuration?: string;
     breakDuration?: string;

@@ -59,6 +59,30 @@ test("corrections and GPS warnings remain separate from confirmation", () => {
   assert.equal(gpsWarning.workedMinutes, 240);
 });
 
+test("plausibility checks keep calculated time while requesting review", () => {
+  const make = (staff_id, business_date, event_type, occurred_at, effective_id) => ({
+    store_id: "store-a", staff_id, legal_name: staff_id, business_date, event_type, occurred_at, effective_id,
+  });
+  const events = [
+    make("long-break", "2026-08-10", "CHECK_IN", "2026-08-10T03:56:00Z", "lb1"),
+    make("long-break", "2026-08-10", "BREAK_START", "2026-08-10T03:56:00Z", "lb2"),
+    make("long-break", "2026-08-10", "BREAK_END", "2026-08-10T07:31:00Z", "lb3"),
+    make("long-break", "2026-08-10", "CHECK_OUT", "2026-08-10T07:33:00Z", "lb4"),
+    make("long-work", "2026-08-11", "CHECK_IN", "2026-08-11T00:00:00Z", "lw1"),
+    make("long-work", "2026-08-11", "CHECK_OUT", "2026-08-11T16:01:00Z", "lw2"),
+    make("short-work", "2026-08-12", "CHECK_IN", "2026-08-12T00:00:00Z", "sw1"),
+    make("short-work", "2026-08-12", "CHECK_OUT", "2026-08-12T00:10:00Z", "sw2"),
+  ];
+  const result = new Map(deriveDailyAttendanceRecords(events).map((day) => [day.staffId, day]));
+  assert.deepEqual(
+    { status: result.get("long-break").status, work: result.get("long-break").workedMinutes, breaks: result.get("long-break").breakMinutes, review: result.get("long-break").reviewReasons },
+    { status: "CONFIRMED", work: 2, breaks: 215, review: ["UNUSUALLY_LONG_BREAK"] },
+  );
+  assert.deepEqual(result.get("long-work").reviewReasons, ["UNUSUALLY_LONG_WORK"]);
+  assert.equal(result.get("long-work").workedMinutes, 961);
+  assert.deepEqual(result.get("short-work").reviewReasons, []);
+});
+
 test("monthly aggregates are sums of confirmed daily records and stay store-separated", () => {
   const actual = {};
   for (const record of records) {
