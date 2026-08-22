@@ -69,7 +69,15 @@ export async function POST(request: Request) {
     }
 
     const period = calculateClosingPeriod(String(store.closing_rule), body.periodEnd);
-    const monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
+
+    let monthly;
+    try {
+      monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
+    } catch {
+      logServerError("monthly_attendance_acceptance_aggregation_failed");
+      return Response.json({ ok: false, code: "MONTHLY_AGGREGATION_FAILED" }, { status: 503 });
+    }
+
     const report = buildMonthlyAttendanceReport({
       storeName: String(store.name),
       timezone: String(store.timezone),
@@ -79,7 +87,15 @@ export async function POST(request: Request) {
       events: monthly.events as never,
       days: monthly.days,
     });
-    const pdf = await generateMonthlyAttendancePdf(report);
+
+    let pdf: Uint8Array;
+    try {
+      pdf = await generateMonthlyAttendancePdf(report);
+    } catch {
+      logServerError("monthly_attendance_acceptance_pdf_failed");
+      return Response.json({ ok: false, code: "MONTHLY_PDF_FAILED" }, { status: 503 });
+    }
+
     const attendanceIssueDays = report.staff.reduce((sum, member) => sum + member.attendanceIssueDays, 0);
     const gpsIssueCount = report.staff.reduce((sum, member) => sum + member.gpsIssueCount, 0);
     const email = await sendMonthlyAttendanceEmail({
