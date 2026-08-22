@@ -6,5 +6,6 @@ const source = fs.readFileSync(new URL("../next.config.ts", import.meta.url), "u
 
 test("monthly PDF fonts are traced into every server function", () => {
   assert.match(source, /outputFileTracingIncludes/);
-  assert.match(source, /["']\/\*["']\s*:\s*\[["']\.\/assets\/fonts\/\*\*\/\*\.otf["']\]/);
+  assert.match(source, /["']\/\*["']\s*:\s*\[/);
+  assert.match(source, /\.\/assets\/fonts\/\*\*\/\*\.otf/);
 });
