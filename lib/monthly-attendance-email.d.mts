@@ -8,6 +8,8 @@ export type MonthlyAttendanceEmail = {
   attendanceIssueDays: number;
   attendanceIssues?: Array<{ staffName: string; businessDate: string; reasons: string[] }>;
   gpsIssueCount: number;
+  gpsIssues?: Array<{ staffName: string; businessDate: string }>;
+  staffSummaries?: Array<{ name: string; workDays: number; workMinutes: number; lateNightMinutes: number }>;
   deliveryVersion: string;
   acceptanceTest?: boolean;
   pdf: Uint8Array;
