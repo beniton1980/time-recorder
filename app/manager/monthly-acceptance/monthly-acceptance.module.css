@@ -1,14 +1,19 @@
 .page {
   min-height: 100vh;
-  padding: 32px 16px;
+  padding: 24px 14px;
   background: #f5f5f2;
   color: #191919;
+}
+
+.loading {
+  max-width: 640px;
+  margin: 0 auto;
 }
 
 .card {
   max-width: 640px;
   margin: 0 auto;
-  padding: 28px;
+  padding: 26px;
   border-radius: 20px;
   background: #fff;
   box-shadow: 0 10px 30px rgb(0 0 0 / 8%);
@@ -23,13 +28,23 @@
 
 .card h1 {
   margin: 0 0 12px;
-  font-size: 28px;
+  font-size: clamp(26px, 7vw, 32px);
+  line-height: 1.25;
+  text-wrap: balance;
 }
 
 .note,
 .hint {
-  line-height: 1.7;
+  line-height: 1.65;
   color: #555;
+}
+
+.note {
+  margin: 0;
+}
+
+.hint {
+  margin: 12px 2px 0;
 }
 
 .field {
@@ -42,6 +57,8 @@
 .field select,
 .field input {
   min-height: 48px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px 12px;
   border: 1px solid #cfcfc8;
   border-radius: 12px;
@@ -95,4 +112,28 @@
 
 .error {
   background: #fff0f0;
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 12px 8px 24px;
+  }
+
+  .card {
+    padding: 20px 16px 22px;
+    border-radius: 16px;
+  }
+
+  .card h1 {
+    font-size: 27px;
+  }
+
+  .note,
+  .hint {
+    font-size: 15px;
+  }
+
+  .summary {
+    padding: 14px;
+  }
 }
