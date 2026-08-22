@@ -6,7 +6,7 @@ async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("test store deletion is operator-only and requires exact store-name confirmation", async () => {
+test("test store archival is operator-only and requires exact store-name confirmation", async () => {
   const route = await source(
     "app/api/operator/onboarding/requests/delete/route.ts",
   );
@@ -15,50 +15,51 @@ test("test store deletion is operator-only and requires exact store-name confirm
   assert.match(route, /await verifyOperator\(body\.idToken\)/);
   assert.match(route, /confirmationStoreName\.trim\(\)/);
   assert.match(route, /delete_onboarding_test_store/);
+  assert.match(route, /archivedStore/);
   assert.match(page, /window\.prompt/);
   assert.match(page, /confirmationStoreName\.trim\(\) !== item\.store_name/);
-  assert.match(page, /元に戻せません/);
-  assert.match(page, /テスト店舗データを削除/);
+  assert.match(page, /監査のため保持され/);
+  assert.match(page, /テスト店舗を無効化/);
 });
 
-test("database deletion is locked to provisioned onboarding stores", async () => {
+test("database archival is locked to active provisioned onboarding stores", async () => {
   const migration = await source(
-    "db/migrations/0013_delete_onboarding_test_store.sql",
+    "db/migrations/0025_logical_delete_onboarding_test_store.sql",
   );
 
-  assert.match(migration, /FROM onboarding_requests[\s\S]*FOR UPDATE/);
+  assert.match(migration, /FROM public\.onboarding_requests[\s\S]*FOR UPDATE/);
+  assert.match(migration, /archived_at IS NULL/);
   assert.match(migration, /request_row\.status <> 'PROVISIONED'/);
   assert.match(migration, /request_row\.provisioned_store_id IS NULL/);
   assert.match(migration, /btrim\(p_confirmation_store_name\) <> store_row\.name/);
 });
 
-test("stores with business history cannot be deleted", async () => {
+test("stores with business history cannot be archived through test cleanup", async () => {
   const migration = await source(
-    "db/migrations/0013_delete_onboarding_test_store.sql",
+    "db/migrations/0025_logical_delete_onboarding_test_store.sql",
   );
 
-  assert.match(migration, /SELECT 1 FROM punch_events WHERE store_id = store_row\.id/);
-  assert.match(migration, /SELECT 1 FROM correction_requests WHERE store_id = store_row\.id/);
-  assert.match(migration, /SELECT 1 FROM monthly_attendance_deliveries WHERE store_id = store_row\.id/);
+  assert.match(migration, /SELECT 1 FROM public\.punch_events WHERE store_id = store_row\.id/);
+  assert.match(migration, /SELECT 1 FROM public\.correction_requests WHERE store_id = store_row\.id/);
+  assert.match(migration, /SELECT 1 FROM public\.monthly_attendance_deliveries WHERE store_id = store_row\.id/);
   assert.match(migration, /TEST_STORE_HAS_ATTENDANCE_HISTORY/);
 });
 
-test("eligible test store relations are deleted in foreign-key-safe order", async () => {
+test("eligible test stores are disabled while audit evidence is retained", async () => {
   const migration = await source(
-    "db/migrations/0013_delete_onboarding_test_store.sql",
+    "db/migrations/0025_logical_delete_onboarding_test_store.sql",
   );
 
-  const states = migration.indexOf("DELETE FROM staff_states");
-  const staff = migration.search(/DELETE FROM staff\r?\n/);
-  const tokens = migration.indexOf("DELETE FROM store_entry_tokens");
-  const invites = migration.indexOf("DELETE FROM onboarding_manager_invites");
-  const request = migration.indexOf("DELETE FROM onboarding_requests");
-  const store = migration.indexOf("DELETE FROM stores");
+  assert.match(migration, /SET active = FALSE, revoked_at = COALESCE\(revoked_at, NOW\(\)\)/);
+  assert.match(migration, /SET revoked_at = COALESCE\(revoked_at, NOW\(\)\)/);
+  assert.match(migration, /SET status = 'inactive', updated_at = NOW\(\)/);
+  assert.match(migration, /SET status = 'closed', deleted_at = NOW\(\), updated_at = NOW\(\)/);
+  assert.match(migration, /SET archived_at = NOW\(\), updated_at = NOW\(\)/);
+  assert.doesNotMatch(migration, /DELETE FROM|TRUNCATE|DROP TABLE/i);
+});
 
-  assert.ok(states >= 0);
-  assert.ok(states < staff);
-  assert.ok(staff < tokens);
-  assert.ok(tokens < invites);
-  assert.ok(invites < request);
-  assert.ok(request < store);
+test("archived onboarding requests disappear from the operator work queue", async () => {
+  const route = await source("app/api/operator/onboarding/requests/route.ts");
+
+  assert.match(route, /WHERE status = \$\{status\}[\s\S]*AND archived_at IS NULL/);
 });
