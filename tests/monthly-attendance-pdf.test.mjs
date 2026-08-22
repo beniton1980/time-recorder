@@ -62,5 +62,8 @@ test("production PDF source omits debug copy and uses global page numbering", as
   assert.match(source, /staff\.name/);
   assert.match(source, /detailCheckIn/);
   assert.match(source, /日ごと・項目ごとに1回だけ分単位へ四捨五入/);
+  assert.match(source, /const SUMMARY_BG = "#edf4ee"/);
+  assert.match(source, /const SUMMARY_LABEL = "#405449"/);
+  assert.match(source, /align: "right"/);
 });
 
