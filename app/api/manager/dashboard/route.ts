@@ -44,6 +44,7 @@ export async function POST(request: Request) {
 
     const managers = await sql`
       SELECT st.id AS staff_id, st.legal_name, s.id AS store_id, s.name AS store_name,
+        s.closing_rule,
         s.monthly_report_email,
         s.monthly_report_email_verification_sent_at,
         s.monthly_report_email_verified_at,
@@ -222,8 +223,11 @@ export async function POST(request: Request) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }
+
     logServerError("manager_dashboard_failed");
-    return NextResponse.json({ ok: false, code: "DASHBOARD_UNAVAILABLE" }, { status: 503 });
+    return NextResponse.json(
+      { ok: false, code: "MANAGER_DASHBOARD_UNAVAILABLE" },
+      { status: 503 },
+    );
   }
 }
-
