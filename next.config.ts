@@ -28,7 +28,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
-    "/*": ["./assets/fonts/**/*.otf"],
+    "/*": [
+      "./assets/fonts/**/*.otf",
+      "./node_modules/pdfkit/js/data/*.afm",
+    ],
   },
   async headers() {
     return [

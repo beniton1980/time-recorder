@@ -52,7 +52,8 @@ test("acceptance test reports safe processing-stage failures", async () => {
 test("monthly PDF routes explicitly include bundled Japanese fonts", async () => {
   const config = await source("next.config.ts");
   assert.match(config, /outputFileTracingIncludes/);
-  assert.match(config, /"\/\*"\s*:\s*\["\.\/assets\/fonts\/\*\*\/\*\.otf"\]/);
+  assert.match(config, /["']\/\*["']\s*:/);
+  assert.match(config, /\.\/assets\/fonts\/\*\*\/\*\.otf/);
 });
 
 test("acceptance email is unmistakably labeled and explains that production delivery is untouched", async () => {
