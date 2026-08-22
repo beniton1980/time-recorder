@@ -40,6 +40,24 @@ test("acceptance test is tightly rate limited", async () => {
   assert.match(route, /windowSeconds: 600/);
 });
 
+test("acceptance test reports safe processing-stage failures", async () => {
+  const route = await source("app/api/manager/monthly-attendance/acceptance-test/route.ts");
+  assert.match(route, /MONTHLY_AGGREGATION_FAILED/);
+  assert.match(route, /MONTHLY_PDF_FAILED/);
+  assert.match(route, /monthly_attendance_acceptance_aggregation_failed/);
+  assert.match(route, /monthly_attendance_acceptance_pdf_failed/);
+  assert.doesNotMatch(route, /error\.message/);
+});
+
+test("monthly PDF routes explicitly include bundled Japanese fonts", async () => {
+  const config = await source("next.config.ts");
+  assert.match(config, /outputFileTracingIncludes/);
+  assert.match(config, /assets\/fonts\/\*\.otf/);
+  assert.match(config, /\/api\/manager\/monthly-attendance\/acceptance-test/);
+  assert.match(config, /\/api\/cron\/monthly-attendance/);
+  assert.match(config, /\/api\/manager\/monthly-attendance\/reissue/);
+});
+
 test("acceptance email is unmistakably labeled and explains that production delivery is untouched", async () => {
   const email = await source("lib/monthly-attendance-email.mjs");
   assert.match(email, /【受入テスト】/);
