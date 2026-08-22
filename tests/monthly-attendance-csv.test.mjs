@@ -59,7 +59,7 @@ test("CSV daily values equal the v1 daily attendance records", () => {
   });
   const csv = createMonthlyAttendanceCsv(report);
   assert.match(csv, /"2026-08-01","佐藤 健","0:45","5:30","1:10","確定"/);
-  assert.match(csv, /"2026-08-05","佐藤 健","","","","要確認","UNCLOSED_SHIFT"/);
+  assert.match(csv, /"2026-08-05","佐藤 健","","","","要確認","退勤の打刻がありません"/);
   assert.match(csv, /"2026-08-07","佐藤 健","0:00","4:00","0:00","確定","GPS確認1件"/);
 });
 

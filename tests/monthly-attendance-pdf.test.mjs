@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { deriveDailyAttendanceRecords } from "../lib/monthly-attendance.mjs";
 import { generateMonthlyAttendancePdf } from "../lib/monthly-attendance-pdf.mjs";
@@ -52,5 +53,14 @@ test("fixture PDF uses confirmed daily records and produces no store summary pag
   assert.match(source, /\/Count 4/);
   assert.match(source, /\/FontFile[23]/);
   assert.doesNotMatch(source, /\/UniJIS-UTF16-H|HeiseiKakuGo/);
+});
+
+test("production PDF source omits debug copy and uses global page numbering", async () => {
+  const source = await readFile(new URL("../lib/monthly-attendance-pdf.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /自動検算/);
+  assert.match(source, /pageCount/);
+  assert.match(source, /staff\.name/);
+  assert.match(source, /detailCheckIn/);
+  assert.match(source, /日ごと・項目ごとに1回だけ分単位へ四捨五入/);
 });
 
