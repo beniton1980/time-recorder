@@ -3,6 +3,8 @@ type SafeLogFields = {
   durationMs?: number;
   lineVerificationMs?: number;
   databaseMs?: number;
+  failureName?: string;
+  failureCode?: string;
 };
 
 function write(level: "info" | "error", event: string, fields: SafeLogFields = {}) {
