@@ -26,16 +26,10 @@ const securityHeaders = [
   { key: "X-DNS-Prefetch-Control", value: "off" },
 ];
 
-const monthlyPdfRoutes = [
-  "/api/cron/monthly-attendance",
-  "/api/manager/monthly-attendance/reissue",
-  "/api/manager/monthly-attendance/acceptance-test",
-];
-
 const nextConfig: NextConfig = {
-  outputFileTracingIncludes: Object.fromEntries(
-    monthlyPdfRoutes.map((route) => [route, ["./assets/fonts/*.otf"]]),
-  ),
+  outputFileTracingIncludes: {
+    "/*": ["./assets/fonts/**/*.otf"],
+  },
   async headers() {
     return [
       {
