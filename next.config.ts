@@ -27,6 +27,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["pdfkit"],
   outputFileTracingIncludes: {
     "/*": [
       "./assets/fonts/**/*.otf",
