@@ -55,7 +55,7 @@ export default function VerifyMonthlyReportEmailPage() {
               </span>
             </label>
             {state === "error" && <p className={styles.error} role="alert">リンクが無効か、有効期限が切れています。管理者画面から確認メールを再送してください。</p>}
-            <button className={styles.primary} type="button" disabled={state === "working" || !consent} onClick={() => void verify()}>
+            <button className={styles.primary} type="button" disabled={state === "working" || !consent} onClick={()=>void verify()}>
               {state === "working" ? "確認中…" : "確認して同意する"}
             </button>
           </>
