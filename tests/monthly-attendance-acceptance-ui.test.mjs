@@ -43,3 +43,14 @@ test("acceptance UI gives useful safe errors for each processing stage", async (
   assert.match(page, /EMAIL_DELIVERY_FAILED/);
   assert.match(page, /ACCEPTANCE_TEST_UNAVAILABLE/);
 });
+
+test("acceptance UI refreshes an invalid LINE token exactly once", async () => {
+  const page = await source("app/manager/monthly-acceptance/page.tsx");
+  assert.match(page, /INVALID_ID_TOKEN/);
+  assert.match(page, /redirectToFreshLineLogin/);
+  assert.match(page, /sessionStorage\.getItem\(REAUTH_SESSION_KEY\)/);
+  assert.match(page, /sessionStorage\.setItem\(REAUTH_SESSION_KEY, "1"\)/);
+  assert.match(page, /liff\.logout\(\)/);
+  assert.match(page, /liff\.login\(\{ redirectUri: window\.location\.href \}\)/);
+  assert.match(page, /sessionStorage\.removeItem\(REAUTH_SESSION_KEY\)/);
+});
