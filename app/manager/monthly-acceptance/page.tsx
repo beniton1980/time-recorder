@@ -163,6 +163,8 @@ export default function MonthlyAcceptancePage() {
           MONTHLY_REPORT_RECIPIENT_NOT_CONFIRMED: "月次メールの送信先確認が完了していません。管理画面で送信先を確認してください。",
           INVALID_PERIOD_END: `締め日が店舗設定と一致していません。${closingRuleLabel(dashboard?.manager.closing_rule ?? "")}のため ${expectedClosingDate || "設定された締め日"} を指定してください。`,
           MONTHLY_AGGREGATION_FAILED: "月次集計を作成できませんでした。打刻データの状態を確認してから、もう一度お試しください。",
+          MONTHLY_REPORT_BUILD_FAILED: "月次勤怠表の内容を組み立てられませんでした。現在、帳票データ生成側を確認しています。",
+          MONTHLY_REPORT_SUMMARY_FAILED: "月次勤怠表の確認項目を集計できませんでした。現在、月次集計側を確認しています。",
           MONTHLY_PDF_FAILED: "月次勤怠表PDFを作成できませんでした。現在、帳票生成側を確認しています。",
           EMAIL_DELIVERY_FAILED: "月次勤怠表は作成できましたが、メール送信に失敗しました。少し時間を置いて再度お試しください。",
           EMAIL_NOT_CONFIGURED: "メール送信設定を確認できませんでした。運用設定の確認が必要です。",
