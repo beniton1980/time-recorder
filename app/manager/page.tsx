@@ -6,6 +6,7 @@ import styles from "./manager.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 const MANAGER_QR_LIFF_URL = `https://liff.line.me/${LIFF_ID}/manager/qr`;
+const REAUTH_SESSION_KEY = "onogami-manager-reauth";
 
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
 type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
@@ -158,6 +159,17 @@ function currentBusinessDate() {
   return inputParts(new Date().toISOString()).date;
 }
 
+function redirectToFreshLineLogin() {
+  if (window.sessionStorage.getItem(REAUTH_SESSION_KEY) === "1") {
+    window.sessionStorage.removeItem(REAUTH_SESSION_KEY);
+    return false;
+  }
+  window.sessionStorage.setItem(REAUTH_SESSION_KEY, "1");
+  liff.logout();
+  liff.login({ redirectUri: window.location.href });
+  return true;
+}
+
 export default function ManagerPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [managerMemberships, setManagerMemberships] = useState<ManagerMembership[]>([]);
@@ -223,8 +235,13 @@ export default function ManagerPage() {
     });
     const data = await response.json();
     if (!response.ok || !data.ok) {
+      if (data.code === "INVALID_ID_TOKEN") {
+        if (redirectToFreshLineLogin()) return null;
+        throw new Error("LINE認証を更新できませんでした。画面を閉じて、LINEからもう一度開いてください。");
+      }
       throw new Error("管理者権限を確認できませんでした。");
     }
+    window.sessionStorage.removeItem(REAUTH_SESSION_KEY);
     const memberships = data.manager.memberships as ManagerMembership[];
     setManagerMemberships(memberships);
     return memberships;
@@ -254,6 +271,7 @@ export default function ManagerPage() {
         }
         if (active) {
           const memberships = await loadManagerMemberships();
+          if (!memberships) return;
           const requestedStoreId = new URLSearchParams(window.location.search)
             .get("store_id");
           const initialStoreId = memberships.find(
