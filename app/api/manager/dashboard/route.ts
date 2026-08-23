@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     `;
     const businessDate = String(dates[0].business_date);
 
-    const [attendance, corrections, staffMemberships] = await Promise.all([
+    const [attendance, corrections, staffMemberships, coManagers, managerInvites] = await Promise.all([
       sql`
         SELECT
           st.id AS staff_id,
@@ -211,6 +211,20 @@ export async function POST(request: Request) {
           AND st.role = 'STAFF'
         ORDER BY st.legal_name ASC, st.created_at ASC
       `,
+      sql`
+        SELECT st.id AS staff_id, st.legal_name, st.status,
+          st.line_user_id = ${identity.sub} AS is_self, st.created_at
+        FROM staff st
+        WHERE st.store_id = ${manager.store_id} AND st.role = 'MANAGER'
+        ORDER BY is_self DESC, st.status ASC, st.legal_name ASC
+      `,
+      sql`
+        SELECT id, legal_name, expires_at, created_at
+        FROM store_manager_invites
+        WHERE store_id = ${manager.store_id}
+          AND used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
+        ORDER BY created_at DESC
+      `,
     ]);
 
     return NextResponse.json({
@@ -220,6 +234,8 @@ export async function POST(request: Request) {
       attendance,
       corrections,
       staffMemberships,
+      coManagers,
+      managerInvites,
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
