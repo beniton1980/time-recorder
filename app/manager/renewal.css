@@ -63,6 +63,22 @@ section[data-dashboard-key="review"] h2::before {
   font-weight: 700;
 }
 
+section[data-dashboard-key="attendance"] [data-staff-attendance-link] {
+  display: block;
+  margin: 10px 0 16px;
+  border-radius: 10px;
+  background: #173b56;
+  color: #fff;
+  padding: 11px 14px;
+  text-align: center;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+section[data-dashboard-key="attendance"] [data-staff-attendance-link][hidden] {
+  display: none !important;
+}
+
 @media (max-width: 640px) {
   section[data-dashboard-collapsible="true"] > div:first-child {
     min-height: 44px;

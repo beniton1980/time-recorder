@@ -12,6 +12,41 @@ const SECTION_CONFIG: Record<string, { key: string; order: number; collapsible: 
   "店舗の打刻位置": { key: "store-location", order: 6, collapsible: true },
 };
 
+function ensureStaffAttendanceLink(section: HTMLElement, shell: HTMLElement) {
+  const staffSelect = Array.from(section.querySelectorAll<HTMLSelectElement>("select"))
+    .find((select) => Array.from(select.options).some((option) => option.value === "ALL"));
+  if (!staffSelect) return;
+
+  let link = section.querySelector<HTMLAnchorElement>("[data-staff-attendance-link]");
+  if (!link) {
+    link = document.createElement("a");
+    link.dataset.staffAttendanceLink = "true";
+    link.textContent = "今月の勤怠を見る";
+    link.setAttribute("aria-label", "選択したスタッフの今月の勤怠を見る");
+    staffSelect.closest("label")?.insertAdjacentElement("afterend", link);
+  }
+
+  const refresh = () => {
+    if (!link) return;
+    const staffId = staffSelect.value;
+    const qrLink = shell.querySelector<HTMLAnchorElement>('header a[href*="/manager/qr"]');
+    const storeId = qrLink ? new URL(qrLink.href).searchParams.get("store_id") : null;
+    if (!storeId || !staffId || staffId === "ALL") {
+      link.hidden = true;
+      link.removeAttribute("href");
+      return;
+    }
+    link.hidden = false;
+    link.href = `/manager/staff-attendance?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}`;
+  };
+
+  if (!staffSelect.dataset.staffAttendanceInitialized) {
+    staffSelect.dataset.staffAttendanceInitialized = "true";
+    staffSelect.addEventListener("change", refresh);
+  }
+  refresh();
+}
+
 function enhanceDashboard() {
   const shell = document.querySelector<HTMLElement>("main section");
   if (!shell) return;
@@ -31,6 +66,8 @@ function enhanceDashboard() {
 
     section.dataset.dashboardKey = config.key;
     section.style.order = String(config.order);
+
+    if (config.key === "attendance") ensureStaffAttendanceLink(section, shell);
 
     const headingRow = heading.parentElement as HTMLElement | null;
     if (!config.collapsible || !headingRow) continue;
