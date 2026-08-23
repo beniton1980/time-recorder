@@ -2,7 +2,6 @@
 
 import liff from "@line/liff";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import styles from "./staff-attendance.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -62,9 +61,8 @@ function displayReason(reason: string) {
 }
 
 export default function StaffAttendancePage() {
-  const params = useSearchParams();
-  const storeId = params.get("store_id") ?? "";
-  const staffId = params.get("staff_id") ?? "";
+  const [storeId, setStoreId] = useState("");
+  const [staffId, setStaffId] = useState("");
   const [month, setMonth] = useState(currentMonth);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [message, setMessage] = useState("勤怠を読み込んでいます");
@@ -72,6 +70,13 @@ export default function StaffAttendancePage() {
   const [reviewOnly, setReviewOnly] = useState(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setStoreId(params.get("store_id") ?? "");
+    setStaffId(params.get("staff_id") ?? "");
+  }, []);
+
+  useEffect(() => {
+    if (!storeId || !staffId) return;
     let active = true;
     async function load() {
       try {
@@ -81,7 +86,7 @@ export default function StaffAttendancePage() {
           return;
         }
         const idToken = liff.getIDToken();
-        if (!idToken || !storeId || !staffId) throw new Error("対象スタッフを確認できませんでした。");
+        if (!idToken) throw new Error("対象スタッフを確認できませんでした。");
         setMessage("勤怠を読み込んでいます");
         setError(null);
         const response = await fetch("/api/manager/staff-attendance", {
@@ -105,6 +110,17 @@ export default function StaffAttendancePage() {
     void load();
     return () => { active = false; };
   }, [month, staffId, storeId]);
+
+  useEffect(() => {
+    if (storeId || staffId) return;
+    const timer = window.setTimeout(() => {
+      if (!storeId || !staffId) {
+        setMessage("");
+        setError("対象スタッフを確認できませんでした。");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [staffId, storeId]);
 
   const visibleDays = useMemo(() => {
     const days = payload?.days ?? [];
