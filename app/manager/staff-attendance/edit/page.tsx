@@ -23,6 +23,12 @@ type EditState = {
   reason: string;
 };
 
+type RouteParams = {
+  storeId: string;
+  staffId: string;
+  businessDate: string;
+};
+
 const eventLabels: Record<EventType, string> = {
   CHECK_IN: "出勤",
   BREAK_START: "休憩開始",
@@ -59,10 +65,17 @@ function eventTimeInput(value: string) {
   }).format(new Date(value));
 }
 
+function readRouteParams(): RouteParams {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    storeId: params.get("store_id") ?? "",
+    staffId: params.get("staff_id") ?? "",
+    businessDate: params.get("date") ?? "",
+  };
+}
+
 export default function StaffAttendanceEditPage() {
-  const [storeId, setStoreId] = useState("");
-  const [staffId, setStaffId] = useState("");
-  const [businessDate, setBusinessDate] = useState("");
+  const [routeParams, setRouteParams] = useState<RouteParams | null>(null);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [message, setMessage] = useState("打刻を読み込んでいます");
@@ -70,15 +83,22 @@ export default function StaffAttendanceEditPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
 
+  const storeId = routeParams?.storeId ?? "";
+  const staffId = routeParams?.staffId ?? "";
+  const businessDate = routeParams?.businessDate ?? "";
+
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setStoreId(params.get("store_id") ?? "");
-    setStaffId(params.get("staff_id") ?? "");
-    setBusinessDate(params.get("date") ?? "");
+    setRouteParams(readRouteParams());
   }, []);
 
   useEffect(() => {
-    if (!storeId || !staffId || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) return;
+    if (!routeParams) return;
+    if (!storeId || !staffId || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+      setMessage("");
+      setError("修正対象の日付を確認できませんでした。");
+      return;
+    }
+
     let active = true;
     async function load() {
       try {
@@ -96,7 +116,10 @@ export default function StaffAttendanceEditPage() {
         });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error("この日の打刻を読み込めませんでした。");
-        if (active) setPayload(data as Payload);
+        if (active) {
+          setPayload(data as Payload);
+          setError(null);
+        }
       } catch (caught) {
         if (active) setError(caught instanceof Error ? caught.message : "この日の打刻を読み込めませんでした。");
       } finally {
@@ -105,18 +128,7 @@ export default function StaffAttendanceEditPage() {
     }
     void load();
     return () => { active = false; };
-  }, [businessDate, staffId, storeId]);
-
-  useEffect(() => {
-    if (storeId && staffId && /^\d{4}-\d{2}-\d{2}$/.test(businessDate)) return;
-    const timer = window.setTimeout(() => {
-      if (!storeId || !staffId || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
-        setMessage("");
-        setError("修正対象の日付を確認できませんでした。");
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [businessDate, staffId, storeId]);
+  }, [businessDate, routeParams, staffId, storeId]);
 
   const dayEvents = useMemo(
     () => (payload?.events ?? []).filter((event) => event.businessDate === businessDate),
