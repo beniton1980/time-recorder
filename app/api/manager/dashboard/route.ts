@@ -54,9 +54,11 @@ export async function POST(request: Request) {
         s.monthly_report_email_consent_version
       FROM staff st
       JOIN stores s ON s.id = st.store_id
+      LEFT JOIN staff_manager_access access
+        ON access.staff_id = st.id AND access.store_id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
-        AND st.role = 'MANAGER'
+        AND (st.role = 'MANAGER' OR access.status = 'active')
         AND s.status = 'active'
         AND st.store_id = ${body.storeId}::uuid
       ORDER BY st.created_at ASC
@@ -88,7 +90,7 @@ export async function POST(request: Request) {
     `;
     const businessDate = String(dates[0].business_date);
 
-    const [attendance, corrections, staffMemberships, coManagers, managerInvites] = await Promise.all([
+    const [attendance, corrections, staffMemberships, coManagers] = await Promise.all([
       sql`
         SELECT
           st.id AS staff_id,
@@ -212,18 +214,17 @@ export async function POST(request: Request) {
         ORDER BY st.legal_name ASC, st.created_at ASC
       `,
       sql`
-        SELECT st.id AS staff_id, st.legal_name, st.status,
-          st.line_user_id = ${identity.sub} AS is_self, st.created_at
+        SELECT st.id AS staff_id, st.legal_name,
+          CASE WHEN st.role = 'MANAGER' THEN st.status ELSE access.status END AS status,
+          st.line_user_id = ${identity.sub} AS is_self,
+          st.role = 'MANAGER' AS is_owner,
+          st.created_at
         FROM staff st
+        LEFT JOIN staff_manager_access access
+          ON access.staff_id = st.id AND access.store_id = st.store_id
         WHERE st.store_id = ${manager.store_id} AND st.role = 'MANAGER'
-        ORDER BY is_self DESC, st.status ASC, st.legal_name ASC
-      `,
-      sql`
-        SELECT id, legal_name, expires_at, created_at
-        FROM store_manager_invites
-        WHERE store_id = ${manager.store_id}
-          AND used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
-        ORDER BY created_at DESC
+           OR (st.store_id = ${manager.store_id} AND access.id IS NOT NULL)
+        ORDER BY is_self DESC, status ASC, st.legal_name ASC
       `,
     ]);
 
@@ -235,7 +236,6 @@ export async function POST(request: Request) {
       corrections,
       staffMemberships,
       coManagers,
-      managerInvites,
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {

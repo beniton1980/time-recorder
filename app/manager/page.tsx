@@ -63,12 +63,10 @@ type Dashboard = {
   corrections: Correction[];
   staffMemberships: StaffMembership[];
   coManagers: CoManager[];
-  managerInvites: ManagerInvite[];
   businessDate: string;
 };
 
-type CoManager = { staff_id: string; legal_name: string; status: "active" | "inactive"; is_self: boolean };
-type ManagerInvite = { id: string; legal_name: string; expires_at: string };
+type CoManager = { staff_id: string; legal_name: string; status: "active" | "inactive"; is_self: boolean; is_owner: boolean };
 
 type ManagerMembership = {
   store_id: string;
@@ -187,10 +185,9 @@ export default function ManagerPage() {
   const [exportingPeriod, setExportingPeriod] = useState<string | null>(null);
   const [savingStoreLocation, setSavingStoreLocation] = useState(false);
   const [storeLocationMessage, setStoreLocationMessage] = useState<string | null>(null);
-  const [coManagerName, setCoManagerName] = useState("");
+  const [selectedCoManagerStaffId, setSelectedCoManagerStaffId] = useState("");
   const [coManagerWorking, setCoManagerWorking] = useState(false);
   const [coManagerMessage, setCoManagerMessage] = useState<string | null>(null);
-  const [coManagerInviteUrl, setCoManagerInviteUrl] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async (businessDate: string | undefined, storeId: string) => {
     const idToken = liff.getIDToken();
@@ -222,28 +219,19 @@ export default function ManagerPage() {
     return loadDashboard(businessDate, dashboard.manager.store_id);
   }, [dashboard, loadDashboard]);
 
-  async function createCoManagerInvite() {
-    const name = coManagerName.trim();
-    if (!dashboard || !name) { setCoManagerMessage("共同管理者の氏名を入力してください。"); return; }
+  async function grantCoManagerAccess() {
+    if (!dashboard || !selectedCoManagerStaffId) { setCoManagerMessage("共同管理者にするスタッフを選択してください。"); return; }
     const idToken = liff.getIDToken();
     if (!idToken) return;
-    setCoManagerWorking(true); setCoManagerMessage(null); setCoManagerInviteUrl(null);
+    setCoManagerWorking(true); setCoManagerMessage(null);
     try {
-      const response = await fetch("/api/manager/co-managers/invite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId: dashboard.manager.store_id, legalName: name }) });
+      const response = await fetch("/api/manager/co-managers/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId: dashboard.manager.store_id, staffId: selectedCoManagerStaffId, status: "active" }) });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error("招待リンクを発行できませんでした。");
-      setCoManagerInviteUrl(String(data.invite.url)); setCoManagerName(""); setCoManagerMessage("7日間有効な招待リンクを発行しました。");
+      if (!response.ok || !data.ok) throw new Error("管理権限を付与できませんでした。");
+      setSelectedCoManagerStaffId(""); setCoManagerMessage("共同管理者として登録しました。本人は管理者画面を開くと利用できます。");
       await reloadDashboard(selectedDate);
-    } catch (caught) { setCoManagerMessage(caught instanceof Error ? caught.message : "招待リンクを発行できませんでした。"); }
+    } catch (caught) { setCoManagerMessage(caught instanceof Error ? caught.message : "管理権限を付与できませんでした。"); }
     finally { setCoManagerWorking(false); }
-  }
-
-  async function shareCoManagerInvite() {
-    if (!coManagerInviteUrl) return;
-    try {
-      if (navigator.share) await navigator.share({ title: "ONOGAMI 勤怠 共同管理者招待", url: coManagerInviteUrl });
-      else { await navigator.clipboard.writeText(coManagerInviteUrl); setCoManagerMessage("招待リンクをコピーしました。"); }
-    } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) setCoManagerMessage("リンクを共有できませんでした。長押ししてコピーしてください。"); }
   }
 
   async function updateCoManagerStatus(manager: CoManager) {
@@ -253,7 +241,7 @@ export default function ManagerPage() {
     const idToken = liff.getIDToken(); if (!idToken) return;
     setCoManagerWorking(true); setCoManagerMessage(null);
     try {
-      const response = await fetch("/api/manager/co-managers/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId: dashboard.manager.store_id, staffId: manager.staff_id, status: nextStatus }) });
+      const response = await fetch("/api/manager/co-managers/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId: dashboard.manager.store_id, staffId: manager.staff_id, status: nextStatus }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error("本人または最後の管理者は停止できません。");
       await reloadDashboard(selectedDate); setCoManagerMessage("管理権限を更新しました。");
@@ -729,6 +717,9 @@ export default function ManagerPage() {
     && dashboard.manager.monthly_report_email_consented_at
     && dashboard.manager.monthly_report_email_consent_version === "2026-08-21-v1",
   );
+  const coManagerCandidates = dashboard?.staffMemberships.filter(
+    (staff) => staff.status === "active" && !dashboard.coManagers.some((manager) => manager.staff_id === staff.staff_id),
+  ) ?? [];
 
   return (
     <main className={styles.page}>
@@ -770,15 +761,14 @@ export default function ManagerPage() {
           <>
             <section className={styles.section}>
               <div className={styles.sectionHeading}><h2>共同管理者</h2><span>{dashboard.coManagers.filter((item) => item.status === "active").length}名</span></div>
-              <p className={styles.sectionNote}>この店舗だけを管理できる人を招待します。招待リンクは本人へLINEで送ってください。</p>
+              <p className={styles.sectionNote}>この店舗に登録済みのスタッフへ、管理権限を追加します。管理権限を停止しても本人の打刻は継続できます。</p>
               <div className={styles.coManagerInvite}>
-                <label>共同管理者の氏名<input value={coManagerName} maxLength={100} onChange={(event) => setCoManagerName(event.target.value)} placeholder="例：山田 太郎" /></label>
-                <button type="button" disabled={coManagerWorking || !coManagerName.trim()} onClick={() => void createCoManagerInvite()}>招待リンクを発行</button>
-                {coManagerInviteUrl && <div className={styles.inviteResult}><a href={coManagerInviteUrl}>{coManagerInviteUrl}</a><button type="button" onClick={() => void shareCoManagerInvite()}>LINEで共有・コピー</button></div>}
+                <label>登録済みスタッフを選択<select value={selectedCoManagerStaffId} onChange={(event) => setSelectedCoManagerStaffId(event.target.value)}><option value="">選択してください</option>{coManagerCandidates.map((staff) => <option key={staff.staff_id} value={staff.staff_id}>{staff.legal_name}</option>)}</select></label>
+                <button type="button" disabled={coManagerWorking || !selectedCoManagerStaffId} onClick={() => void grantCoManagerAccess()}>共同管理者に登録</button>
                 {coManagerMessage && <p className={styles.reissueMessage} role="status">{coManagerMessage}</p>}
               </div>
-              {dashboard.managerInvites.length > 0 && <p className={styles.sectionNote}>未使用の招待：{dashboard.managerInvites.map((invite) => invite.legal_name).join("、")}</p>}
-              <ul className={styles.staffManagementList}>{dashboard.coManagers.map((manager) => <li key={manager.staff_id}><div><strong>{manager.legal_name}{manager.is_self ? "（あなた）" : ""}</strong><span>{manager.status === "active" ? "管理中" : "停止中"}</span></div>{!manager.is_self && <button type="button" className={manager.status === "active" ? styles.reject : styles.approve} disabled={coManagerWorking} onClick={() => void updateCoManagerStatus(manager)}>{manager.status === "active" ? "権限停止" : "利用再開"}</button>}</li>)}</ul>
+              {coManagerCandidates.length === 0 && dashboard.staffMemberships.length > 0 && <p className={styles.sectionNote}>追加できる登録済みスタッフはいません。</p>}
+              <ul className={styles.staffManagementList}>{dashboard.coManagers.map((manager) => <li key={manager.staff_id}><div><strong>{manager.legal_name}{manager.is_self ? "（あなた）" : ""}</strong><span>{manager.is_owner ? "店舗管理者" : manager.status === "active" ? "共同管理中" : "管理停止中"}</span></div>{!manager.is_self && !manager.is_owner && <button type="button" className={manager.status === "active" ? styles.reject : styles.approve} disabled={coManagerWorking} onClick={() => void updateCoManagerStatus(manager)}>{manager.status === "active" ? "権限停止" : "利用再開"}</button>}</li>)}</ul>
             </section>
 
             <section className={styles.section}>

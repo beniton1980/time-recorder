@@ -53,9 +53,11 @@ export async function POST(request: Request) {
         s.name AS store_name
       FROM staff st
       JOIN stores s ON s.id = st.store_id
+      LEFT JOIN staff_manager_access access
+        ON access.staff_id = st.id AND access.store_id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
-        AND st.role = 'MANAGER'
+        AND (st.role = 'MANAGER' OR access.status = 'active')
         AND s.status = 'active'
       ORDER BY st.created_at ASC
     `;
