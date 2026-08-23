@@ -15,9 +15,51 @@ const SECTION_CONFIG: Record<string, SectionConfig> = {
   "勤務状況": { key: "attendance", order: 2, collapsible: false },
   "月次勤怠表": { key: "monthly", order: 3, collapsible: true },
   "スタッフ管理": { key: "staff", order: 4, collapsible: true },
-  "共同管理者": { key: "co-managers", order: 5, collapsible: true },
-  "店舗の打刻位置": { key: "store-location", order: 6, collapsible: true },
+  "QR・掲示物": { key: "qr", order: 5, collapsible: true },
+  "共同管理者": { key: "co-managers", order: 6, collapsible: true },
+  "店舗の打刻位置": { key: "store-location", order: 7, collapsible: true },
 };
+
+function ensureQrSection(shell: HTMLElement) {
+  const header = shell.querySelector<HTMLElement>(":scope > header");
+  const qrLink = shell.querySelector<HTMLAnchorElement>('a[href*="/manager/qr"]');
+  if (!header || !qrLink) return;
+
+  let section = shell.querySelector<HTMLElement>('[data-dashboard-key="qr"]');
+  if (!section) {
+    const referenceSection = Array.from(shell.children).find(
+      (node): node is HTMLElement => node instanceof HTMLElement && node.tagName === "SECTION",
+    );
+    if (!referenceSection) return;
+
+    const referenceHeadingRow = referenceSection.querySelector<HTMLElement>(":scope > div:first-child");
+    section = document.createElement("section");
+    section.className = referenceSection.className;
+    section.dataset.dashboardKey = "qr";
+
+    const headingRow = document.createElement("div");
+    if (referenceHeadingRow) headingRow.className = referenceHeadingRow.className;
+
+    const heading = document.createElement("h2");
+    heading.textContent = "QR・掲示物";
+    const status = document.createElement("span");
+    status.textContent = "使用中";
+    headingRow.append(heading, status);
+
+    const note = document.createElement("p");
+    note.dataset.dashboardQrNote = "true";
+    note.textContent = "店舗で掲示するQRの表示・保存・再発行はこちらから行えます。";
+
+    section.append(headingRow, note);
+    shell.append(section);
+  }
+
+  if (qrLink.parentElement !== section) {
+    qrLink.textContent = "QR・掲示物を開く";
+    qrLink.setAttribute("aria-label", "店舗QRと掲示物の管理画面を開く");
+    section.append(qrLink);
+  }
+}
 
 function ensureStaffAttendanceLink(section: HTMLElement, shell: HTMLElement) {
   const staffSelect = Array.from(section.querySelectorAll<HTMLSelectElement>("select"))
@@ -36,7 +78,7 @@ function ensureStaffAttendanceLink(section: HTMLElement, shell: HTMLElement) {
   const refresh = () => {
     if (!link) return;
     const staffId = staffSelect.value;
-    const qrLink = shell.querySelector<HTMLAnchorElement>('header a[href*="/manager/qr"]');
+    const qrLink = shell.querySelector<HTMLAnchorElement>('a[href*="/manager/qr"]');
     const storeId = qrLink ? new URL(qrLink.href).searchParams.get("store_id") : null;
     if (!storeId || !staffId || staffId === "ALL") {
       link.hidden = true;
@@ -71,6 +113,7 @@ function enhanceDashboard() {
   if (!shell) return;
 
   shell.dataset.dashboardRenewal = "true";
+  ensureQrSection(shell);
 
   const sections = Array.from(shell.children).filter(
     (node): node is HTMLElement => node instanceof HTMLElement && node.tagName === "SECTION",
