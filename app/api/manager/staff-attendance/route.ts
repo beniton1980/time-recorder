@@ -116,6 +116,13 @@ export async function POST(request: Request) {
         gpsIssueCount: staff.gpsIssueCount,
       },
       days: staff.dailyAttendance,
+      events: events.map((event) => ({
+        effectiveId: String(event.effective_id),
+        businessDate: String(event.business_date),
+        eventType: String(event.event_type),
+        occurredAt: String(event.occurred_at),
+        corrected: Boolean(event.corrected),
+      })),
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) return Response.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
