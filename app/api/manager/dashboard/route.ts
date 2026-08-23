@@ -43,7 +43,8 @@ export async function POST(request: Request) {
     });
 
     const managers = await sql`
-      SELECT st.id AS staff_id, st.legal_name, s.id AS store_id, s.name AS store_name
+      SELECT st.id AS staff_id, st.legal_name, s.id AS store_id, s.name AS store_name,
+        s.latitude AS store_latitude, s.longitude AS store_longitude
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
