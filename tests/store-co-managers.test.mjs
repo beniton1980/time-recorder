@@ -29,3 +29,13 @@ test("manager UI selects an existing staff member without name re-entry", () => 
   assert.doesNotMatch(managerPage, /招待リンクを発行/);
   assert.match(managerPage, /manager\.is_self/);
 });
+
+test("a successful grant offers a one-recipient LINE share with a safe fallback", () => {
+  assert.match(managerPage, /liff\.isApiAvailable\("shareTargetPicker"\)/);
+  assert.match(managerPage, /liff\.shareTargetPicker/);
+  assert.match(managerPage, /isMultiple: false/);
+  assert.match(managerPage, /LINEで案内を共有/);
+  assert.match(managerPage, /navigator\.share/);
+  assert.match(managerPage, /navigator\.clipboard\.writeText/);
+  assert.match(managerPage, /管理権限の登録は完了しています/);
+});
