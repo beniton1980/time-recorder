@@ -36,11 +36,16 @@ type Payload = {
 };
 
 const reasonLabels: Record<string, string> = {
+  UNCLOSED_SHIFT: "退勤がありません",
+  UNCLOSED_BREAK: "休憩終了がありません",
+  LOGICAL_CONTRADICTION: "打刻の順序または時刻に不整合があります",
+  PENDING_CORRECTION: "未処理の修正申請があります",
+  UNUSUALLY_LONG_BREAK: "勤務時間に対して休憩が長すぎます",
+  UNUSUALLY_LONG_WORK: "勤務時間が16時間を超えています",
   MISSING_CHECK_IN: "出勤がありません",
   MISSING_CHECK_OUT: "退勤がありません",
   OPEN_BREAK: "休憩終了がありません",
   INVALID_SEQUENCE: "打刻の順序を確認してください",
-  PENDING_CORRECTION: "未処理の修正申請があります",
   MISSING_DAILY_ATTENDANCE: "勤怠を確認してください",
 };
 
@@ -60,7 +65,7 @@ function dateLabel(value: string) {
 }
 
 function displayReason(reason: string) {
-  return reasonLabels[reason] ?? "確認が必要です";
+  return reasonLabels[reason] ?? "勤怠の内容を確認してください";
 }
 
 function dateRange(start: string, end: string | null) {
