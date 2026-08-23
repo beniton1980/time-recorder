@@ -3,8 +3,15 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
-const SECTION_CONFIG: Record<string, { key: string; order: number; collapsible: boolean }> = {
-  "未処理の訂正申請": { key: "review", order: 1, collapsible: false },
+type SectionConfig = {
+  key: string;
+  order: number;
+  collapsible: boolean;
+  collapseWhenEmpty?: boolean;
+};
+
+const SECTION_CONFIG: Record<string, SectionConfig> = {
+  "未処理の訂正申請": { key: "review", order: 1, collapsible: true, collapseWhenEmpty: true },
   "勤務状況": { key: "attendance", order: 2, collapsible: false },
   "月次勤怠表": { key: "monthly", order: 3, collapsible: true },
   "スタッフ管理": { key: "staff", order: 4, collapsible: true },
@@ -47,6 +54,18 @@ function ensureStaffAttendanceLink(section: HTMLElement, shell: HTMLElement) {
   refresh();
 }
 
+function reviewCount(section: HTMLElement) {
+  const headingRow = section.querySelector<HTMLElement>(":scope > div:first-child");
+  const countText = headingRow?.querySelector("span")?.textContent?.trim() ?? "";
+  const match = /^(\d+)件$/.exec(countText);
+  return match ? Number(match[1]) : null;
+}
+
+function setCollapsed(section: HTMLElement, headingRow: HTMLElement, collapsed: boolean) {
+  section.dataset.dashboardCollapsed = collapsed ? "true" : "false";
+  headingRow.setAttribute("aria-expanded", collapsed ? "false" : "true");
+}
+
 function enhanceDashboard() {
   const shell = document.querySelector<HTMLElement>("main section");
   if (!shell) return;
@@ -73,18 +92,23 @@ function enhanceDashboard() {
     if (!config.collapsible || !headingRow) continue;
 
     section.dataset.dashboardCollapsible = "true";
+
+    const count = config.collapseWhenEmpty ? reviewCount(section) : null;
+    if (config.collapseWhenEmpty && count !== null) {
+      section.dataset.dashboardReviewEmpty = count === 0 ? "true" : "false";
+      setCollapsed(section, headingRow, count === 0);
+    }
+
     if (!section.dataset.dashboardInitialized) {
       section.dataset.dashboardInitialized = "true";
-      section.dataset.dashboardCollapsed = "true";
+      if (!config.collapseWhenEmpty) setCollapsed(section, headingRow, true);
       headingRow.setAttribute("role", "button");
       headingRow.setAttribute("tabindex", "0");
-      headingRow.setAttribute("aria-expanded", "false");
       headingRow.setAttribute("aria-label", `${heading.textContent?.trim()}を開閉`);
 
       const toggle = () => {
         const collapsed = section.dataset.dashboardCollapsed === "true";
-        section.dataset.dashboardCollapsed = collapsed ? "false" : "true";
-        headingRow.setAttribute("aria-expanded", collapsed ? "true" : "false");
+        setCollapsed(section, headingRow, !collapsed);
       };
 
       headingRow.addEventListener("click", toggle);
@@ -110,7 +134,7 @@ export default function ManagerDashboardEnhancer() {
       frame = window.requestAnimationFrame(enhanceDashboard);
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
     return () => {
       window.cancelAnimationFrame(frame);
