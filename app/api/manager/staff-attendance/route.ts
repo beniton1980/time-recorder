@@ -38,7 +38,12 @@ export async function POST(request: Request) {
     const identity = await verifyLineIdToken(body.idToken);
     const sql = getSql({ mode: "manager", lineIdentity: identity.sub, storeId: body.storeId });
     const managers = await sql`
-      SELECT s.id, s.name, s.timezone
+      SELECT
+        s.id,
+        s.name,
+        s.timezone,
+        (((NOW() AT TIME ZONE s.timezone)
+          - make_interval(mins => s.business_day_start_minute))::date)::text AS current_business_date
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
@@ -62,6 +67,13 @@ export async function POST(request: Request) {
     const store = managers[0];
     const target = targets[0];
     const period = monthPeriod(body.month);
+    const currentBusinessDate = String(store.current_business_date);
+    const displayThrough = currentBusinessDate < period.start
+      ? null
+      : currentBusinessDate > period.end
+        ? period.end
+        : currentBusinessDate;
+
     const monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
     const events = monthly.events.filter((event) => String(event.staff_id) === body.staffId);
     const days = monthly.dailyAttendanceRecords.filter((day) => String(day.staffId) === body.staffId);
@@ -95,6 +107,7 @@ export async function POST(request: Request) {
       store: { id: String(store.id), name: String(store.name) },
       staff: { id: body.staffId, legalName: String(target.legal_name) },
       month: body.month,
+      period: { ...period, displayThrough },
       summary: {
         workDays: staff.workDays,
         workDuration: staff.workDuration,
