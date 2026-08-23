@@ -27,6 +27,13 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["pdfkit"],
+  outputFileTracingIncludes: {
+    "/*": [
+      "./assets/fonts/**/*.otf",
+      "./node_modules/pdfkit/js/data/*.afm",
+    ],
+  },
   async headers() {
     return [
       {

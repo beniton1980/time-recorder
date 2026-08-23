@@ -64,9 +64,12 @@ export async function POST(request: Request) {
         status,
         submitted_at,
         reviewed_at,
-        rejection_reason
+        rejection_reason,
+        contact_email_verification_sent_at,
+        contact_email_verified_at
       FROM onboarding_requests
       WHERE status = ${status}
+        AND archived_at IS NULL
       ORDER BY submitted_at ASC
       LIMIT 100
     `;

@@ -5,13 +5,62 @@ import { createMonthlyAttendanceEmail, sendMonthlyAttendanceEmail } from "../lib
 const mail = {
   storeId: "store-1", storeName: "おのがみ食堂", recipient: "manager@example.com", label: "8月度",
   period: { start: "2026-07-26", end: "2026-08-25" }, staffCount: 8,
-  attendanceIssueDays: 0, gpsIssueCount: 0, deliveryVersion: "initial", pdf: new Uint8Array([37, 80, 68, 70]),
+  attendanceIssueDays: 0, gpsIssueCount: 0, gpsIssues: [],
+  staffSummaries: [{ name: "佐藤 健", workDays: 2, workMinutes: 905, lateNightMinutes: 35 }],
+  deliveryVersion: "initial", pdf: new Uint8Array([37, 80, 68, 70]),
 };
 
 test("normal, review, and zero-attendance messages are explicit", () => {
-  assert.doesNotMatch(createMonthlyAttendanceEmail(mail).subject, /要確認/);
-  assert.match(createMonthlyAttendanceEmail({ ...mail, gpsIssueCount: 1 }).subject, /^【要確認】/);
+  assert.equal(createMonthlyAttendanceEmail(mail).subject, "【ONOGAMI勤怠】おのがみ食堂 8月度（確認事項なし）");
+  assert.match(createMonthlyAttendanceEmail({ ...mail, gpsIssueCount: 4, gpsIssues: [{ staffName: "佐藤 健", businessDate: "2026-08-20" }] }).subject, /（GPS確認1日）$/);
+  assert.match(createMonthlyAttendanceEmail({ ...mail, attendanceIssueDays: 2 }).subject, /（要確認2日）$/);
   assert.match(createMonthlyAttendanceEmail({ ...mail, staffCount: 0 }).html, /勤怠記録がありませんでした/);
+});
+
+test("email contains payroll-ready staff summaries and actionable GPS days", () => {
+  const content = createMonthlyAttendanceEmail({
+    ...mail,
+    gpsIssueCount: 4,
+    gpsIssues: [{ staffName: "佐藤 健", businessDate: "2026-08-20" }],
+  });
+  assert.match(content.html, /スタッフ別月次サマリー/);
+  assert.match(content.html, /2日/);
+  assert.match(content.html, /15時間05分/);
+  assert.match(content.html, /0時間35分/);
+  assert.match(content.html, /休憩時間を差し引いて集計/);
+  assert.match(content.html, /FREE版では、出退勤時刻の丸め処理/);
+  assert.match(content.html, /GPSについて確認する勤務日/);
+  assert.match(content.html, /佐藤 健/);
+  assert.match(content.html, /2026年8月20日\(木\)/);
+  assert.doesNotMatch(content.html, /GPS確認: 4件/);
+  assert.match(content.html, /添付PDFでご確認ください/);
+  assert.match(content.html, /CSVは管理画面から出力できます/);
+  assert.doesNotMatch(content.html, /添付PDF・CSV/);
+  assert.match(content.html, /2026年7月26日\(日\) - 2026年8月25日\(火\)/);
+});
+
+test("attendance issues identify the staff, business date, and reason in the email", () => {
+  const content = createMonthlyAttendanceEmail({
+    ...mail,
+    attendanceIssueDays: 1,
+    attendanceIssues: [{ staffName: "佐藤 健", businessDate: "2026-08-20", reasons: ["UNCLOSED_SHIFT"] }],
+  });
+  assert.match(content.html, /佐藤 健/);
+  assert.match(content.html, /2026年8月20日\(木\)/);
+  assert.match(content.html, /退勤の打刻がありません/);
+});
+
+test("plausibility reasons use plain-language review instructions", () => {
+  const content = createMonthlyAttendanceEmail({
+    ...mail,
+    attendanceIssueDays: 2,
+    attendanceIssues: [
+      { staffName: "佐藤 健", businessDate: "2026-08-10", reasons: ["UNUSUALLY_LONG_BREAK"] },
+      { staffName: "鈴木 葵", businessDate: "2026-08-11", reasons: ["UNUSUALLY_LONG_WORK"] },
+    ],
+  });
+  assert.match(content.html, /勤務時間に対して休憩時間が長くなっています。打刻内容をご確認ください/);
+  assert.match(content.html, /勤務時間が長くなっています。打刻内容をご確認ください/);
 });
 
 test("sends the PDF with a deterministic idempotency key", async () => {

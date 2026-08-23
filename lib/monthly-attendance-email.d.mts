@@ -6,8 +6,12 @@ export type MonthlyAttendanceEmail = {
   period: { start: string; end: string };
   staffCount: number;
   attendanceIssueDays: number;
+  attendanceIssues?: Array<{ staffName: string; businessDate: string; reasons: string[] }>;
   gpsIssueCount: number;
+  gpsIssues?: Array<{ staffName: string; businessDate: string }>;
+  staffSummaries?: Array<{ name: string; workDays: number; workMinutes: number; lateNightMinutes: number }>;
   deliveryVersion: string;
+  acceptanceTest?: boolean;
   pdf: Uint8Array;
 };
 
@@ -28,4 +32,3 @@ export function sendMonthlyAttendanceEmail(
     fetchImpl?: typeof fetch;
   },
 ): Promise<MonthlyAttendanceEmailResult>;
-

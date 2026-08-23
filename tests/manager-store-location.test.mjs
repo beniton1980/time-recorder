@@ -7,7 +7,7 @@ const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 test("store location update is manager-scoped and validates GPS accuracy", async () => {
   const [route, migration] = await Promise.all([
     read("app/api/manager/store-location/route.ts"),
-    read("db/migrations/0020_manager_store_location.sql"),
+    read("db/migrations/0026_manager_store_location.sql"),
   ]);
   assert.match(route, /MAX_REGISTRATION_ACCURACY_METERS = 100/);
   assert.match(route, /mode: "manager"/);

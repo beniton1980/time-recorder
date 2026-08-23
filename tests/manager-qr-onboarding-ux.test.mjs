@@ -67,13 +67,14 @@ test("initial QR is generated, downloaded, and emailed as PNG", async () => {
   assert.doesNotMatch(mailer, /image\/svg\+xml/);
 });
 
-test("operator approval continues directly to provisioning and invite creation", async () => {
+test("operator approval requires verified email before provisioning", async () => {
   const page = await source("app/operator/onboarding/page.tsx");
 
   assert.match(page, /if \(decision === "APPROVED"\) \{/);
-  assert.match(page, /await provision\(item, false\)/);
+  assert.match(page, /await requestEmailVerification\(item\)/);
   assert.match(page, /async function provision\(item: Item, confirmFirst = true\)/);
-  assert.match(page, /承認し、店舗と管理者招待を作成しますか/);
+  assert.match(page, /!item\.contact_email_verified_at/);
+  assert.match(page, /承認し、連絡先メールの所有確認を送信しますか/);
 });
 
 
@@ -122,4 +123,19 @@ test("A4 QR guide is generated as a shareable and long-press saveable image", as
   assert.doesNotMatch(qrManager, /window\.open\(guideDataUrl/);
   assert.match(qrManager, /A4案内画像を作成しました。下の画像を長押しして保存してください。/);
   assert.doesNotMatch(qrManager, /function printA4/);
+});
+
+test("manager QR screen explains the complete leak response without changing the A4 guide", async () => {
+  const qrManager = await source("app/manager/qr/page.tsx");
+  const styles = await source("app/manager/qr/qr.module.css");
+
+  assert.match(qrManager, /QRが外部に漏れた・紛失したとき/);
+  assert.match(qrManager, /新しいQRの発行と同時に、古いQRは使えなくなります/);
+  assert.match(qrManager, /現在のQRを無効化/);
+  assert.match(qrManager, /心当たりのないスタッフ登録がないか確認/);
+  assert.match(qrManager, /そのスタッフを利用停止/);
+  assert.match(qrManager, /\{hasActiveQr && <section className=\{styles\.incidentGuide\}/);
+  assert.match(styles, /\.incidentGuide\{/);
+  assert.match(qrManager, /canvas\.width = 1240/);
+  assert.match(qrManager, /canvas\.height = 1754/);
 });

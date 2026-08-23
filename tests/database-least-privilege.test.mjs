@@ -4,6 +4,14 @@ import test from "node:test";
 
 const migrationPath = new URL("../db/migrations/0017_least_privilege_app_role.sql", import.meta.url);
 const hardeningPath = new URL("../db/migrations/0018_fail_closed_app_privileges.sql", import.meta.url);
+const atomicRecoveryPath = new URL(
+  "../db/recovery/0017_0018_least_privilege_atomic.sql",
+  import.meta.url,
+);
+const recipientGenerationsPath = new URL(
+  "../db/migrations/0023_monthly_report_recipient_generations.sql",
+  import.meta.url,
+);
 
 test("application database role cannot own or administer the database", async () => {
   const migration = await readFile(migrationPath, "utf8");
@@ -61,4 +69,30 @@ test("future database objects fail closed until explicitly granted", async () =>
   assert.match(migration, /REVOKE USAGE, SELECT ON SEQUENCES FROM onogami_app/);
   assert.match(migration, /REVOKE EXECUTE ON FUNCTIONS FROM onogami_app/);
   assert.doesNotMatch(migration, /GRANT .* ON (TABLES|SEQUENCES|FUNCTIONS)/);
+});
+
+test("recovery applies least privilege creation and fail-closed hardening atomically", async () => {
+  const recovery = await readFile(atomicRecoveryPath, "utf8");
+
+  assert.match(recovery, /^\\set ON_ERROR_STOP on/m);
+  assert.equal((recovery.match(/^BEGIN;/gm) ?? []).length, 1);
+  assert.equal((recovery.match(/^COMMIT;/gm) ?? []).length, 1);
+  assert.match(recovery, /CREATE ROLE onogami_app NOLOGIN/);
+  assert.match(recovery, /GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES/);
+  assert.match(recovery, /REVOKE UPDATE, DELETE ON TABLE public\.punch_events/);
+  assert.match(recovery, /REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM onogami_app/);
+  assert.ok(
+    recovery.indexOf("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES")
+      < recovery.indexOf("REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM onogami_app"),
+  );
+});
+
+test("recipient generations and delivery attempts are function-only records", async () => {
+  const migration = await readFile(recipientGenerationsPath, "utf8");
+  assert.match(migration, /REVOKE ALL ON TABLE public\.monthly_report_recipient_versions FROM PUBLIC/);
+  assert.match(migration, /REVOKE ALL ON TABLE public\.monthly_attendance_delivery_attempts FROM PUBLIC/);
+  assert.doesNotMatch(migration, /GRANT .* ON TABLE public\.monthly_report_recipient_versions/);
+  assert.doesNotMatch(migration, /GRANT .* ON TABLE public\.monthly_attendance_delivery_attempts/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.claim_monthly_attendance_delivery[\s\S]*FROM PUBLIC/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.claim_monthly_attendance_delivery[\s\S]*TO onogami_app/);
 });

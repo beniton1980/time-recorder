@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, code: "ID_TOKEN_REQUIRED" }, { status: 400 });
   }
 
-  if (body.storeId !== undefined && (typeof body.storeId !== "string" || !uuidPattern.test(body.storeId))) {
+  if (typeof body.storeId !== "string" || !uuidPattern.test(body.storeId)) {
     return NextResponse.json({ ok: false, code: "INVALID_STORE_ID" }, { status: 400 });
   }
 
@@ -39,20 +39,26 @@ export async function POST(request: Request) {
     const sql = getSql({
       mode: "manager",
       lineIdentity: identity.sub,
-      storeId: typeof body.storeId === "string" ? body.storeId : undefined,
+      storeId: body.storeId,
     });
 
     const managers = await sql`
       SELECT st.id AS staff_id, st.legal_name, s.id AS store_id, s.name AS store_name,
-        s.latitude AS store_latitude, s.longitude AS store_longitude
+        s.latitude AS store_latitude,
+        s.longitude AS store_longitude,
+        s.closing_rule,
+        s.monthly_report_email,
+        s.monthly_report_email_verification_sent_at,
+        s.monthly_report_email_verified_at,
+        s.monthly_report_email_consented_at,
+        s.monthly_report_email_consent_version
       FROM staff st
       JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
         AND st.role = 'MANAGER'
         AND s.status = 'active'
-        AND (${typeof body.storeId === "string" ? body.storeId : null}::uuid IS NULL
-          OR st.store_id = ${typeof body.storeId === "string" ? body.storeId : null}::uuid)
+        AND st.store_id = ${body.storeId}::uuid
       ORDER BY st.created_at ASC
       LIMIT 1
     `;
@@ -219,8 +225,11 @@ export async function POST(request: Request) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }
+
     logServerError("manager_dashboard_failed");
-    return NextResponse.json({ ok: false, code: "DASHBOARD_UNAVAILABLE" }, { status: 503 });
+    return NextResponse.json(
+      { ok: false, code: "MANAGER_DASHBOARD_UNAVAILABLE" },
+      { status: 503 },
+    );
   }
 }
-

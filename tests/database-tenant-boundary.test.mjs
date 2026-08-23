@@ -29,11 +29,15 @@ test("every runtime database client supplies an explicit request context", async
     "app/api/manager/monthly-attendance/csv/route.ts",
     "app/api/manager/monthly-attendance/reports/route.ts",
     "app/api/manager/monthly-attendance/reissue/route.ts",
+    "app/api/manager/monthly-attendance/recipient/route.ts",
+    "app/api/monthly-attendance/email-verification/route.ts",
     "app/api/onboarding/requests/route.ts",
+    "app/api/onboarding/email-verification/route.ts",
     "app/api/onboarding/manager-invite/claim/route.ts",
     "app/api/operator/onboarding/requests/route.ts",
     "app/api/operator/onboarding/requests/decision/route.ts",
     "app/api/operator/onboarding/requests/provision/route.ts",
+    "app/api/operator/onboarding/requests/email-verification/route.ts",
     "app/api/operator/onboarding/requests/delete/route.ts",
     "app/api/cron/monthly-attendance/route.ts",
   ];
@@ -73,4 +77,24 @@ test("cross-store attendance references are rejected by database constraints", a
   assert.match(migration, /FOREIGN KEY \(target_event_id, staff_id, store_id\)/);
   assert.match(migration, /FOREIGN KEY \(target_correction_id, staff_id, store_id\)/);
   assert.match(migration, /VALIDATE CONSTRAINT fk_punch_events_staff_store/);
+});
+
+test("recipient generations use RLS and store-scoped privileged functions", async () => {
+  const migration = await source("db/migrations/0023_monthly_report_recipient_generations.sql");
+  assert.match(migration, /ALTER TABLE public\.monthly_report_recipient_versions ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /ALTER TABLE public\.monthly_attendance_delivery_attempts ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /app_manager_store_allowed\(p_store_id\)/);
+  assert.match(migration, /app_request_setting\('mode'\) IS DISTINCT FROM 'cron'/);
+  assert.match(migration, /version\.store_id = p_store_id/);
+  assert.match(migration, /delivery\.store_id = p_store_id/);
+});
+
+test("manager database authorization fails closed without a complete context", async () => {
+  const migration = await source("db/migrations/0024_fail_closed_manager_context.sql");
+  assert.match(migration, /SELECT COALESCE\(/);
+  assert.match(migration, /app_request_setting\('mode'\) = 'manager'/);
+  assert.match(migration, /,\s*FALSE\s*\)/);
+  assert.match(migration, /SET search_path = pg_catalog, public/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.app_manager_store_allowed\(UUID\) FROM PUBLIC/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.app_manager_store_allowed\(UUID\) TO onogami_app/);
 });

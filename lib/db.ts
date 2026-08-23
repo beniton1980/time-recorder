@@ -14,6 +14,7 @@ export type DatabaseRequestContext =
   | { mode: "operator"; lineIdentity: string }
   | { mode: "cron" }
   | { mode: "onboarding_public"; clientRequestId: string }
+  | { mode: "monthly_email_verification"; storeId: string }
   | { mode: "invite_claim"; lineIdentity: string; inviteTokenHash: string };
 
 const safeContextValue = /^[A-Za-z0-9_-]+$/;

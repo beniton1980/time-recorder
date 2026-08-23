@@ -1,4 +1,4 @@
-import { assessAttendance } from "@/lib/monthly-attendance.mjs";
+import { deriveDailyAttendanceRecords } from "@/lib/monthly-attendance.mjs";
 import type {
   EffectivePunch,
   PendingCorrection,
@@ -13,7 +13,7 @@ type SqlClient = (
 export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, period: Period) {
   const [events, pendingCorrections] = await Promise.all([
     sql`
-      SELECT epe.*, st.legal_name
+      SELECT epe.*, epe.business_date::text AS business_date, st.legal_name
       FROM effective_punch_events epe
       JOIN staff st ON st.id = epe.staff_id
       WHERE epe.store_id = ${storeId}::uuid
@@ -22,6 +22,7 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
     `,
     sql`
       SELECT
+        cr.store_id,
         cr.staff_id,
         st.legal_name,
         COALESCE(
@@ -47,11 +48,9 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
         ) BETWEEN ${period.start}::date AND ${period.end}::date
     `,
   ]);
-  return {
-    events: events as EffectivePunch[],
-    days: assessAttendance(
+  const days = deriveDailyAttendanceRecords(
       events as EffectivePunch[],
       pendingCorrections as PendingCorrection[],
-    ),
-  };
+    );
+  return { events: events as EffectivePunch[], days, dailyAttendanceRecords: days };
 }
