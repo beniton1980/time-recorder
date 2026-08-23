@@ -51,6 +51,8 @@ type Dashboard = {
     legal_name: string;
     store_id: string;
     store_name: string;
+    store_latitude: number | null;
+    store_longitude: number | null;
     monthly_report_email: string | null;
     monthly_report_email_verification_sent_at: string | null;
     monthly_report_email_verified_at: string | null;
@@ -178,6 +180,8 @@ export default function ManagerPage() {
   const [reissuingPeriod, setReissuingPeriod] = useState<string | null>(null);
   const [reissueMessage, setReissueMessage] = useState<string | null>(null);
   const [exportingPeriod, setExportingPeriod] = useState<string | null>(null);
+  const [savingStoreLocation, setSavingStoreLocation] = useState(false);
+  const [storeLocationMessage, setStoreLocationMessage] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async (businessDate: string | undefined, storeId: string) => {
     const idToken = liff.getIDToken();
@@ -281,6 +285,7 @@ export default function ManagerPage() {
     setSelectedStaffId("ALL");
     setMonthlyReports([]);
     setReissueMessage(null);
+    setStoreLocationMessage(null);
     try {
       const url = new URL(window.location.href);
       url.searchParams.set("store_id", storeId);
@@ -291,6 +296,70 @@ export default function ManagerPage() {
       setError(caught instanceof Error ? caught.message : "店舗を切り替えられませんでした。");
     } finally {
       setSwitchingStore(false);
+    }
+  }
+
+  async function registerCurrentStoreLocation() {
+    if (!dashboard) return;
+    setSavingStoreLocation(true);
+    setStoreLocationMessage("現在地を確認しています…");
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        });
+      });
+      const accuracy = Math.round(position.coords.accuracy);
+      if (accuracy > 100) {
+        throw new Error(`位置情報の精度が不足しています（誤差約${accuracy}m）。屋外や窓際で再度お試しください。`);
+      }
+      if (!window.confirm(`${dashboard.manager.store_name}の打刻位置を、現在地（誤差約${accuracy}m）に設定しますか？`)) {
+        setStoreLocationMessage(null);
+        return;
+      }
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/store-location", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idToken,
+          storeId: dashboard.manager.store_id,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        if (data.code === "LOCATION_ACCURACY_TOO_LOW") {
+          throw new Error("位置情報の精度が不足しています。屋外や窓際で再度お試しください。");
+        }
+        throw new Error("店舗の打刻位置を保存できませんでした。");
+      }
+      setDashboard((current) => current ? {
+        ...current,
+        manager: {
+          ...current.manager,
+          store_latitude: Number(data.store.latitude),
+          store_longitude: Number(data.store.longitude),
+        },
+      } : current);
+      setStoreLocationMessage(`店舗の打刻位置を登録しました（誤差約${accuracy}m）。`);
+    } catch (caught) {
+      const geolocationDenied = typeof caught === "object"
+        && caught !== null
+        && "code" in caught
+        && caught.code === 1;
+      setStoreLocationMessage(
+        geolocationDenied
+          ? "位置情報の利用が許可されていません。LINEの設定で位置情報を許可してください。"
+          : caught instanceof Error ? caught.message : "現在地を取得できませんでした。",
+      );
+    } finally {
+      setSavingStoreLocation(false);
     }
   }
 
@@ -648,6 +717,25 @@ export default function ManagerPage() {
 
         {dashboard && (
           <>
+            <section className={styles.section}>
+              <div className={styles.sectionHeading}>
+                <h2>店舗の打刻位置</h2>
+                <span>{dashboard.manager.store_latitude === null ? "未設定" : "設定済み"}</span>
+              </div>
+              <p className={styles.sectionNote}>
+                店舗内で操作してください。打刻時の位置確認に使用します。
+              </p>
+              {storeLocationMessage && <p className={styles.reissueMessage} role="status">{storeLocationMessage}</p>}
+              <button
+                type="button"
+                className={styles.storeLocationButton}
+                disabled={savingStoreLocation}
+                onClick={() => void registerCurrentStoreLocation()}
+              >
+                {savingStoreLocation ? "現在地を確認中…" : dashboard.manager.store_latitude === null ? "現在地を店舗位置に登録" : "店舗位置を現在地で更新"}
+              </button>
+            </section>
+
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
                 <h2>月次勤怠表</h2>

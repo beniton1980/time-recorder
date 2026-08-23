@@ -44,6 +44,8 @@ export async function POST(request: Request) {
 
     const managers = await sql`
       SELECT st.id AS staff_id, st.legal_name, s.id AS store_id, s.name AS store_name,
+        s.latitude AS store_latitude,
+        s.longitude AS store_longitude,
         s.closing_rule,
         s.monthly_report_email,
         s.monthly_report_email_verification_sent_at,
