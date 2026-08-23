@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     !uuidPattern.test(body.storeId) ||
     typeof body.staffId !== "string" ||
     !uuidPattern.test(body.staffId) ||
-    (body.status !== "active" && body.status !== "inactive")
+    !["active", "inactive", "departed"].includes(String(body.status))
   ) {
     return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
@@ -54,6 +54,9 @@ export async function POST(request: Request) {
         ${identity.sub}, ${body.storeId}::uuid, ${body.staffId}, ${body.status}
       )
     `;
+    if (rows.length === 0) {
+      return NextResponse.json({ ok: false, code: "STAFF_STATUS_NOT_CHANGED" }, { status: 409 });
+    }
     return NextResponse.json({ ok: true, staff: rows[0] });
   } catch (caught) {
     if (caught instanceof LineTokenVerificationError) {

@@ -84,7 +84,7 @@ type MonthlyReport = {
 type StaffMembership = {
   staff_id: string;
   legal_name: string;
-  status: "active" | "inactive";
+  status: "active" | "inactive" | "departed";
   state: WorkState;
 };
 
@@ -177,6 +177,7 @@ export default function ManagerPage() {
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
   const [selectedStaffId, setSelectedStaffId] = useState("ALL");
   const [updatingStaffId, setUpdatingStaffId] = useState<string | null>(null);
+  const [showDepartedStaff, setShowDepartedStaff] = useState(false);
   const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
   const [monthlyRecipientEmail, setMonthlyRecipientEmail] = useState("");
   const [monthlyRecipientWorking, setMonthlyRecipientWorking] = useState(false);
@@ -278,7 +279,14 @@ export default function ManagerPage() {
       const response = await fetch("/api/manager/co-managers/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId: dashboard.manager.store_id, staffId: manager.staff_id, status: nextStatus }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error("本人または最後の管理者は停止できません。");
-      await reloadDashboard(selectedDate); setCoManagerMessage("管理権限を更新しました。");
+      await reloadDashboard(selectedDate);
+      if (nextStatus === "active") {
+        setCoManagerShare({ legalName: manager.legal_name, storeName: dashboard.manager.store_name });
+        setCoManagerMessage("管理権限を再開しました。必要に応じて本人へ案内を共有してください。");
+      } else {
+        setCoManagerShare(null);
+        setCoManagerMessage("管理権限を停止しました。");
+      }
     } catch (caught) { setCoManagerMessage(caught instanceof Error ? caught.message : "管理権限を更新できませんでした。"); }
     finally { setCoManagerWorking(false); }
   }
@@ -598,10 +606,14 @@ export default function ManagerPage() {
     }
   }
 
-  async function updateStaffStatus(staff: StaffMembership) {
-    const nextStatus = staff.status === "active" ? "inactive" : "active";
-    const action = nextStatus === "inactive" ? "利用停止" : "利用再開";
-    if (!window.confirm(`${staff.legal_name}さんを${action}しますか？`)) return;
+  async function updateStaffStatus(staff: StaffMembership, nextStatus: StaffMembership["status"]) {
+    const action = nextStatus === "active" ? (staff.status === "departed" ? "再雇用" : "利用再開") : nextStatus === "inactive" ? "一時停止" : "退社";
+    const detail = nextStatus === "departed"
+      ? "\n\n通常のスタッフ一覧から非表示になります。過去の勤怠履歴は残ります。"
+      : nextStatus === "active" && staff.status === "departed"
+        ? "\n\n打刻の利用を再開します。管理権限は自動では戻りません。"
+        : "";
+    if (!window.confirm(`${staff.legal_name}さんを${action}にしますか？${detail}`)) return;
 
     setUpdatingStaffId(staff.staff_id);
     setError(null);
@@ -756,6 +768,8 @@ export default function ManagerPage() {
   const coManagerCandidates = dashboard?.staffMemberships.filter(
     (staff) => staff.status === "active" && !dashboard.coManagers.some((manager) => manager.staff_id === staff.staff_id),
   ) ?? [];
+  const currentStaffMemberships = dashboard?.staffMemberships.filter((staff) => staff.status !== "departed") ?? [];
+  const departedStaffMemberships = dashboard?.staffMemberships.filter((staff) => staff.status === "departed") ?? [];
 
   return (
     <main className={styles.page}>
@@ -890,35 +904,32 @@ export default function ManagerPage() {
             <section className={styles.section}>
               <div className={styles.sectionHeading}>
                 <h2>スタッフ管理</h2>
-                <span>{dashboard.staffMemberships.length}名</span>
+                <span>{currentStaffMemberships.length}名</span>
               </div>
-              <p className={styles.sectionNote}>登録は店舗QRから自動で行われます。必要なときだけ停止・再開してください。</p>
-              {dashboard.staffMemberships.length === 0 ? (
+              <p className={styles.sectionNote}>一時的に使わない場合は「一時停止」、退社した場合は「退社」を選んでください。勤怠履歴はどちらも削除されません。</p>
+              {currentStaffMemberships.length === 0 ? (
                 <p className={styles.empty}>登録済みスタッフはいません</p>
               ) : (
                 <ul className={styles.staffManagementList}>
-                  {dashboard.staffMemberships.map((staff) => (
+                  {currentStaffMemberships.map((staff) => (
                     <li key={staff.staff_id}>
                       <div>
                         <strong>{staff.legal_name}</strong>
-                        <span>{staff.status === "active" ? "利用中" : "停止中"}</span>
+                        <span>{staff.status === "active" ? "利用中" : "一時停止中"}</span>
                       </div>
-                      <button
-                        type="button"
-                        className={staff.status === "active" ? styles.reject : styles.approve}
-                        disabled={updatingStaffId !== null || (staff.status === "active" && staff.state !== "OFF_DUTY")}
-                        title={staff.status === "active" && staff.state !== "OFF_DUTY" ? "退勤後に停止できます" : undefined}
-                        onClick={() => void updateStaffStatus(staff)}
-                      >
-                        {updatingStaffId === staff.staff_id
-                          ? "処理中…"
-                          : staff.status === "active"
-                            ? "利用停止"
-                            : "利用再開"}
-                      </button>
+                      <div className={styles.staffActions}>
+                        <button type="button" className={staff.status === "active" ? styles.reject : styles.approve} disabled={updatingStaffId !== null || (staff.status === "active" && staff.state !== "OFF_DUTY")} title={staff.status === "active" && staff.state !== "OFF_DUTY" ? "退勤後に停止できます" : undefined} onClick={() => void updateStaffStatus(staff, staff.status === "active" ? "inactive" : "active")}>{updatingStaffId === staff.staff_id ? "処理中…" : staff.status === "active" ? "一時停止" : "利用再開"}</button>
+                        <button type="button" className={styles.departButton} disabled={updatingStaffId !== null || staff.state !== "OFF_DUTY"} title={staff.state !== "OFF_DUTY" ? "退勤後に退社へ変更できます" : undefined} onClick={() => void updateStaffStatus(staff, "departed")}>退社</button>
+                      </div>
                     </li>
                   ))}
                 </ul>
+              )}
+              {departedStaffMemberships.length > 0 && (
+                <div className={styles.departedStaff}>
+                  <button type="button" className={styles.departedToggle} onClick={() => setShowDepartedStaff((current) => !current)}>{showDepartedStaff ? "退社したスタッフを閉じる" : `退社したスタッフ（${departedStaffMemberships.length}名）`}</button>
+                  {showDepartedStaff && <ul className={styles.staffManagementList}>{departedStaffMemberships.map((staff) => <li key={staff.staff_id}><div><strong>{staff.legal_name}</strong><span>退社</span></div><button type="button" className={styles.approve} disabled={updatingStaffId !== null} onClick={() => void updateStaffStatus(staff, "active")}>{updatingStaffId === staff.staff_id ? "処理中…" : "再雇用"}</button></li>)}</ul>}
+                </div>
               )}
             </section>
 
