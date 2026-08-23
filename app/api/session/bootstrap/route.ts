@@ -142,7 +142,7 @@ export async function POST(request: Request) {
         JOIN stores s ON s.id = st.store_id
         JOIN store_entry_tokens token ON token.store_id = s.id
         WHERE st.line_user_id = ${identity.sub}
-          AND st.status = 'inactive'
+          AND st.status IN ('inactive', 'departed')
           AND s.status = 'active'
           AND token.token_hash = ${tokenHash}
           AND token.active = TRUE

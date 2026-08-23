@@ -31,22 +31,51 @@ test("staff status changes require the selected store in the manager UI", async 
   assert.match(page, /storeId: dashboard\?\.manager\.store_id/);
 });
 
-test("an inactive membership cannot self-register again", async () => {
+test("an inactive or departed membership cannot self-register again", async () => {
   const bootstrap = await source("app/api/session/bootstrap/route.ts");
   const page = await source("app/page.tsx");
-  assert.match(bootstrap, /st\.status = 'inactive'/);
+  assert.match(bootstrap, /st\.status IN \('inactive', 'departed'\)/);
   assert.match(bootstrap, /STAFF_INACTIVE/);
   assert.match(page, /この店舗での利用は停止されています/);
 });
 
-test("manager dashboard includes active and inactive STAFF memberships", async () => {
+test("manager dashboard includes every STAFF membership status", async () => {
   const dashboard = await source("app/api/manager/dashboard/route.ts");
   const page = await source("app/manager/page.tsx");
   assert.match(dashboard, /staffMemberships/);
   assert.match(dashboard, /st\.role = 'STAFF'/);
   assert.match(page, /スタッフ管理/);
-  assert.match(page, /利用停止/);
+  assert.match(page, /一時停止/);
   assert.match(page, /利用再開/);
+});
+
+test("departed staff are hidden from the normal list without deleting history", async () => {
+  const migration = await source("db/migrations/0029_departed_staff.sql");
+  const page = await source("app/manager/page.tsx");
+  assert.match(migration, /'active', 'inactive', 'departed'/);
+  assert.match(migration, /p_status IN \(''active'', ''inactive'', ''departed''\)/);
+  assert.doesNotMatch(migration, /DELETE FROM/);
+  assert.match(page, /staff\.status !== "departed"/);
+  assert.match(page, /退社したスタッフ/);
+  assert.match(page, /再雇用/);
+});
+
+test("departing a staff member also leaves manager access stopped", async () => {
+  const migration = await source("db/migrations/0029_departed_staff.sql");
+  assert.match(migration, /UPDATE public\.staff_manager_access access[\s\S]*SET status = ''inactive''/);
+  assert.match(migration, /app_manager_store_allowed\(p_store_id\)/);
+});
+
+test("a rejected staff status transition returns a visible conflict", async () => {
+  const route = await source("app/api/manager/staff/status/route.ts");
+  assert.match(route, /rows\.length === 0/);
+  assert.match(route, /STAFF_STATUS_NOT_CHANGED/);
+});
+
+test("resuming co-manager access offers the LINE guide again", async () => {
+  const page = await source("app/manager/page.tsx");
+  assert.match(page, /nextStatus === "active"[\s\S]*setCoManagerShare/);
+  assert.match(page, /必要に応じて本人へ案内を共有してください/);
 });
 
 
