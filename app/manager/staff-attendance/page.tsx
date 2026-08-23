@@ -97,6 +97,8 @@ export default function StaffAttendancePage() {
     const params = new URLSearchParams(window.location.search);
     setStoreId(params.get("store_id") ?? "");
     setStaffId(params.get("staff_id") ?? "");
+    const requestedMonth = params.get("month");
+    if (requestedMonth && /^\d{4}-\d{2}$/.test(requestedMonth)) setMonth(requestedMonth);
   }, []);
 
   useEffect(() => {
@@ -165,6 +167,10 @@ export default function StaffAttendancePage() {
     return [...selected].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
   }, [allDays, reviewOnly]);
 
+  function editHref(businessDate: string) {
+    return `/manager/staff-attendance/edit?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&date=${encodeURIComponent(businessDate)}`;
+  }
+
   return (
     <main className={styles.page}>
       <section className={styles.shell}>
@@ -212,6 +218,7 @@ export default function StaffAttendancePage() {
                           <strong>{dateLabel(day.businessDate)}</strong>
                         </div>
                         <p className={styles.noRecord}>勤務記録なし</p>
+                        <a className={styles.editDay} href={editHref(day.businessDate)}>この日の打刻を修正</a>
                       </li>
                     );
                   }
@@ -238,6 +245,7 @@ export default function StaffAttendancePage() {
                       {reasons.length > 0 && (
                         <ul className={styles.reasons}>{reasons.map((reason, index) => <li key={`${reason}-${index}`}>{displayReason(reason)}</li>)}</ul>
                       )}
+                      <a className={styles.editDay} href={editHref(day.businessDate)}>この日の打刻を修正</a>
                     </li>
                   );
                 })}
