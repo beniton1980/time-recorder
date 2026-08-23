@@ -23,11 +23,14 @@ type Day = {
   breakDuration?: string;
 };
 
+type DisplayDay = Day | { businessDate: string; noRecord: true };
+
 type Payload = {
   ok: true;
   store: { id: string; name: string };
   staff: { id: string; legalName: string };
   month: string;
+  period: { start: string; end: string; displayThrough: string | null };
   summary: { workDays: number; workDuration: string; breakDuration: string; issueDays: number; gpsIssueCount: number };
   days: Day[];
 };
@@ -58,6 +61,22 @@ function dateLabel(value: string) {
 
 function displayReason(reason: string) {
   return reasonLabels[reason] ?? "確認が必要です";
+}
+
+function dateRange(start: string, end: string | null) {
+  if (!end || end < start) return [];
+  const values: string[] = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  while (cursor <= last) {
+    values.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return values;
+}
+
+function isRecordedDay(day: DisplayDay): day is Day {
+  return !("noRecord" in day);
 }
 
 export default function StaffAttendancePage() {
@@ -122,13 +141,24 @@ export default function StaffAttendancePage() {
     return () => window.clearTimeout(timer);
   }, [staffId, storeId]);
 
+  const allDays = useMemo<DisplayDay[]>(() => {
+    if (!payload) return [];
+    const recordedByDate = new Map(payload.days.map((day) => [day.businessDate, day]));
+    return dateRange(payload.period.start, payload.period.displayThrough)
+      .map((businessDate) => recordedByDate.get(businessDate) ?? { businessDate, noRecord: true as const });
+  }, [payload]);
+
   const visibleDays = useMemo(() => {
-    const days = payload?.days ?? [];
     const selected = reviewOnly
-      ? days.filter((day) => day.status === "NEEDS_REVIEW" || day.attendanceReasons.length > 0 || day.reviewReasons.length > 0 || day.gpsIssueCount > 0)
-      : days;
+      ? allDays.filter((day) => isRecordedDay(day) && (
+          day.status === "NEEDS_REVIEW" ||
+          day.attendanceReasons.length > 0 ||
+          day.reviewReasons.length > 0 ||
+          day.gpsIssueCount > 0
+        ))
+      : allDays;
     return [...selected].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
-  }, [payload, reviewOnly]);
+  }, [allDays, reviewOnly]);
 
   return (
     <main className={styles.page}>
@@ -166,10 +196,21 @@ export default function StaffAttendancePage() {
             </div>
 
             {visibleDays.length === 0 ? (
-              <p className={styles.empty}>{reviewOnly ? "要確認の勤怠はありません" : "この月の勤怠はありません"}</p>
+              <p className={styles.empty}>{reviewOnly ? "要確認の勤怠はありません" : "表示できる営業日はまだありません"}</p>
             ) : (
               <ol className={styles.dayList}>
                 {visibleDays.map((day) => {
+                  if (!isRecordedDay(day)) {
+                    return (
+                      <li key={day.businessDate} className={styles.noRecordDay}>
+                        <div className={styles.dayHeader}>
+                          <strong>{dateLabel(day.businessDate)}</strong>
+                        </div>
+                        <p className={styles.noRecord}>勤務記録なし</p>
+                      </li>
+                    );
+                  }
+
                   const reasons = [...day.attendanceReasons, ...day.reviewReasons];
                   const needsReview = day.status === "NEEDS_REVIEW" || reasons.length > 0;
                   return (
