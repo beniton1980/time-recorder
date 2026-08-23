@@ -67,6 +67,7 @@ type Dashboard = {
 };
 
 type CoManager = { staff_id: string; legal_name: string; status: "active" | "inactive"; is_self: boolean; is_owner: boolean };
+type CoManagerShare = { legalName: string; storeName: string };
 
 type ManagerMembership = {
   store_id: string;
@@ -188,6 +189,7 @@ export default function ManagerPage() {
   const [selectedCoManagerStaffId, setSelectedCoManagerStaffId] = useState("");
   const [coManagerWorking, setCoManagerWorking] = useState(false);
   const [coManagerMessage, setCoManagerMessage] = useState<string | null>(null);
+  const [coManagerShare, setCoManagerShare] = useState<CoManagerShare | null>(null);
 
   const loadDashboard = useCallback(async (businessDate: string | undefined, storeId: string) => {
     const idToken = liff.getIDToken();
@@ -221,17 +223,49 @@ export default function ManagerPage() {
 
   async function grantCoManagerAccess() {
     if (!dashboard || !selectedCoManagerStaffId) { setCoManagerMessage("共同管理者にするスタッフを選択してください。"); return; }
+    const selectedStaff = dashboard.staffMemberships.find((staff) => staff.staff_id === selectedCoManagerStaffId);
+    if (!selectedStaff) { setCoManagerMessage("選択したスタッフを確認できませんでした。"); return; }
     const idToken = liff.getIDToken();
     if (!idToken) return;
-    setCoManagerWorking(true); setCoManagerMessage(null);
+    setCoManagerWorking(true); setCoManagerMessage(null); setCoManagerShare(null);
     try {
       const response = await fetch("/api/manager/co-managers/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId: dashboard.manager.store_id, staffId: selectedCoManagerStaffId, status: "active" }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error("管理権限を付与できませんでした。");
-      setSelectedCoManagerStaffId(""); setCoManagerMessage("共同管理者として登録しました。本人は管理者画面を開くと利用できます。");
+      setSelectedCoManagerStaffId("");
+      setCoManagerShare({ legalName: selectedStaff.legal_name, storeName: dashboard.manager.store_name });
+      setCoManagerMessage("共同管理者として登録しました。続けて本人へ案内を共有してください。");
       await reloadDashboard(selectedDate);
     } catch (caught) { setCoManagerMessage(caught instanceof Error ? caught.message : "管理権限を付与できませんでした。"); }
     finally { setCoManagerWorking(false); }
+  }
+
+  async function shareCoManagerGuide() {
+    if (!coManagerShare) return;
+    const guide = `${coManagerShare.legalName}さん\n${coManagerShare.storeName}の勤怠管理者に登録しました。\n次のリンクから管理者画面を開いてください。\nhttps://liff.line.me/${LIFF_ID}/manager`;
+    setCoManagerWorking(true);
+    try {
+      if (liff.isApiAvailable("shareTargetPicker")) {
+        const result = await liff.shareTargetPicker([{ type: "text", text: guide }], { isMultiple: false });
+        setCoManagerMessage(result?.status === "success" ? "LINEの送信先へ案内を共有しました。" : "LINEの共有画面を開きました。");
+        return;
+      }
+      if (typeof navigator.share === "function") {
+        await navigator.share({ title: "ONOGAMI 勤怠 管理者のご案内", text: guide });
+        setCoManagerMessage("案内を共有しました。");
+        return;
+      }
+      await navigator.clipboard.writeText(guide);
+      setCoManagerMessage("案内文をコピーしました。LINEのトークへ貼り付けて送信してください。");
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") {
+        setCoManagerMessage("共有をキャンセルしました。管理権限の登録は完了しています。");
+      } else {
+        setCoManagerMessage("共有画面を開けませんでした。もう一度お試しください。");
+      }
+    } finally {
+      setCoManagerWorking(false);
+    }
   }
 
   async function updateCoManagerStatus(manager: CoManager) {
@@ -325,6 +359,8 @@ export default function ManagerPage() {
     setMonthlyReports([]);
     setReissueMessage(null);
     setStoreLocationMessage(null);
+    setCoManagerShare(null);
+    setCoManagerMessage(null);
     try {
       const url = new URL(window.location.href);
       url.searchParams.set("store_id", storeId);
@@ -765,6 +801,7 @@ export default function ManagerPage() {
               <div className={styles.coManagerInvite}>
                 <label>登録済みスタッフを選択<select value={selectedCoManagerStaffId} onChange={(event) => setSelectedCoManagerStaffId(event.target.value)}><option value="">選択してください</option>{coManagerCandidates.map((staff) => <option key={staff.staff_id} value={staff.staff_id}>{staff.legal_name}</option>)}</select></label>
                 <button type="button" disabled={coManagerWorking || !selectedCoManagerStaffId} onClick={() => void grantCoManagerAccess()}>共同管理者に登録</button>
+                {coManagerShare && <button type="button" className={styles.shareGuideButton} disabled={coManagerWorking} onClick={() => void shareCoManagerGuide()}>LINEで案内を共有</button>}
                 {coManagerMessage && <p className={styles.reissueMessage} role="status">{coManagerMessage}</p>}
               </div>
               {coManagerCandidates.length === 0 && dashboard.staffMemberships.length > 0 && <p className={styles.sectionNote}>追加できる登録済みスタッフはいません。</p>}
