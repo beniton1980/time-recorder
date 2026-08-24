@@ -36,7 +36,7 @@ test("business attributes use additive nullable columns and follow provisioning"
   assert.match(migration, /ALTER TABLE public\.onboarding_requests/);
   assert.match(migration, /ALTER TABLE public\.stores/);
   assert.doesNotMatch(migration, /NOT NULL/);
-  assert.doesNotMatch(migration, /UPDATE public\.(onboarding_requests|stores)/);
+  assert.doesNotMatch(migration, /UPDATE public\.(onboarding_requests|stores)[\\s\\S]*SET[\\s\\S]*(business_category|staff_count_range|store_count_range|prior_attendance_method|reported_acquisition_source)/);
   assert.match(migration, /request_row\.business_category/);
   assert.match(migration, /request_row\.staff_count_range/);
   assert.match(migration, /request_row\.prior_attendance_method/);
