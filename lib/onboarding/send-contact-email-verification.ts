@@ -50,13 +50,14 @@ export async function sendContactEmailVerificationMail(
     body: JSON.stringify({
       from: `ONOGAMI 勤怠 <no-reply@${domain}>`,
       to: [mail.recipient],
-      subject: `【ONOGAMI 勤怠】${mail.storeName} メールアドレス確認`,
+      subject: `【ONOGAMI 勤怠】メールアドレス確認のお願い（${mail.storeName}）`,
       html: `<p>${escapeHtml(mail.managerName)} 様</p>
-        <p>${escapeHtml(mail.storeName)}の連絡先メールアドレスを確認します。</p>
+        <p>このたびは、ONOGAMI勤怠にお申し込みいただきありがとうございます。</p>
+        <p>ご登録いただいたメールアドレスの確認をお願いします。</p>
         <p><a href="${escapeHtml(mail.verificationUrl)}">メールアドレスを確認する</a></p>
-        <p>確認が完了するまで、管理者招待や店舗QRは発行されません。</p>
-        <p>このリンクは${escapeHtml(expiresAt)}まで有効です。</p>
-        <p>心当たりがない場合は、このメールを破棄してください。</p>`,
+        <p>確認が完了すると、利用開始に必要なご案内をお送りします。</p>
+        <p>この確認リンクは${escapeHtml(expiresAt)}まで有効です。</p>
+        <p>お心当たりがない場合は、このメールを破棄してください。</p>`,
     }),
     signal: AbortSignal.timeout(10_000),
   });
