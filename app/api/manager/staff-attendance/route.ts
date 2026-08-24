@@ -61,7 +61,6 @@ export async function POST(request: Request) {
       SELECT id, legal_name, status
       FROM staff
       WHERE store_id = ${body.storeId}::uuid
-        AND role = 'STAFF'
         AND status <> 'departed'
       ORDER BY legal_name ASC, created_at ASC
     `;
