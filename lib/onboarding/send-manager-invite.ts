@@ -53,10 +53,10 @@ export async function sendManagerInviteMail(
       subject: `【ONOGAMI勤怠】ご利用開始のご案内（${mail.storeName}）`,
       html: `<p>${escapeHtml(mail.managerName)} 様</p>
         <p>${escapeHtml(mail.storeName)} のご利用準備ができました。<br>まず、店舗を管理する方のLINEを登録してください。</p>
-        <p>以下のボタンをスマートフォンで開くと、LINEで管理者登録を開始できます。</p>
+        <p>スマートフォンでこのリンクを開くとLINEが起動します。登録する管理者ご本人のLINEアカウントで続けてください。</p>
         <p><a href="${escapeHtml(mail.inviteUrl)}">LINEで管理者登録を開始する</a></p>
         <p>登録が完了すると、店舗の打刻QRの発行と管理者画面の利用を開始できます。</p>
-        <p>※このリンクは、登録するご本人のLINEアカウントで開いてください。<br>※リンクは1回のみ利用可能です。<br>※有効期限：${escapeHtml(expiresAt)}<br>※お心当たりがない場合は、このメールを破棄してください。</p>`,
+        <p>※リンクは1回のみ利用可能です。<br>※有効期限：${escapeHtml(expiresAt)}<br>※お心当たりがない場合は、このメールを破棄してください。</p>`,
     }),
     signal: AbortSignal.timeout(10_000),
   });
