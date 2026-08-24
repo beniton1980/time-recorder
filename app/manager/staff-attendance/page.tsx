@@ -1,7 +1,7 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./staff-attendance.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -99,6 +99,7 @@ export default function StaffAttendancePage() {
   const [message, setMessage] = useState("勤怠を読み込んでいます");
   const [error, setError] = useState<string | null>(null);
   const [reviewOnly, setReviewOnly] = useState(false);
+  const liffReady = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -113,7 +114,8 @@ export default function StaffAttendancePage() {
     let active = true;
     async function load() {
       try {
-        await liff.init({ liffId: LIFF_ID });
+        if (!liffReady.current) liffReady.current = liff.init({ liffId: LIFF_ID });
+        await liffReady.current;
         if (!liff.isLoggedIn()) {
           liff.login({ redirectUri: window.location.href });
           return;
@@ -155,6 +157,12 @@ export default function StaffAttendancePage() {
     return () => window.clearTimeout(timer);
   }, [staffId, storeId]);
 
+  const selectedStaffName = useMemo(() => {
+    return payload?.staffOptions.find((staff) => staff.id === staffId)?.legalName
+      ?? payload?.staff.legalName
+      ?? "個人の勤怠";
+  }, [payload, staffId]);
+
   const allDays = useMemo<DisplayDay[]>(() => {
     if (!payload) return [];
     const recordedByDate = new Map(payload.days.map((day) => [day.businessDate, day]));
@@ -179,8 +187,11 @@ export default function StaffAttendancePage() {
   }
 
   function changeStaff(nextStaffId: string) {
+    if (nextStaffId === staffId) return;
     setStaffId(nextStaffId);
     setReviewOnly(false);
+    setMessage("スタッフを切り替えています");
+    setError(null);
     const url = new URL(window.location.href);
     url.searchParams.set("staff_id", nextStaffId);
     url.searchParams.set("store_id", storeId);
@@ -194,7 +205,7 @@ export default function StaffAttendancePage() {
         <header className={styles.header}>
           <button type="button" className={styles.back} onClick={() => history.back()}>← 管理画面へ戻る</button>
           <p className={styles.eyebrow}>ONOGAMI 勤怠</p>
-          <h1>{payload?.staff.legalName ?? "個人の勤怠"}</h1>
+          <h1>{selectedStaffName}</h1>
           {payload && <p className={styles.store}>{payload.store.name}</p>}
         </header>
 
@@ -219,7 +230,7 @@ export default function StaffAttendancePage() {
 
         {payload && !error && (
           <>
-            <section className={styles.summary}>
+            <section className={styles.summary} aria-busy={Boolean(message)}>
               <div><span>出勤日数</span><strong>{payload.summary.workDays}日</strong></div>
               <div><span>実働</span><strong>{payload.summary.workDuration}</strong></div>
               <div><span>休憩</span><strong>{payload.summary.breakDuration}</strong></div>
