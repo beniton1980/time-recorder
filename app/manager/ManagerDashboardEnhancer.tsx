@@ -13,6 +13,7 @@ type SectionConfig = {
 const SECTION_CONFIG: Record<string, SectionConfig> = {
   "未処理の訂正申請": { key: "review", order: 1, collapsible: true, collapseWhenEmpty: true },
   "勤務状況": { key: "attendance", order: 2, collapsible: false },
+  "勤怠確認": { key: "attendance", order: 2, collapsible: false },
   "月次勤怠表": { key: "monthly", order: 3, collapsible: true },
   "スタッフ管理": { key: "staff", order: 4, collapsible: true },
   "QR・掲示物": { key: "qr", order: 5, collapsible: true },
@@ -61,39 +62,73 @@ function ensureQrSection(shell: HTMLElement) {
   }
 }
 
-function ensureStaffAttendanceLink(section: HTMLElement, shell: HTMLElement) {
-  const staffSelect = Array.from(section.querySelectorAll<HTMLSelectElement>("select"))
-    .find((select) => Array.from(select.options).some((option) => option.value === "ALL"));
-  if (!staffSelect) return;
+function replaceAttendanceSection(section: HTMLElement, shell: HTMLElement) {
+  if (section.dataset.attendanceUnified === "true") return;
 
-  let link = section.querySelector<HTMLAnchorElement>("[data-staff-attendance-link]");
-  if (!link) {
-    link = document.createElement("a");
-    link.dataset.staffAttendanceLink = "true";
-    link.textContent = "今月の勤怠を見る";
-    link.setAttribute("aria-label", "選択したスタッフの今月の勤怠を見る");
-    staffSelect.closest("label")?.insertAdjacentElement("afterend", link);
+  const originalSelect = Array.from(section.querySelectorAll<HTMLSelectElement>("select"))
+    .find((select) => Array.from(select.options).some((option) => option.value === "ALL"));
+  if (!originalSelect) return;
+
+  const staffOptions = Array.from(originalSelect.options)
+    .filter((option) => option.value && option.value !== "ALL")
+    .map((option) => ({ value: option.value, label: option.textContent?.trim() || "スタッフ" }));
+  const qrLink = shell.querySelector<HTMLAnchorElement>('a[href*="/manager/qr"]');
+  const storeId = qrLink ? new URL(qrLink.href).searchParams.get("store_id") : null;
+  if (!storeId) return;
+
+  const headingRow = section.querySelector<HTMLElement>(":scope > div:first-child");
+  const headingClass = headingRow?.className || "";
+  const sectionNote = section.querySelector<HTMLElement>("p")?.className || "";
+  const selectorLabel = originalSelect.closest("label");
+  const selectorClass = selectorLabel?.className || "";
+
+  section.innerHTML = "";
+  section.dataset.attendanceUnified = "true";
+
+  const newHeadingRow = document.createElement("div");
+  newHeadingRow.className = headingClass;
+  const heading = document.createElement("h2");
+  heading.textContent = "勤怠確認";
+  const count = document.createElement("span");
+  count.textContent = `${staffOptions.length}名`;
+  newHeadingRow.append(heading, count);
+
+  const note = document.createElement("p");
+  note.className = sectionNote;
+  note.textContent = "スタッフを選択すると、その人の今月の勤怠・要確認・打刻修正をまとめて確認できます。";
+
+  const label = document.createElement("label");
+  label.className = selectorClass;
+  label.textContent = "スタッフを選択";
+  const select = document.createElement("select");
+  for (const optionData of staffOptions) {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    select.append(option);
   }
+  label.append(select);
+
+  const link = document.createElement("a");
+  link.dataset.staffAttendanceLink = "true";
+  link.textContent = "個人の勤怠を開く";
+  link.setAttribute("aria-label", "選択したスタッフの個人勤怠を開く");
 
   const refresh = () => {
-    if (!link) return;
-    const staffId = staffSelect.value;
-    const qrLink = shell.querySelector<HTMLAnchorElement>('a[href*="/manager/qr"]');
-    const storeId = qrLink ? new URL(qrLink.href).searchParams.get("store_id") : null;
-    if (!storeId || !staffId || staffId === "ALL") {
+    const selectedStaffId = select.value;
+    if (!selectedStaffId) {
       link.hidden = true;
       link.removeAttribute("href");
       return;
     }
     link.hidden = false;
-    link.href = `/manager/staff-attendance?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}`;
+    link.href = `/manager/staff-attendance?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(selectedStaffId)}`;
   };
 
-  if (!staffSelect.dataset.staffAttendanceInitialized) {
-    staffSelect.dataset.staffAttendanceInitialized = "true";
-    staffSelect.addEventListener("change", refresh);
-  }
+  select.addEventListener("change", refresh);
   refresh();
+
+  section.append(newHeadingRow, note, label, link);
 }
 
 function reviewCount(section: HTMLElement) {
@@ -129,9 +164,10 @@ function enhanceDashboard() {
     section.dataset.dashboardKey = config.key;
     section.style.order = String(config.order);
 
-    if (config.key === "attendance") ensureStaffAttendanceLink(section, shell);
+    if (config.key === "attendance") replaceAttendanceSection(section, shell);
 
-    const headingRow = heading.parentElement as HTMLElement | null;
+    const refreshedHeading = section.querySelector<HTMLElement>("h2");
+    const headingRow = refreshedHeading?.parentElement as HTMLElement | null;
     if (!config.collapsible || !headingRow) continue;
 
     section.dataset.dashboardCollapsible = "true";
@@ -147,7 +183,7 @@ function enhanceDashboard() {
       if (!config.collapseWhenEmpty) setCollapsed(section, headingRow, true);
       headingRow.setAttribute("role", "button");
       headingRow.setAttribute("tabindex", "0");
-      headingRow.setAttribute("aria-label", `${heading.textContent?.trim()}を開閉`);
+      headingRow.setAttribute("aria-label", `${refreshedHeading?.textContent?.trim()}を開閉`);
 
       const toggle = () => {
         const collapsed = section.dataset.dashboardCollapsed === "true";

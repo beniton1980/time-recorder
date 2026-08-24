@@ -25,10 +25,17 @@ type Day = {
 
 type DisplayDay = Day | { businessDate: string; noRecord: true };
 
+type StaffOption = {
+  id: string;
+  legalName: string;
+  status: string;
+};
+
 type Payload = {
   ok: true;
   store: { id: string; name: string };
   staff: { id: string; legalName: string };
+  staffOptions: StaffOption[];
   month: string;
   period: { start: string; end: string; displayThrough: string | null };
   summary: { workDays: number; workDuration: string; breakDuration: string; issueDays: number; gpsIssueCount: number };
@@ -171,6 +178,16 @@ export default function StaffAttendancePage() {
     return `/manager/staff-attendance/edit?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&date=${encodeURIComponent(businessDate)}`;
   }
 
+  function changeStaff(nextStaffId: string) {
+    setStaffId(nextStaffId);
+    setReviewOnly(false);
+    const url = new URL(window.location.href);
+    url.searchParams.set("staff_id", nextStaffId);
+    url.searchParams.set("store_id", storeId);
+    url.searchParams.set("month", month);
+    window.history.replaceState(null, "", url);
+  }
+
   return (
     <main className={styles.page}>
       <section className={styles.shell}>
@@ -180,6 +197,17 @@ export default function StaffAttendancePage() {
           <h1>{payload?.staff.legalName ?? "個人の勤怠"}</h1>
           {payload && <p className={styles.store}>{payload.store.name}</p>}
         </header>
+
+        {payload && payload.staffOptions.length > 0 && (
+          <label className={styles.staffSelector}>
+            スタッフを選択
+            <select value={staffId} onChange={(event) => changeStaff(event.target.value)}>
+              {payload.staffOptions.map((staff) => (
+                <option key={staff.id} value={staff.id}>{staff.legalName}</option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className={styles.monthSelector}>
           表示する月
