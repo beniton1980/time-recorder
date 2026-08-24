@@ -1,4 +1,5 @@
 import { isEmailDeliveryAllowed } from "@/lib/environment-safety.mjs";
+import { generateStorePosterPdf } from "@/lib/onboarding/store-poster.mjs";
 
 type InitialStoreQrMail = {
   requestId: string;
@@ -49,6 +50,11 @@ export async function sendInitialStoreQrMail(
     return { sent: false, code: "EMAIL_NOT_CONFIGURED" };
   }
 
+  const posterPdf = await generateStorePosterPdf({
+    storeName: mail.storeName,
+    qrPngDataUrl: mail.qrPngDataUrl,
+  });
+
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -59,18 +65,29 @@ export async function sendInitialStoreQrMail(
     body: JSON.stringify({
       from: `ONOGAMI 勤怠 <no-reply@${domain}>`,
       to: [mail.recipient],
-      subject: `【ONOGAMI 勤怠】${mail.storeName} 店舗QR発行完了`,
+      subject: `【ONOGAMI勤怠】ご利用開始のご案内｜店舗QRと掲示用チラシをお送りします（${mail.storeName}）`,
       html: `<p>${escapeHtml(mail.managerName)} 様</p>
-        <p>${escapeHtml(mail.storeName)}の管理者登録と店舗QRの発行が完了しました。</p>
-        <p>添付のPNG画像を保存し、スタッフが読み取れる場所へ掲示してください。</p>
-        <p>勤務状況の確認、打刻修正申請の承認、スタッフ管理は管理者画面から行えます。</p>
+        <p>${escapeHtml(mail.storeName)} の管理者登録が完了し、<strong>ONOGAMI勤怠を利用開始できる状態になりました。</strong></p>
+        <p>このメールには、以下を添付しています。</p>
+        <ul><li>店舗打刻QR画像</li><li>掲示用チラシ（印刷用PDF）</li></ul>
+        <p><strong>まず行っていただくこと</strong></p>
+        <ol><li>掲示用チラシを印刷する</li><li>スタッフが見やすい場所に貼る</li><li>必要に応じて管理者画面を開く</li></ol>
+        <p>スタッフは、掲示されたQRを読み取ることで打刻できます。初回のみ氏名を入力し、その後は「出勤」「休憩開始」「休憩終了」「退勤」を押して利用します。</p>
+        <p>管理者画面では、スタッフの勤怠確認、打刻修正申請の確認・対応、スタッフ管理、QRの再発行ができます。</p>
         <p><a href="${escapeHtml(mail.managerUrl)}">LINEで管理者画面を開く</a></p>
-        <p>QRを再発行すると、以前のQRは利用できなくなります。</p>`,
-      attachments: [{
-        filename: `${safeFileName(mail.storeName)}-打刻QR.png`,
-        content: pngBase64(mail.qrPngDataUrl),
-        content_type: "image/png",
-      }],
+        <p>※QRを再発行すると、以前のQRは利用できなくなります。<br>※締め日後には、月次の勤怠データをメールでお送りします。</p>`,
+      attachments: [
+        {
+          filename: `${safeFileName(mail.storeName)}-打刻QR.png`,
+          content: pngBase64(mail.qrPngDataUrl),
+          content_type: "image/png",
+        },
+        {
+          filename: `${safeFileName(mail.storeName)}-掲示用チラシ.pdf`,
+          content: posterPdf.toString("base64"),
+          content_type: "application/pdf",
+        },
+      ],
     }),
     signal: AbortSignal.timeout(10_000),
   });
