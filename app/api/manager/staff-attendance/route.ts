@@ -46,26 +46,29 @@ export async function POST(request: Request) {
           - make_interval(mins => s.business_day_start_minute))::date)::text AS current_business_date
       FROM staff st
       JOIN stores s ON s.id = st.store_id
+      LEFT JOIN staff_manager_access access
+        ON access.staff_id = st.id AND access.store_id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.store_id = ${body.storeId}::uuid
         AND st.status = 'active'
-        AND st.role = 'MANAGER'
+        AND (st.role = 'MANAGER' OR access.status = 'active')
         AND s.status = 'active'
       LIMIT 1
     `;
     if (managers.length === 0) return Response.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
 
-    const targets = await sql`
-      SELECT id, legal_name
+    const staffOptions = await sql`
+      SELECT id, legal_name, status
       FROM staff
-      WHERE id = ${body.staffId}::uuid
-        AND store_id = ${body.storeId}::uuid
-      LIMIT 1
+      WHERE store_id = ${body.storeId}::uuid
+        AND role = 'STAFF'
+        AND status <> 'departed'
+      ORDER BY legal_name ASC, created_at ASC
     `;
-    if (targets.length === 0) return Response.json({ ok: false, code: "STAFF_NOT_FOUND" }, { status: 404 });
+    const target = staffOptions.find((staff) => String(staff.id) === body.staffId);
+    if (!target) return Response.json({ ok: false, code: "STAFF_NOT_FOUND" }, { status: 404 });
 
     const store = managers[0];
-    const target = targets[0];
     const period = monthPeriod(body.month);
     const currentBusinessDate = String(store.current_business_date);
     const displayThrough = currentBusinessDate < period.start
@@ -106,6 +109,11 @@ export async function POST(request: Request) {
       ok: true,
       store: { id: String(store.id), name: String(store.name) },
       staff: { id: body.staffId, legalName: String(target.legal_name) },
+      staffOptions: staffOptions.map((item) => ({
+        id: String(item.id),
+        legalName: String(item.legal_name),
+        status: String(item.status),
+      })),
       month: body.month,
       period: { ...period, displayThrough },
       summary: {
