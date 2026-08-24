@@ -225,7 +225,7 @@ export default function StaffAttendancePage() {
           <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
         </label>
 
-        {message && <p className={styles.loading}>{message}</p>}
+        {message && !payload && <p className={styles.loading}>{message}</p>}
         {error && <p className={styles.error} role="alert">{error}</p>}
 
         {payload && !error && (
@@ -236,6 +236,8 @@ export default function StaffAttendancePage() {
               <div><span>休憩</span><strong>{payload.summary.breakDuration}</strong></div>
               <div><span>要確認</span><strong>{payload.summary.issueDays}日</strong></div>
             </section>
+
+            {message && <p className={styles.loading}>{message}</p>}
 
             <div className={styles.toolbar}>
               <strong>{monthLabel(payload.month)}</strong>
