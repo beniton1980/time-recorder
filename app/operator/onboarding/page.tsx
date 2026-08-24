@@ -2,6 +2,14 @@
 
 import liff from "@line/liff";
 import { useCallback, useEffect, useState } from "react";
+import {
+  businessCategoryOptions,
+  optionLabel,
+  priorAttendanceMethodOptions,
+  reportedAcquisitionSourceOptions,
+  staffCountRangeOptions,
+  storeCountRangeOptions,
+} from "@/lib/onboarding/business-attributes";
 import styles from "../../onboarding/onboarding.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -13,6 +21,11 @@ type Item = {
   manager_legal_name: string;
   contact_email: string;
   store_address: string;
+  business_category: string | null;
+  staff_count_range: string | null;
+  store_count_range: string | null;
+  prior_attendance_method: string | null;
+  reported_acquisition_source: string | null;
   business_day_start_minute: number;
   closing_rule: string;
   status: Status;
@@ -281,6 +294,11 @@ export default function OperatorOnboardingPage() {
           <dt>管理者</dt><dd>{item.manager_legal_name}</dd>
           <dt>連絡先</dt><dd>{item.contact_email}</dd>
           <dt>住所</dt><dd>{item.store_address}</dd>
+          <dt>業種</dt><dd>{optionLabel(businessCategoryOptions, item.business_category)}</dd>
+          <dt>人数規模</dt><dd>{optionLabel(staffCountRangeOptions, item.staff_count_range)}</dd>
+          <dt>導入前の管理</dt><dd>{optionLabel(priorAttendanceMethodOptions, item.prior_attendance_method)}</dd>
+          <dt>運営事業所数</dt><dd>{optionLabel(storeCountRangeOptions, item.store_count_range)}</dd>
+          <dt>知ったきっかけ</dt><dd>{optionLabel(reportedAcquisitionSourceOptions, item.reported_acquisition_source)}</dd>
           <dt>営業日切替</dt><dd>{timeLabel(item.business_day_start_minute)}</dd>
           <dt>締め日</dt><dd>{item.closing_rule === "month_end" ? "月末" : item.closing_rule === "day_15" ? "15日" : "25日"}</dd>
         </dl>
