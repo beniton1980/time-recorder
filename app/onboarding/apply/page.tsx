@@ -108,6 +108,7 @@ export default function OnboardingApplyPage() {
     <p className={styles.brand}>ONOGAMI</p>
     <h1>店舗利用申請</h1>
     <p className={styles.lead}>ONOGAMI 勤怠の限定提供版をご利用になる店舗の情報を入力してください。申請内容はONOGAMI側で審査し、承認後にメールでご案内します。</p>
+    <p className={styles.notice}><strong>ONOGAMI勤怠のご利用にはLINEアカウントが必要です。</strong><br />管理者登録・管理画面の利用には、管理者ご本人のLINEアカウントを使用します。スタッフも打刻時に各自のLINEアカウントを使用します。</p>
     <form className={styles.form} onSubmit={submit}>
       <label className={styles.field}>店舗名<input required maxLength={120} value={form.storeName} onChange={(e)=>update("storeName",e.target.value)} /></label>
       <div className={styles.grid}>
@@ -131,4 +132,3 @@ export default function OnboardingApplyPage() {
     </form>
   </section></main>;
 }
-
