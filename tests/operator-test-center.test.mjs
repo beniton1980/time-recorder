@@ -21,7 +21,7 @@ test("operator test center is allowlist protected and has no production mutation
   assert.match(run, /verifyOperator\(body\.idToken\)/);
   assert.match(artifact, /verifyOperator\(body\.idToken\)/);
   for (const code of [run, artifact]) {
-    assert.doesNotMatch(code, /getSql|sendMonthlyAttendanceEmail|store-qr|RESEND_API_KEY/);
+    assert.doesNotMatch(code, /getSql|sendMonthlyAttendanceEmail|sendInitialStoreQrMail|RESEND_API_KEY|\/api\/manager\/store-qr/);
   }
 });
 
@@ -30,7 +30,24 @@ test("test center UI names destructive exclusions and manual checks", async () =
   assert.match(page, /安全な全自動テストを実行/);
   assert.match(page, /実メール送信・QR再発行/);
   assert.match(page, /実機確認/);
-  assert.match(page, /メール表示/);
+  assert.match(page, /月次メール/);
   assert.match(page, /PDF表示/);
   assert.match(page, /CSV表示/);
+  assert.match(page, /① メール確認/);
+  assert.match(page, /② 管理者登録/);
+  assert.match(page, /③ 利用開始/);
+});
+
+test("onboarding mail previews use the same pure builders as delivery", async () => {
+  const artifact = await source("app/api/operator/test-center/artifact/route.ts");
+  const contact = await source("lib/onboarding/send-contact-email-verification.ts");
+  const manager = await source("lib/onboarding/send-manager-invite.ts");
+  const start = await source("lib/onboarding/send-initial-store-qr.ts");
+  assert.match(artifact, /createContactEmailVerificationMail/);
+  assert.match(artifact, /createManagerInviteMail/);
+  assert.match(artifact, /createInitialStoreQrMail/);
+  assert.match(contact, /const content = createContactEmailVerificationMail\(mail\)/);
+  assert.match(manager, /const content = createManagerInviteMail\(mail\)/);
+  assert.match(start, /const content = createInitialStoreQrMail\(mail\)/);
+  assert.doesNotMatch(artifact, /fetch\("https:\/\/api\.resend\.com/);
 });
