@@ -56,10 +56,25 @@ function ensureQrSection(shell: HTMLElement) {
   }
 
   if (qrLink.parentElement !== section) {
-    qrLink.textContent = "QR・掲示物を開く";
+    qrLink.textContent = "QR・掲示物を管理";
     qrLink.setAttribute("aria-label", "店舗QRと掲示物の管理画面を開く");
     section.append(qrLink);
   }
+
+  const qrUrl = new URL(qrLink.href);
+  const storeId = qrUrl.searchParams.get("store_id");
+  let posterLink = section.querySelector<HTMLAnchorElement>('[data-dashboard-poster-link="true"]');
+  if (!posterLink) {
+    posterLink = document.createElement("a");
+    posterLink.dataset.dashboardPosterLink = "true";
+    posterLink.className = qrLink.className;
+    posterLink.textContent = "打刻用掲示を表示";
+    posterLink.setAttribute("aria-label", "店舗の打刻用掲示を表示する");
+    section.append(posterLink);
+  }
+  posterLink.href = storeId
+    ? `/manager/clock-poster?store_id=${encodeURIComponent(storeId)}`
+    : "/manager/clock-poster";
 }
 
 function replaceAttendanceSection(section: HTMLElement, shell: HTMLElement) {
