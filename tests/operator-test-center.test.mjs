@@ -36,6 +36,7 @@ test("test center UI names destructive exclusions and manual checks", async () =
   assert.match(page, /① メール確認/);
   assert.match(page, /② 管理者登録/);
   assert.match(page, /③ 利用開始/);
+  assert.match(page, /掲示用チラシ/);
 });
 
 test("onboarding mail previews use the same pure builders as delivery", async () => {
@@ -50,4 +51,7 @@ test("onboarding mail previews use the same pure builders as delivery", async ()
   assert.match(manager, /const content = createManagerInviteMail\(mail\)/);
   assert.match(start, /const content = createInitialStoreQrMail\(mail\)/);
   assert.doesNotMatch(artifact, /fetch\("https:\/\/api\.resend\.com/);
+  assert.match(artifact, /\/manager\?store_id=00000000-0000-4000-8000-000000000001/);
+  assert.match(artifact, /generateStorePosterPdf/);
+  assert.match(artifact, /body\.type === "onboarding-poster"/);
 });

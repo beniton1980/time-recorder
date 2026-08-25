@@ -7,7 +7,7 @@ import styles from "./test-center.module.css";
 const LIFF_ID = "2010761826-6FNSE1PD";
 type Result = { id: string; category: string; label: string; status: "PASS" | "REVIEW" | "MANUAL"; detail: string };
 type Run = { generatedAt: string; environment: string; results: Result[]; summary: { pass: number; review: number; manual: number } };
-type ArtifactType = "email" | "csv" | "pdf" | "onboarding-contact" | "onboarding-manager" | "onboarding-start";
+type ArtifactType = "email" | "csv" | "pdf" | "onboarding-contact" | "onboarding-manager" | "onboarding-start" | "onboarding-poster";
 
 const labels = { PASS: "正常", REVIEW: "要確認", MANUAL: "実機確認" } as const;
 
@@ -50,7 +50,7 @@ export default function TestCenterPage() {
     try {
       const response = await fetch("/api/operator/test-center/artifact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken: token(), type }) });
       if (!response.ok) throw new Error("プレビューを生成できませんでした。");
-      if (type !== "csv" && type !== "pdf") { setEmail(await response.json()); return; }
+      if (type !== "csv" && type !== "pdf" && type !== "onboarding-poster") { setEmail(await response.json()); return; }
       const url = URL.createObjectURL(await response.blob());
       window.open(url, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -66,7 +66,7 @@ export default function TestCenterPage() {
     {run && <>
       <section className={styles.summary} aria-label="検証結果"><div><b>{run.summary.pass}</b><span>正常</span></div><div><b>{run.summary.review}</b><span>要確認</span></div><div><b>{run.summary.manual}</b><span>実機確認</span></div></section>
       <p className={styles.meta}>{run.environment}環境・{new Date(run.generatedAt).toLocaleString("ja-JP")} 実行</p>
-      <section className={styles.previewGroup}><h2>登録・案内メール</h2><div className={styles.previews}><button onClick={() => void preview("onboarding-contact")}>① メール確認</button><button onClick={() => void preview("onboarding-manager")}>② 管理者登録</button><button onClick={() => void preview("onboarding-start")}>③ 利用開始</button></div></section>
+      <section className={styles.previewGroup}><h2>登録・案内メール</h2><div className={styles.previews}><button onClick={() => void preview("onboarding-contact")}>① メール確認</button><button onClick={() => void preview("onboarding-manager")}>② 管理者登録</button><button onClick={() => void preview("onboarding-start")}>③ 利用開始</button><button onClick={() => void preview("onboarding-poster")}>掲示用チラシ</button></div></section>
       <section className={styles.previewGroup}><h2>月次成果物</h2><div className={styles.previews}><button onClick={() => void preview("email")}>月次メール</button><button onClick={() => void preview("pdf")}>PDF表示</button><button onClick={() => void preview("csv")}>CSV表示</button></div></section>
       {email && <section className={styles.email}><strong>{email.subject}</strong>{email.attachments && <p className={styles.attachments}>添付予定：{email.attachments.join("、")}</p>}<div dangerouslySetInnerHTML={{ __html: email.html }} /></section>}
       {categories.map((category) => <section className={styles.category} key={category}><h2>{category}</h2><ul>{run.results.filter((item) => item.category === category).map((item) => <li key={item.id}><span className={`${styles.badge} ${styles[item.status.toLowerCase()]}`}>{labels[item.status]}</span><div><strong>{item.label}</strong><p>{item.detail}</p></div></li>)}</ul></section>)}
