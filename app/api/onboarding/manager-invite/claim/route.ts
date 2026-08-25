@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
+import { encryptStoreEntryToken } from "@/lib/store-qr-encryption";
+import { hashStoreEntryToken } from "@/lib/store-entry-token";
 import { sendInitialStoreQrMail } from "@/lib/onboarding/send-initial-store-qr";
 import {
   LineTokenVerificationError,
@@ -84,13 +86,30 @@ export async function POST(request: Request) {
 
     try {
       const rawStoreToken = randomBytes(32).toString("base64url");
-      await sql`
-        SELECT *
-        FROM rotate_store_entry_token(
-          ${result.store_id},
-          ${tokenHash(rawStoreToken)}
-        )
-      `;
+      const storeTokenHash = hashStoreEntryToken(rawStoreToken);
+      if (!storeTokenHash) throw new Error("STORE_QR_TOKEN_GENERATION_FAILED");
+      const sealedStoreToken = encryptStoreEntryToken(
+        rawStoreToken,
+        String(result.store_id),
+      );
+
+      await sql.transaction((transactionSql) => [
+        transactionSql`
+          SELECT *
+          FROM rotate_store_entry_token(
+            ${result.store_id},
+            ${storeTokenHash}
+          )
+        `,
+        transactionSql`
+          UPDATE store_entry_tokens
+          SET token_ciphertext = ${sealedStoreToken}
+          WHERE store_id = ${result.store_id}
+            AND active = TRUE
+            AND revoked_at IS NULL
+        `,
+      ]);
+
       const entryUrl = `https://liff.line.me/${LIFF_ID}?store_token=${encodeURIComponent(rawStoreToken)}`;
       const qrPngDataUrl = await QRCode.toDataURL(entryUrl, {
         errorCorrectionLevel: "M",
