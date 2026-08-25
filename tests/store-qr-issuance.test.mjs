@@ -29,6 +29,18 @@ test("reusable QR data is encrypted at rest rather than stored as plaintext", as
   assert.doesNotMatch(migration, /raw_token|plaintext_token/i);
 });
 
+test("missing replay key never blocks QR issuance", async () => {
+  const encryption = await readFile(encryptionPath, "utf8");
+  const route = await readFile(routePath, "utf8");
+  const onboarding = await readFile(onboardingClaimPath, "utf8");
+
+  assert.match(encryption, /if \(!encoded\)[\s\S]*if \(required\)[\s\S]*return null/);
+  assert.match(encryption, /if \(!key\) return null/);
+  assert.match(route, /displayReady: sealedToken !== null/);
+  assert.match(route, /打刻用掲示の再表示機能は現在準備中です/);
+  assert.match(onboarding, /encryptStoreEntryToken/);
+});
+
 test("manager QR API authorizes store membership before display or rotation", async () => {
   const route = await readFile(routePath, "utf8");
   assert.match(route, /st\.role = 'MANAGER'/);
@@ -52,7 +64,7 @@ test("rotation stores encrypted replay data in the same database transaction", a
   assert.match(route, /SET token_ciphertext = \$\{sealedToken\}/);
 });
 
-test("onboarding-issued QR is also redisplay-ready", async () => {
+test("onboarding-issued QR is also redisplay-ready when replay encryption is configured", async () => {
   const route = await readFile(onboardingClaimPath, "utf8");
   assert.match(route, /encryptStoreEntryToken/);
   assert.match(route, /sql\.transaction/);
