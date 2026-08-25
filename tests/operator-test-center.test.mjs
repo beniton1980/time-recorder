@@ -25,6 +25,15 @@ test("operator test center is allowlist protected and has no production mutation
   }
 });
 
+test("operator test center refreshes an invalid LINE ID token once", async () => {
+  const page = await source("app/operator/test-center/page.tsx");
+  assert.match(page, /response\.status === 401/);
+  assert.match(page, /data\?\.code === "INVALID_ID_TOKEN"/);
+  assert.match(page, /liff\.logout\(\)/);
+  assert.match(page, /liff\.login\(\{ redirectUri: window\.location\.href \}\)/);
+  assert.match(page, /sessionStorage\.getItem\(REAUTH_ATTEMPT_KEY\)/);
+});
+
 test("test center UI names destructive exclusions and manual checks", async () => {
   const page = await source("app/operator/test-center/page.tsx");
   assert.match(page, /安全な全自動テストを実行/);

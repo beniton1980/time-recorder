@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./test-center.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
+const REAUTH_ATTEMPT_KEY = "onogami-test-center-reauth-attempted";
 type Result = { id: string; category: string; label: string; status: "PASS" | "REVIEW" | "MANUAL"; detail: string };
 type Run = { generatedAt: string; environment: string; results: Result[]; summary: { pass: number; review: number; manual: number } };
 type ArtifactType = "email" | "csv" | "pdf" | "onboarding-contact" | "onboarding-manager" | "onboarding-start" | "onboarding-poster";
@@ -34,10 +35,34 @@ export default function TestCenterPage() {
     return idToken;
   }
 
+  function restartLineLogin() {
+    if (window.sessionStorage.getItem(REAUTH_ATTEMPT_KEY) === "1") {
+      throw new Error("LINE認証を更新できませんでした。画面を再読み込みして、もう一度お試しください。");
+    }
+    window.sessionStorage.setItem(REAUTH_ATTEMPT_KEY, "1");
+    if (liff.isLoggedIn()) liff.logout();
+    liff.login({ redirectUri: window.location.href });
+    throw new Error("LINE認証を更新しています…");
+  }
+
+  async function operatorPost(path: string, payload: Record<string, unknown>) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: token(), ...payload }),
+    });
+    if (response.status === 401) {
+      const data = await response.clone().json().catch(() => null) as { code?: string } | null;
+      if (data?.code === "INVALID_ID_TOKEN") restartLineLogin();
+    }
+    if (response.ok) window.sessionStorage.removeItem(REAUTH_ATTEMPT_KEY);
+    return response;
+  }
+
   async function execute() {
     setRunning(true); setError(null); setEmail(null);
     try {
-      const response = await fetch("/api/operator/test-center/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken: token() }) });
+      const response = await operatorPost("/api/operator/test-center/run", {});
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.code === "OPERATOR_ACCESS_REQUIRED" ? "この画面を利用できる運営者権限がありません。" : "一括検証を完了できませんでした。");
       setRun(data as Run);
@@ -48,7 +73,7 @@ export default function TestCenterPage() {
   async function preview(type: ArtifactType) {
     setError(null);
     try {
-      const response = await fetch("/api/operator/test-center/artifact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken: token(), type }) });
+      const response = await operatorPost("/api/operator/test-center/artifact", { type });
       if (!response.ok) throw new Error("プレビューを生成できませんでした。");
       if (type !== "csv" && type !== "pdf" && type !== "onboarding-poster") { setEmail(await response.json()); return; }
       const url = URL.createObjectURL(await response.blob());
