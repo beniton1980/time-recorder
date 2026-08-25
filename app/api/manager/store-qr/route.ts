@@ -211,8 +211,11 @@ export async function POST(request: Request) {
       token: {
         id: rotated[0].entry_token_id,
         revokedCount: Number(rotated[0].revoked_count),
+        displayReady: sealedToken !== null,
       },
-      message: "このQRは管理者認証後に打刻用掲示から再表示できます。",
+      message: sealedToken
+        ? "このQRは管理者認証後に打刻用掲示から再表示できます。"
+        : "QRを発行しました。打刻用掲示の再表示機能は現在準備中です。",
     });
   } catch (caught) {
     if (caught instanceof LineTokenVerificationError) {
