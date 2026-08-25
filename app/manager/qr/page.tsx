@@ -44,6 +44,7 @@ export default function StoreQrPage() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [storeId, setStoreId] = useState("");
   const [hasActiveQr, setHasActiveQr] = useState(false);
+  const [displayReady, setDisplayReady] = useState(false);
   const [issuedAt, setIssuedAt] = useState<string | null>(null);
   const [issued, setIssued] = useState<IssuedQr | null>(null);
   const [message, setMessage] = useState("管理者権限を確認しています");
@@ -55,6 +56,9 @@ export default function StoreQrPage() {
   const managerUrl = storeId
     ? `${MANAGER_LIFF_URL}?store_id=${encodeURIComponent(storeId)}`
     : MANAGER_LIFF_URL;
+  const posterUrl = storeId
+    ? `${MANAGER_LIFF_URL}/clock-poster?store_id=${encodeURIComponent(storeId)}`
+    : `${MANAGER_LIFF_URL}/clock-poster`;
 
   const storeName = useMemo(
     () => memberships.find((item) => item.store_id === storeId)?.store_name ?? "",
@@ -98,6 +102,7 @@ export default function StoreQrPage() {
         }
         const items = data.manager.memberships as Membership[];
         if (!active) return;
+        if (items.length === 0) throw new Error("利用できる店舗がありません。");
         const requestedStoreId = new URLSearchParams(window.location.search)
           .get("store_id");
         const selectedStoreId = items.find(
@@ -108,6 +113,7 @@ export default function StoreQrPage() {
         const status = await requestStoreQr("STATUS", selectedStoreId);
         if (!active) return;
         setHasActiveQr(status.token.active);
+        setDisplayReady(Boolean(status.token.displayReady));
         setIssuedAt(status.token.issuedAt ?? null);
         setMessage("");
       } catch (caught) {
@@ -126,6 +132,7 @@ export default function StoreQrPage() {
     try {
       const status = await requestStoreQr("STATUS", nextStoreId);
       setHasActiveQr(status.token.active);
+      setDisplayReady(Boolean(status.token.displayReady));
       setIssuedAt(status.token.issuedAt ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "状態を確認できませんでした。");
@@ -149,6 +156,7 @@ export default function StoreQrPage() {
         qrPngDataUrl: data.qrPngDataUrl,
       });
       setHasActiveQr(true);
+      setDisplayReady(true);
       setIssuedAt(new Date().toISOString());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "QRを発行できませんでした。");
@@ -164,6 +172,7 @@ export default function StoreQrPage() {
     try {
       await requestStoreQr("REVOKE", storeId);
       setHasActiveQr(false);
+      setDisplayReady(false);
       setIssuedAt(null);
       setIssued(null);
     } catch (caught) {
@@ -279,13 +288,16 @@ export default function StoreQrPage() {
               </div>
               <span className={hasActiveQr ? styles.active : styles.inactive}>{hasActiveQr ? "利用中" : "QRなし"}</span>
             </div>
-            {hasActiveQr && !issued && <p className={styles.securityNote}>
-              現在のQRは安全のためサーバーに元データを保存しておらず、再表示できません。保存済みのQRを紛失した場合のみ再発行してください。
+            {hasActiveQr && !displayReady && !issued && <p className={styles.securityNote}>
+              現在のQRは旧形式のため、打刻用掲示から再表示できません。一度だけ「QRを再発行」すると、以後は管理者認証後にいつでも再表示できます。
             </p>}
+            {hasActiveQr && displayReady && <a className={styles.posterLink} href={posterUrl}>
+              打刻用掲示を表示
+            </a>}
             {issued && (
               <section ref={qrResultRef} className={styles.result}>
                 <h2>現在のQR</h2>
-                <p className={styles.warning}>このQRはこの画面を閉じると再表示できません。今すぐ保存してください。</p>
+                <p className={styles.warning}>このQRは「打刻用掲示」から管理者認証後に再表示できます。</p>
                 <button type="button" onClick={() => void savePng()}>QR画像を保存・共有</button>
                 <div className={styles.imagePreview}>
                   <p>保存画面が開かない場合は、下のQR画像を長押しして保存してください。</p>
