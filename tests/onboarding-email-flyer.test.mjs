@@ -37,3 +37,10 @@ test("poster directs staff to self-service correction before manager help", () =
   assert.match(posterSource, /「打刻を修正する」から修正できます/);
   assert.match(posterSource, /分からない場合は、店舗の管理者に確認してください/);
 });
+
+test("poster places the store explanation below the QR with a comfortable text width", () => {
+  const qrPosition = posterSource.indexOf("doc.image(qrPngBuffer");
+  const explanationPosition = posterSource.indexOf("${storeName} の打刻用QRです");
+  assert.ok(qrPosition >= 0 && explanationPosition > qrPosition);
+  assert.match(posterSource, /width: contentWidth - 120/);
+});

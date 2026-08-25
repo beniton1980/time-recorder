@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       ...sample, verificationUrl: "https://kintai.onogami.jp/onboarding/verify-email?token=PREVIEW", expiresAt: "2026-09-01T09:00:00+09:00", deliveryKey: "preview",
     }) });
     if (body.type === "onboarding-manager") return Response.json({ ok: true, type: body.type, ...createManagerInviteMail({
-      ...sample, inviteUrl: "https://liff.line.me/2010761826-6FNSE1PD?invite=PREVIEW", expiresAt: "2026-09-01T09:00:00+09:00",
+      ...sample, inviteUrl: "https://liff.line.me/2010761826-6FNSE1PD/onboarding/invite?token=PREVIEW", expiresAt: "2026-09-01T09:00:00+09:00",
     }) });
     if (body.type === "onboarding-start") return Response.json({ ok: true, type: body.type, ...createInitialStoreQrMail({
       ...sample, qrPngDataUrl: "data:image/png;base64,PREVIEW", managerUrl: "https://liff.line.me/2010761826-6FNSE1PD/manager?store_id=00000000-0000-4000-8000-000000000001",
