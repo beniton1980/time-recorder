@@ -106,7 +106,9 @@ test("manager QR save supports iPhone share and long-press fallback", async () =
   assert.match(qrManager, /qrResultRef\.current\?\.scrollIntoView\(\{ behavior: "smooth", block: "nearest" \}\)/);
   assert.match(qrManager, /<h2>現在のQR<\/h2>/);
   assert.match(qrManager, /QR画像を保存・共有<\/button>[\s\S]*className=\{styles\.imagePreview\}[\s\S]*下のQR画像を長押し/);
-  assert.match(qrManager, /安全のためサーバーに元データを保存しておらず、再表示できません/);
+  assert.match(qrManager, /旧形式のため、打刻用掲示から再表示できません/);
+  assert.match(qrManager, /打刻用掲示を表示/);
+  assert.match(qrManager, /管理者認証後に再表示できます/);
   assert.match(qrManager, /発行日時：/);
   assert.doesNotMatch(qrManager, /function downloadSvg/);
 });
