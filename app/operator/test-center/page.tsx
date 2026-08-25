@@ -1,0 +1,73 @@
+"use client";
+
+import liff from "@line/liff";
+import { useEffect, useMemo, useState } from "react";
+import styles from "./test-center.module.css";
+
+const LIFF_ID = "2010761826-6FNSE1PD";
+type Result = { id: string; category: string; label: string; status: "PASS" | "REVIEW" | "MANUAL"; detail: string };
+type Run = { generatedAt: string; environment: string; results: Result[]; summary: { pass: number; review: number; manual: number } };
+
+const labels = { PASS: "正常", REVIEW: "要確認", MANUAL: "実機確認" } as const;
+
+export default function TestCenterPage() {
+  const [ready, setReady] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [run, setRun] = useState<Run | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState<{ subject: string; html: string } | null>(null);
+  const categories = useMemo(() => [...new Set(run?.results.map((item) => item.category) ?? [])], [run]);
+
+  useEffect(() => {
+    let active = true;
+    void liff.init({ liffId: LIFF_ID }).then(() => {
+      if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
+      if (active) setReady(true);
+    }).catch(() => active && setError("運営者認証を開始できませんでした。LINEから開き直してください。"));
+    return () => { active = false; };
+  }, []);
+
+  function token() {
+    const idToken = liff.getIDToken();
+    if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+    return idToken;
+  }
+
+  async function execute() {
+    setRunning(true); setError(null); setEmail(null);
+    try {
+      const response = await fetch("/api/operator/test-center/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken: token() }) });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.code === "OPERATOR_ACCESS_REQUIRED" ? "この画面を利用できる運営者権限がありません。" : "一括検証を完了できませんでした。");
+      setRun(data as Run);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "一括検証を完了できませんでした。"); }
+    finally { setRunning(false); }
+  }
+
+  async function preview(type: "email" | "csv" | "pdf") {
+    setError(null);
+    try {
+      const response = await fetch("/api/operator/test-center/artifact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken: token(), type }) });
+      if (!response.ok) throw new Error("プレビューを生成できませんでした。");
+      if (type === "email") { setEmail(await response.json()); return; }
+      const url = URL.createObjectURL(await response.blob());
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "プレビューを生成できませんでした。"); }
+  }
+
+  return <main className={styles.page}><section className={styles.shell}>
+    <p className={styles.brand}>ONOGAMI OPERATOR</p>
+    <div className={styles.hero}><div><h1>Test Center</h1><p>実店舗データを変更せず、共通の模擬データで主要機能をまとめて確認します。</p></div><span className={styles.safe}>安全モード</span></div>
+    <div className={styles.guard}><strong>この画面が行わないこと</strong><span>実メール送信・QR再発行・店舗や打刻の作成/変更・月次配信履歴の更新</span></div>
+    <button className={styles.run} type="button" disabled={!ready || running} onClick={() => void execute()}>{running ? "検証中…" : "安全な全自動テストを実行"}</button>
+    {error && <p className={styles.error} role="alert">{error}</p>}
+    {run && <>
+      <section className={styles.summary} aria-label="検証結果"><div><b>{run.summary.pass}</b><span>正常</span></div><div><b>{run.summary.review}</b><span>要確認</span></div><div><b>{run.summary.manual}</b><span>実機確認</span></div></section>
+      <p className={styles.meta}>{run.environment}環境・{new Date(run.generatedAt).toLocaleString("ja-JP")} 実行</p>
+      <div className={styles.previews}><button onClick={() => void preview("email")}>メール表示</button><button onClick={() => void preview("pdf")}>PDF表示</button><button onClick={() => void preview("csv")}>CSV表示</button></div>
+      {email && <section className={styles.email}><strong>{email.subject}</strong><div dangerouslySetInnerHTML={{ __html: email.html }} /></section>}
+      {categories.map((category) => <section className={styles.category} key={category}><h2>{category}</h2><ul>{run.results.filter((item) => item.category === category).map((item) => <li key={item.id}><span className={`${styles.badge} ${styles[item.status.toLowerCase()]}`}>{labels[item.status]}</span><div><strong>{item.label}</strong><p>{item.detail}</p></div></li>)}</ul></section>)}
+    </>}
+  </section></main>;
+}
