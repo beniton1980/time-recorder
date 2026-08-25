@@ -4,6 +4,7 @@ import test from "node:test";
 import QRCode from "qrcode";
 import { generateStorePosterPdf } from "../lib/onboarding/store-poster.mjs";
 
+const applicationSource = fs.readFileSync("app/onboarding/apply/page.tsx", "utf8");
 const verificationSource = fs.readFileSync("lib/onboarding/send-contact-email-verification.ts", "utf8");
 const inviteSource = fs.readFileSync("lib/onboarding/send-manager-invite.ts", "utf8");
 const qrMailSource = fs.readFileSync("lib/onboarding/send-initial-store-qr.ts", "utf8");
@@ -15,12 +16,19 @@ test("onboarding emails use newcomer-friendly copy", () => {
 
   assert.match(inviteSource, /ご利用準備ができました/);
   assert.match(inviteSource, /店舗を管理する方のLINEを登録/);
+  assert.match(inviteSource, /管理者登録には、登録するご本人のLINEアカウントが必要です/);
   assert.match(inviteSource, /店舗の打刻QRの発行と管理者画面の利用/);
 
   assert.match(qrMailSource, /掲示用チラシ（印刷用PDF）/);
   assert.match(qrMailSource, /掲示用チラシを印刷する/);
   assert.match(qrMailSource, /締め日後には、月次の勤怠データをメールでお送りします/);
   assert.match(qrMailSource, /content_type: "application\/pdf"/);
+});
+
+test("store application explains the LINE account requirement before submission", () => {
+  assert.match(applicationSource, /ONOGAMI勤怠のご利用にはLINEアカウントが必要です/);
+  assert.match(applicationSource, /スタッフも打刻時に各自のLINEアカウントを使用します/);
+  assert.doesNotMatch(applicationSource, /LINEアプリが必要です/);
 });
 
 test("store poster PDF contains a printable A4 flyer", async () => {
@@ -36,6 +44,11 @@ test("poster directs staff to self-service correction before manager help", () =
   assert.match(posterSource, /打刻を間違えたとき・忘れたとき/);
   assert.match(posterSource, /「打刻を修正する」から修正できます/);
   assert.match(posterSource, /分からない場合は、店舗の管理者に確認してください/);
+});
+
+test("poster tells staff that a LINE account is required", () => {
+  assert.match(posterSource, /打刻にはLINEアカウントが必要です/);
+  assert.doesNotMatch(posterSource, /LINEアプリが必要です/);
 });
 
 test("poster places the store explanation below the QR with a comfortable text width", () => {
