@@ -52,6 +52,7 @@ test("onboarding mail previews use the same pure builders as delivery", async ()
   assert.match(start, /const content = createInitialStoreQrMail\(mail\)/);
   assert.doesNotMatch(artifact, /fetch\("https:\/\/api\.resend\.com/);
   assert.match(artifact, /\/manager\?store_id=00000000-0000-4000-8000-000000000001/);
+  assert.match(artifact, /\/onboarding\/invite\?token=PREVIEW/);
   assert.match(artifact, /generateStorePosterPdf/);
   assert.match(artifact, /body\.type === "onboarding-poster"/);
 });
