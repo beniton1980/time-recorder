@@ -6,6 +6,7 @@ import styles from "./edit.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
+type VoidReasonChoice = "" | "誤打刻" | "管理者確認" | "その他";
 type StaffEvent = { effectiveId: string; businessDate: string; eventType: EventType; occurredAt: string; corrected: boolean };
 type Payload = {
   ok: true;
@@ -21,6 +22,7 @@ type EditState = {
   date: string;
   time: string;
   reason: string;
+  voidReasonChoice: VoidReasonChoice;
 };
 
 type RouteParams = {
@@ -136,7 +138,7 @@ export default function StaffAttendanceEditPage() {
   );
 
   function startAdd() {
-    setEdit({ operation: "ADD", eventType: "", date: businessDate, time: "", reason: "" });
+    setEdit({ operation: "ADD", eventType: "", date: businessDate, time: "", reason: "", voidReasonChoice: "" });
     setSubmitMessage(null);
   }
 
@@ -148,6 +150,7 @@ export default function StaffAttendanceEditPage() {
       date: businessDate,
       time: eventTimeInput(event.occurredAt),
       reason: "",
+      voidReasonChoice: "",
     });
     setSubmitMessage(null);
   }
@@ -160,14 +163,26 @@ export default function StaffAttendanceEditPage() {
       date: businessDate,
       time: eventTimeInput(event.occurredAt),
       reason: "",
+      voidReasonChoice: "",
     });
     setSubmitMessage(null);
   }
 
   async function submit() {
     if (!edit || !payload) return;
-    if (!edit.reason.trim()) {
-      setSubmitMessage("修正理由を入力してください。");
+
+    const finalReason = edit.operation === "VOID"
+      ? edit.voidReasonChoice === "その他"
+        ? edit.reason.trim()
+        : edit.voidReasonChoice
+      : edit.reason.trim();
+
+    if (edit.operation === "VOID" && !edit.voidReasonChoice) {
+      setSubmitMessage("取消理由を選択してください。");
+      return;
+    }
+    if (!finalReason) {
+      setSubmitMessage(edit.operation === "VOID" ? "その他の取消理由を入力してください。" : "修正理由を入力してください。");
       return;
     }
     if (edit.operation !== "VOID" && (!edit.eventType || !edit.time)) {
@@ -192,7 +207,7 @@ export default function StaffAttendanceEditPage() {
           targetEffectiveId: edit.targetEffectiveId,
           eventType: edit.operation === "VOID" ? undefined : edit.eventType,
           occurredAt: edit.operation === "VOID" ? undefined : new Date(`${edit.date}T${edit.time}:00+09:00`).toISOString(),
-          reason: edit.reason.trim(),
+          reason: finalReason,
         }),
       });
       const data = await response.json();
@@ -269,9 +284,38 @@ export default function StaffAttendanceEditPage() {
                     <input type="time" step="60" value={edit.time} onChange={(event) => setEdit({ ...edit, time: event.target.value })} />
                   </label>
                 )}
-                <label>修正理由
-                  <input value={edit.reason} onChange={(event) => setEdit({ ...edit, reason: event.target.value })} placeholder="例：管理者確認により時刻を修正" />
-                </label>
+                {edit.operation === "VOID" ? (
+                  <>
+                    <label>取消理由
+                      <select
+                        value={edit.voidReasonChoice}
+                        onChange={(event) => setEdit({
+                          ...edit,
+                          voidReasonChoice: event.target.value as VoidReasonChoice,
+                          reason: event.target.value === "その他" ? edit.reason : "",
+                        })}
+                      >
+                        <option value="">選択してください</option>
+                        <option value="誤打刻">誤打刻</option>
+                        <option value="管理者確認">管理者確認</option>
+                        <option value="その他">その他</option>
+                      </select>
+                    </label>
+                    {edit.voidReasonChoice === "その他" && (
+                      <label>その他の理由
+                        <input
+                          value={edit.reason}
+                          onChange={(event) => setEdit({ ...edit, reason: event.target.value })}
+                          placeholder="取消理由を入力してください"
+                        />
+                      </label>
+                    )}
+                  </>
+                ) : (
+                  <label>修正理由
+                    <input value={edit.reason} onChange={(event) => setEdit({ ...edit, reason: event.target.value })} placeholder="例：管理者確認により時刻を修正" />
+                  </label>
+                )}
                 {submitMessage && <p className={styles.formError} role="alert">{submitMessage}</p>}
                 <div className={styles.actions}>
                   <button type="button" className={styles.cancel} disabled={submitting} onClick={() => { setEdit(null); setSubmitMessage(null); }}>キャンセル</button>
