@@ -163,7 +163,7 @@ export default function StaffAttendanceEditPage() {
       date: businessDate,
       time: eventTimeInput(event.occurredAt),
       reason: "",
-      voidReasonChoice: "",
+      voidReasonChoice: "管理者確認",
     });
     setSubmitMessage(null);
   }
@@ -295,9 +295,8 @@ export default function StaffAttendanceEditPage() {
                           reason: event.target.value === "その他" ? edit.reason : "",
                         })}
                       >
-                        <option value="">選択してください</option>
-                        <option value="誤打刻">誤打刻</option>
                         <option value="管理者確認">管理者確認</option>
+                        <option value="誤打刻">誤打刻</option>
                         <option value="その他">その他</option>
                       </select>
                     </label>
