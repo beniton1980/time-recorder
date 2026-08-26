@@ -12,10 +12,19 @@ type RichMenu = {
 
 type SyncResult =
   | { state: "disabled" }
-  | { state: "not_friend" }
+  | { state: "not_friend"; status: number }
   | { state: "linked"; richMenuId: string }
   | { state: "already_linked"; richMenuId: string }
-  | { state: "error" };
+  | { state: "error"; step: string; status?: number };
+
+class RichMenuSyncError extends Error {
+  constructor(
+    readonly step: string,
+    readonly status?: number,
+  ) {
+    super(step);
+  }
+}
 
 function accessToken() {
   const value = process.env[ACCESS_TOKEN_ENV]?.trim();
@@ -39,7 +48,9 @@ async function lineRequest(
 
 async function findManagerRichMenu(token: string) {
   const response = await lineRequest(token, "https://api.line.me/v2/bot/richmenu/list");
-  if (!response.ok) throw new Error("LINE_RICH_MENU_LIST_FAILED");
+  if (!response.ok) {
+    throw new RichMenuSyncError("list", response.status);
+  }
 
   const data = (await response.json()) as { richmenus?: RichMenu[] };
   return data.richmenus?.find((menu) => menu.name === MENU_NAME) ?? null;
@@ -67,16 +78,22 @@ async function createManagerRichMenu(token: string) {
     }),
   });
 
-  if (!response.ok) throw new Error("LINE_RICH_MENU_CREATE_FAILED");
+  if (!response.ok) {
+    throw new RichMenuSyncError("create", response.status);
+  }
   const data = (await response.json()) as { richMenuId?: string };
-  if (!data.richMenuId) throw new Error("LINE_RICH_MENU_ID_MISSING");
+  if (!data.richMenuId) {
+    throw new RichMenuSyncError("create_missing_id");
+  }
 
   try {
     const imageResponse = await fetch(MENU_IMAGE_URL, {
       cache: "no-store",
       signal: AbortSignal.timeout(7000),
     });
-    if (!imageResponse.ok) throw new Error("LINE_RICH_MENU_IMAGE_FETCH_FAILED");
+    if (!imageResponse.ok) {
+      throw new RichMenuSyncError("image_fetch", imageResponse.status);
+    }
     const image = await imageResponse.arrayBuffer();
 
     const uploadResponse = await lineRequest(
@@ -88,7 +105,9 @@ async function createManagerRichMenu(token: string) {
         body: image,
       },
     );
-    if (!uploadResponse.ok) throw new Error("LINE_RICH_MENU_IMAGE_UPLOAD_FAILED");
+    if (!uploadResponse.ok) {
+      throw new RichMenuSyncError("image_upload", uploadResponse.status);
+    }
   } catch (error) {
     await lineRequest(
       token,
@@ -118,7 +137,9 @@ export async function ensureManagerRichMenuLinked(userId: string): Promise<SyncR
       token,
       `https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`,
     );
-    if (!profile.ok) return { state: "not_friend" };
+    if (!profile.ok) {
+      return { state: "not_friend", status: profile.status };
+    }
 
     const richMenuId = await getOrCreateManagerRichMenu(token);
     const current = await lineRequest(
@@ -138,10 +159,15 @@ export async function ensureManagerRichMenuLinked(userId: string): Promise<SyncR
       `https://api.line.me/v2/bot/user/${encodeURIComponent(userId)}/richmenu/${encodeURIComponent(richMenuId)}`,
       { method: "POST" },
     );
-    if (!linked.ok) throw new Error("LINE_RICH_MENU_LINK_FAILED");
+    if (!linked.ok) {
+      throw new RichMenuSyncError("link", linked.status);
+    }
 
     return { state: "linked", richMenuId };
-  } catch {
-    return { state: "error" };
+  } catch (error) {
+    if (error instanceof RichMenuSyncError) {
+      return { state: "error", step: error.step, status: error.status };
+    }
+    return { state: "error", step: "unexpected" };
   }
 }
