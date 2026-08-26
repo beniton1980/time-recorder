@@ -71,6 +71,11 @@ export async function POST(request: Request) {
     }
 
     const richMenu = await ensureManagerRichMenuLinked(identity.sub);
+    console.info("manager_rich_menu_sync", {
+      state: richMenu.state,
+      ...(richMenu.state === "error" ? { step: richMenu.step, status: richMenu.status ?? null } : {}),
+      ...(richMenu.state === "not_friend" ? { status: richMenu.status } : {}),
+    });
 
     return NextResponse.json({
       ok: true,
