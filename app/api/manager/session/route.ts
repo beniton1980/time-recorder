@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
-import { logServerError } from "@/lib/safe-log";
+import { logServerError, logServerInfo } from "@/lib/safe-log";
 import { ensureManagerRichMenuLinked } from "@/lib/line/manager-rich-menu";
 import {
   LineTokenVerificationError,
@@ -71,10 +71,14 @@ export async function POST(request: Request) {
     }
 
     const richMenu = await ensureManagerRichMenuLinked(identity.sub);
-    console.info("manager_rich_menu_sync", {
-      state: richMenu.state,
-      ...(richMenu.state === "error" ? { step: richMenu.step, status: richMenu.status ?? null } : {}),
-      ...(richMenu.state === "not_friend" ? { status: richMenu.status } : {}),
+    logServerInfo("manager_rich_menu_sync", {
+      failureName: richMenu.state,
+      failureCode:
+        richMenu.state === "error"
+          ? `${richMenu.step}:${richMenu.status ?? "none"}`
+          : richMenu.state === "not_friend"
+            ? `profile:${richMenu.status}`
+            : undefined,
     });
 
     return NextResponse.json({
