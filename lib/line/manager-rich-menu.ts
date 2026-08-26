@@ -1,9 +1,9 @@
 const ACCESS_TOKEN_ENV = "LINE_MESSAGING_CHANNEL_ACCESS_TOKEN";
-const MENU_NAME = "onogami-manager-v2";
+const MENU_NAME = "onogami-manager-v3";
 const LIFF_ID = "2010761826-6FNSE1PD";
 const MANAGER_URL = `https://liff.line.me/${LIFF_ID}?entry=manager`;
 const CLOCK_POSTER_URL = `https://liff.line.me/${LIFF_ID}?entry=clock-poster`;
-const MENU_IMAGE_URL = "https://kintai.onogami.jp/manager-rich-menu.png";
+const MENU_IMAGE_URL = "https://kintai.onogami.jp/api/line/manager-rich-menu-image";
 
 type RichMenu = {
   richMenuId: string;
@@ -131,8 +131,6 @@ export async function ensureManagerRichMenuLinked(userId: string): Promise<SyncR
   if (!token) return { state: "disabled" };
 
   try {
-    // A profile is available only when this Messaging API channel can address the user.
-    // This also avoids silently treating non-friends/different-provider IDs as linked.
     const profile = await lineRequest(
       token,
       `https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`,

@@ -4,6 +4,7 @@ import test from "node:test";
 
 const menuSource = fs.readFileSync("lib/line/manager-rich-menu.ts", "utf8");
 const entrySource = fs.readFileSync("app/liff-entry/page.tsx", "utf8");
+const imageSource = fs.readFileSync("app/api/line/manager-rich-menu-image/route.tsx", "utf8");
 const sessionSource = fs.readFileSync("app/api/manager/session/route.ts", "utf8");
 const envExample = fs.readFileSync(".env.example", "utf8");
 
@@ -14,7 +15,7 @@ test("manager rich menu uses the LIFF base entry router", () => {
   assert.match(menuSource, /2010761826-6FNSE1PD/);
   assert.match(menuSource, /\?entry=manager/);
   assert.match(menuSource, /\?entry=clock-poster/);
-  assert.match(menuSource, /onogami-manager-v2/);
+  assert.match(menuSource, /onogami-manager-v3/);
   assert.match(menuSource, /label: "管理画面"/);
   assert.match(menuSource, /label: "打刻用掲示"/);
 });
@@ -53,7 +54,10 @@ test("missing Messaging API token disables only rich menu sync", () => {
   assert.match(envExample, /LINE_MESSAGING_CHANNEL_ACCESS_TOKEN=/);
 });
 
-test("rich menu image is committed at LINE's compact menu dimensions", () => {
+test("rich menu v3 image is generated at LINE compact dimensions", () => {
   assert.match(menuSource, /width: 2500, height: 843/);
-  assert.ok(fs.existsSync("public/manager-rich-menu.png"));
+  assert.match(menuSource, /\/api\/line\/manager-rich-menu-image/);
+  assert.match(imageSource, /width: 2500/);
+  assert.match(imageSource, /height: 843/);
+  assert.match(imageSource, /ImageResponse/);
 });
