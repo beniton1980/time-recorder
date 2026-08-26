@@ -1,8 +1,8 @@
 const ACCESS_TOKEN_ENV = "LINE_MESSAGING_CHANNEL_ACCESS_TOKEN";
-const MENU_NAME = "onogami-manager-v1";
+const MENU_NAME = "onogami-manager-v2";
 const LIFF_ID = "2010761826-6FNSE1PD";
-const MANAGER_URL = `https://liff.line.me/${LIFF_ID}/manager`;
-const CLOCK_POSTER_URL = `https://liff.line.me/${LIFF_ID}/manager/clock-poster`;
+const MANAGER_URL = `https://liff.line.me/${LIFF_ID}?entry=manager`;
+const CLOCK_POSTER_URL = `https://liff.line.me/${LIFF_ID}?entry=clock-poster`;
 const MENU_IMAGE_URL = "https://kintai.onogami.jp/manager-rich-menu.png";
 
 type RichMenu = {
