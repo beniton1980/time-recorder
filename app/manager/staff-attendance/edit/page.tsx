@@ -1,12 +1,12 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./edit.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
-type VoidReasonChoice = "" | "誤打刻" | "管理者確認" | "その他";
+type ReasonChoice = "" | "誤打刻" | "管理者確認" | "その他";
 type StaffEvent = { effectiveId: string; businessDate: string; eventType: EventType; occurredAt: string; corrected: boolean };
 type Payload = {
   ok: true;
@@ -22,7 +22,7 @@ type EditState = {
   date: string;
   time: string;
   reason: string;
-  voidReasonChoice: VoidReasonChoice;
+  reasonChoice: ReasonChoice;
 };
 
 type RouteParams = {
@@ -84,6 +84,7 @@ export default function StaffAttendanceEditPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
+  const editorRef = useRef<HTMLElement | null>(null);
 
   const storeId = routeParams?.storeId ?? "";
   const staffId = routeParams?.staffId ?? "";
@@ -137,8 +138,16 @@ export default function StaffAttendanceEditPage() {
     [businessDate, payload],
   );
 
+  function scrollToEditor() {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  }
+
   function startAdd() {
-    setEdit({ operation: "ADD", eventType: "", date: businessDate, time: "", reason: "", voidReasonChoice: "" });
+    setEdit({ operation: "ADD", eventType: "", date: businessDate, time: "", reason: "", reasonChoice: "" });
     setSubmitMessage(null);
   }
 
@@ -150,9 +159,10 @@ export default function StaffAttendanceEditPage() {
       date: businessDate,
       time: eventTimeInput(event.occurredAt),
       reason: "",
-      voidReasonChoice: "",
+      reasonChoice: "管理者確認",
     });
     setSubmitMessage(null);
+    scrollToEditor();
   }
 
   function startVoid(event: StaffEvent) {
@@ -163,26 +173,27 @@ export default function StaffAttendanceEditPage() {
       date: businessDate,
       time: eventTimeInput(event.occurredAt),
       reason: "",
-      voidReasonChoice: "管理者確認",
+      reasonChoice: "管理者確認",
     });
     setSubmitMessage(null);
+    scrollToEditor();
   }
 
   async function submit() {
     if (!edit || !payload) return;
 
-    const finalReason = edit.operation === "VOID"
-      ? edit.voidReasonChoice === "その他"
+    const finalReason = edit.operation === "ADD"
+      ? edit.reason.trim()
+      : edit.reasonChoice === "その他"
         ? edit.reason.trim()
-        : edit.voidReasonChoice
-      : edit.reason.trim();
+        : edit.reasonChoice;
 
-    if (edit.operation === "VOID" && !edit.voidReasonChoice) {
-      setSubmitMessage("取消理由を選択してください。");
+    if (edit.operation !== "ADD" && !edit.reasonChoice) {
+      setSubmitMessage(edit.operation === "VOID" ? "取消理由を選択してください。" : "修正理由を選択してください。");
       return;
     }
     if (!finalReason) {
-      setSubmitMessage(edit.operation === "VOID" ? "その他の取消理由を入力してください。" : "修正理由を入力してください。");
+      setSubmitMessage(edit.operation === "ADD" ? "修正理由を入力してください。" : edit.operation === "VOID" ? "その他の取消理由を入力してください。" : "その他の修正理由を入力してください。");
       return;
     }
     if (edit.operation !== "VOID" && (!edit.eventType || !edit.time)) {
@@ -266,7 +277,7 @@ export default function StaffAttendanceEditPage() {
             </section>
 
             {edit && (
-              <section className={styles.editor}>
+              <section ref={editorRef} className={styles.editor}>
                 <h2>{edit.operation === "ADD" ? "打刻を追加" : edit.operation === "REPLACE" ? "打刻を変更" : "打刻を取消"}</h2>
                 {edit.operation !== "VOID" && (
                   <label>打刻種類
@@ -284,14 +295,18 @@ export default function StaffAttendanceEditPage() {
                     <input type="time" step="60" value={edit.time} onChange={(event) => setEdit({ ...edit, time: event.target.value })} />
                   </label>
                 )}
-                {edit.operation === "VOID" ? (
+                {edit.operation === "ADD" ? (
+                  <label>修正理由
+                    <input value={edit.reason} onChange={(event) => setEdit({ ...edit, reason: event.target.value })} placeholder="例：管理者確認により打刻を追加" />
+                  </label>
+                ) : (
                   <>
-                    <label>取消理由
+                    <label>{edit.operation === "VOID" ? "取消理由" : "修正理由"}
                       <select
-                        value={edit.voidReasonChoice}
+                        value={edit.reasonChoice}
                         onChange={(event) => setEdit({
                           ...edit,
-                          voidReasonChoice: event.target.value as VoidReasonChoice,
+                          reasonChoice: event.target.value as ReasonChoice,
                           reason: event.target.value === "その他" ? edit.reason : "",
                         })}
                       >
@@ -300,20 +315,16 @@ export default function StaffAttendanceEditPage() {
                         <option value="その他">その他</option>
                       </select>
                     </label>
-                    {edit.voidReasonChoice === "その他" && (
+                    {edit.reasonChoice === "その他" && (
                       <label>その他の理由
                         <input
                           value={edit.reason}
                           onChange={(event) => setEdit({ ...edit, reason: event.target.value })}
-                          placeholder="取消理由を入力してください"
+                          placeholder={edit.operation === "VOID" ? "取消理由を入力してください" : "修正理由を入力してください"}
                         />
                       </label>
                     )}
                   </>
-                ) : (
-                  <label>修正理由
-                    <input value={edit.reason} onChange={(event) => setEdit({ ...edit, reason: event.target.value })} placeholder="例：管理者確認により時刻を修正" />
-                  </label>
                 )}
                 {submitMessage && <p className={styles.formError} role="alert">{submitMessage}</p>}
                 <div className={styles.actions}>
