@@ -30,10 +30,11 @@ test("LIFF entry initializes before routing to manager destinations", () => {
   assert.match(entrySource, /window\.location\.replace\("\/manager\/clock-poster"\)/);
 });
 
-test("LIFF entry preserves only the store token for normal punch flow", () => {
+test("LIFF entry preserves the store token for normal punch flow", () => {
+  assert.match(entrySource, /new URLSearchParams\(window\.location\.search\)/);
   assert.match(entrySource, /params\.get\("store_token"\)/);
   assert.match(entrySource, /allowed\.set\("store_token", storeToken\)/);
-  assert.doesNotMatch(entrySource, /window\.location\.search\s*\)/);
+  assert.match(entrySource, /window\.location\.replace\(safeRootUrl\(params\)\)/);
 });
 
 test("manager rich menu is auto-selected and scoped per LINE user", () => {
