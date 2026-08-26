@@ -213,13 +213,13 @@ export default function ClockPosterPage() {
       {screenState === "ready" && qr && (
         <article className={styles.poster} aria-label={`${qr.storeName}の打刻用掲示`}>
           <section className={styles.copy}>
-            <div>
+            <div className={styles.posterIdentity}>
               <p className={styles.brand}>ONOGAMI 勤怠</p>
               <p className={styles.storeName}>{qr.storeName}</p>
             </div>
             <div className={styles.headingBlock}>
               <p className={styles.eyebrow}>スタッフのみなさま</p>
-              <h1>出勤・退勤はこちら</h1>
+              <h1><span>出勤・退勤は</span><span>こちら</span></h1>
               <p className={styles.lead}>LINEでQRコードを読み取ってください。</p>
             </div>
             <ol className={styles.steps}>
