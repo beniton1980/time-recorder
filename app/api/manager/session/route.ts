@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
-import { logServerError } from "@/lib/safe-log";
+import { logServerError, logServerInfo } from "@/lib/safe-log";
 import { ensureManagerRichMenuLinked } from "@/lib/line/manager-rich-menu";
 import {
   LineTokenVerificationError,
@@ -14,6 +14,53 @@ export const dynamic = "force-dynamic";
 type ManagerSessionRequest = {
   idToken?: unknown;
 };
+
+type RichMenuSyncResult = Awaited<ReturnType<typeof ensureManagerRichMenuLinked>>;
+
+function logRichMenuSyncState(result: RichMenuSyncResult) {
+  if (result.state === "linked") {
+    logServerInfo("manager_rich_menu_linked");
+    return;
+  }
+  if (result.state === "already_linked") {
+    logServerInfo("manager_rich_menu_already_linked");
+    return;
+  }
+  if (result.state === "disabled") {
+    logServerInfo("manager_rich_menu_disabled");
+    return;
+  }
+  if (result.state === "not_friend") {
+    logServerInfo("manager_rich_menu_not_friend");
+    return;
+  }
+
+  if (result.step === "list") {
+    logServerInfo("manager_rich_menu_error_list");
+    return;
+  }
+  if (result.step === "create") {
+    logServerInfo("manager_rich_menu_error_create");
+    return;
+  }
+  if (result.step === "create_missing_id") {
+    logServerInfo("manager_rich_menu_error_create_missing_id");
+    return;
+  }
+  if (result.step === "image_fetch") {
+    logServerInfo("manager_rich_menu_error_image_fetch");
+    return;
+  }
+  if (result.step === "image_upload") {
+    logServerInfo("manager_rich_menu_error_image_upload");
+    return;
+  }
+  if (result.step === "link") {
+    logServerInfo("manager_rich_menu_error_link");
+    return;
+  }
+  logServerInfo("manager_rich_menu_error_unexpected");
+}
 
 export async function POST(request: Request) {
   let body: ManagerSessionRequest;
@@ -71,6 +118,7 @@ export async function POST(request: Request) {
     }
 
     const richMenu = await ensureManagerRichMenuLinked(identity.sub);
+    logRichMenuSyncState(richMenu);
 
     return NextResponse.json({
       ok: true,
