@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
+import { ensureManagerRichMenuLinked } from "@/lib/line/manager-rich-menu";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -69,11 +70,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const richMenu = await ensureManagerRichMenuLinked(identity.sub);
+
     return NextResponse.json({
       ok: true,
       manager: {
         lineUserId: identity.sub,
         memberships,
+        richMenu: richMenu.state,
       },
     });
   } catch (error) {
