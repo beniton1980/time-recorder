@@ -3,7 +3,7 @@ const MENU_NAME = "onogami-manager-v3";
 const LIFF_ID = "2010761826-6FNSE1PD";
 const MANAGER_URL = `https://liff.line.me/${LIFF_ID}?entry=manager`;
 const CLOCK_POSTER_URL = `https://liff.line.me/${LIFF_ID}?entry=clock-poster`;
-const MENU_IMAGE_URL = "https://kintai.onogami.jp/manager-rich-menu-v3.png";
+const MENU_IMAGE_URL = "https://kintai.onogami.jp/api/line/manager-rich-menu-image";
 
 type RichMenu = {
   richMenuId: string;
