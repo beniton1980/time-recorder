@@ -159,6 +159,63 @@
   font-weight: 700;
 }
 
+.revisionBox {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f7f7f7;
+}
+
+.revisionBox > strong {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.revisionNote {
+  margin: 9px 0 0;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.historyBlock {
+  margin-top: 10px;
+}
+
+.textButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  font: inherit;
+  color: #555;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.historyList {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  gap: 6px;
+}
+
+.historyList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #e7e7e7;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 13px;
+}
+
+.historyList span {
+  color: #666;
+  text-align: right;
+}
+
 @media (max-width: 640px) {
   .header {
     display: block;
@@ -175,5 +232,13 @@
 
   .secondaryButton {
     width: 100%;
+  }
+
+  .historyList li {
+    display: grid;
+  }
+
+  .historyList span {
+    text-align: left;
   }
 }
