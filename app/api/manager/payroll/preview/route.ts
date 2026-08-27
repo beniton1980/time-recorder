@@ -13,6 +13,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 type RequestBody = { idToken?: unknown; storeId?: unknown; periodStart?: unknown; periodEnd?: unknown };
+type WeekStartRule = "CALENDAR_DEFAULT" | "EXPLICIT_WEEKDAY" | "OTHER_REVIEW_REQUIRED";
 
 type SettingsRow = {
   work_time_system: string;
@@ -36,9 +37,9 @@ function validDate(value: unknown): value is string {
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 
-function normalizeWeekStartRule(value: string | undefined) {
+function normalizeWeekStartRule(value: string | undefined): WeekStartRule {
   if (value === "CALENDAR_DEFAULT" || value === "EXPLICIT_WEEKDAY") return value;
-  return "OTHER_REVIEW_REQUIRED" as const;
+  return "OTHER_REVIEW_REQUIRED";
 }
 
 export async function POST(request: Request) {
