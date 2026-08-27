@@ -21,10 +21,39 @@ type RequestBody = {
   effectiveFrom?: unknown;
 };
 
+type ValidCompensationBody = RequestBody & {
+  staffId: string;
+  hourlyRateYen: number;
+  effectiveFrom: string;
+};
+
+type CompensationTermRow = {
+  id: string;
+  staff_id: string;
+  hourly_rate_yen: number;
+  effective_from: string;
+  effective_to: string | null;
+  created_at?: string;
+};
+
 function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !isoDatePattern.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function validCompensationInput(body: RequestBody): body is ValidCompensationBody {
+  return typeof body.staffId === "string"
+    && uuidPattern.test(body.staffId)
+    && typeof body.hourlyRateYen === "number"
+    && Number.isInteger(body.hourlyRateYen)
+    && body.hourlyRateYen > 0
+    && validDate(body.effectiveFrom);
+}
+
+function postgresCode(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) return null;
+  return typeof error.code === "string" ? error.code : null;
 }
 
 async function authenticate(request: Request, body: RequestBody) {
@@ -111,11 +140,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "createInitialCompensationTerm") {
-      if (
-        typeof body.staffId !== "string" || !uuidPattern.test(body.staffId)
-        || !Number.isInteger(body.hourlyRateYen) || Number(body.hourlyRateYen) <= 0
-        || !validDate(body.effectiveFrom)
-      ) {
+      if (!validCompensationInput(body)) {
         return NextResponse.json({ ok: false, code: "INVALID_COMPENSATION_TERM" }, { status: 400 });
       }
 
@@ -137,13 +162,69 @@ export async function POST(request: Request) {
         VALUES (
           ${storeId}::uuid,
           ${body.staffId}::uuid,
-          ${Number(body.hourlyRateYen)},
+          ${body.hourlyRateYen},
           ${body.effectiveFrom}::date,
           ${identity.sub}
         )
         RETURNING id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at
       `;
       return NextResponse.json({ ok: true, compensationTerm: rows[0] });
+    }
+
+    if (action === "reviseCompensationTerm") {
+      if (!validCompensationInput(body)) {
+        return NextResponse.json({ ok: false, code: "INVALID_COMPENSATION_TERM" }, { status: 400 });
+      }
+
+      const openRows = await sql`
+        SELECT id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text
+        FROM payroll_compensation_terms
+        WHERE store_id = ${storeId}::uuid
+          AND staff_id = ${body.staffId}::uuid
+          AND effective_to IS NULL
+        ORDER BY effective_from DESC
+      ` as CompensationTermRow[];
+
+      if (openRows.length !== 1) {
+        return NextResponse.json({ ok: false, code: "COMPENSATION_CURRENT_TERM_REQUIRED" }, { status: 409 });
+      }
+
+      const current = openRows[0];
+      if (body.effectiveFrom <= current.effective_from) {
+        return NextResponse.json({ ok: false, code: "COMPENSATION_REVISION_DATE_INVALID" }, { status: 409 });
+      }
+
+      try {
+        const [, insertedRows] = await sql.transaction((tx) => [
+          tx`
+            UPDATE payroll_compensation_terms
+            SET effective_to = ${body.effectiveFrom}::date - 1
+            WHERE id = ${current.id}::uuid
+              AND store_id = ${storeId}::uuid
+              AND staff_id = ${body.staffId}::uuid
+              AND effective_to IS NULL
+          `,
+          tx`
+            INSERT INTO payroll_compensation_terms (
+              store_id, staff_id, hourly_rate_yen, effective_from, created_by_line_user_id
+            )
+            VALUES (
+              ${storeId}::uuid,
+              ${body.staffId}::uuid,
+              ${body.hourlyRateYen},
+              ${body.effectiveFrom}::date,
+              ${identity.sub}
+            )
+            RETURNING id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at
+          `,
+        ]);
+        return NextResponse.json({ ok: true, compensationTerm: insertedRows[0] });
+      } catch (error) {
+        if (postgresCode(error) === "23P01") {
+          return NextResponse.json({ ok: false, code: "COMPENSATION_PERIOD_OVERLAP" }, { status: 409 });
+        }
+        throw error;
+      }
     }
 
     return NextResponse.json({ ok: false, code: "UNSUPPORTED_ACTION" }, { status: 400 });
