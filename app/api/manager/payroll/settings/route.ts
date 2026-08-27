@@ -116,10 +116,16 @@ export async function POST(request: Request) {
       const monthStart = `${body.holidayMonth}-01`;
       const [yearText, monthText] = body.holidayMonth.split("-");
       const nextMonth = new Date(Date.UTC(Number(yearText), Number(monthText), 1)).toISOString().slice(0, 10);
-      await sql.transaction((tx) => [
-        tx`DELETE FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid AND holiday_date >= ${monthStart}::date AND holiday_date < ${nextMonth}::date`,
-        ...holidayDates.map((holidayDate) => tx`INSERT INTO payroll_statutory_holidays (store_id, holiday_date, created_by_line_user_id) VALUES (${storeId}::uuid, ${holidayDate}::date, ${identity.sub}) ON CONFLICT (store_id, holiday_date) DO NOTHING`),
-      ]);
+      const existingRows = await sql`SELECT holiday_date::text AS holiday_date FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid AND holiday_date >= ${monthStart}::date AND holiday_date < ${nextMonth}::date ORDER BY holiday_date ASC`;
+      const existingDates = existingRows.map((row) => String(row.holiday_date));
+      const wanted = new Set(holidayDates);
+      const existing = new Set(existingDates);
+      for (const holidayDate of existingDates.filter((date) => !wanted.has(date))) {
+        await sql`DELETE FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid AND holiday_date = ${holidayDate}::date`;
+      }
+      for (const holidayDate of holidayDates.filter((date) => !existing.has(date))) {
+        await sql`INSERT INTO payroll_statutory_holidays (store_id, holiday_date, created_by_line_user_id) VALUES (${storeId}::uuid, ${holidayDate}::date, ${identity.sub}) ON CONFLICT (store_id, holiday_date) DO NOTHING`;
+      }
       const verifiedRows = await sql`SELECT holiday_date::text AS holiday_date FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid AND holiday_date >= ${monthStart}::date AND holiday_date < ${nextMonth}::date ORDER BY holiday_date ASC`;
       const verifiedDates = verifiedRows.map((row) => String(row.holiday_date));
       if (verifiedDates.length !== holidayDates.length || verifiedDates.some((date, index) => date !== holidayDates[index])) {
