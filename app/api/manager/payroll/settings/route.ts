@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+const isoMonthPattern = /^\d{4}-\d{2}$/;
 const supportedWorkTimeSystems = new Set(["STANDARD_40H", "SPECIAL_44H", "OTHER_REVIEW_REQUIRED"]);
 const supportedOvertimeMonthRules = new Set(["PAY_PERIOD", "CALENDAR_MONTH", "OTHER_REVIEW_REQUIRED"]);
 const supportedStatutoryHolidayRules = new Set(["FIXED_WEEKDAY", "MANUAL_DATES", "OTHER_REVIEW_REQUIRED"]);
@@ -22,12 +23,21 @@ type RequestBody = {
   statutoryHolidayRule?: unknown;
   statutoryHolidayWeekday?: unknown;
   holidayDate?: unknown;
+  holidayMonth?: unknown;
+  holidayDates?: unknown;
   staffId?: unknown;
   hourlyRateYen?: unknown;
   effectiveFrom?: unknown;
+  initialCompensationTerms?: unknown;
 };
 
 type ValidCompensationBody = RequestBody & {
+  staffId: string;
+  hourlyRateYen: number;
+  effectiveFrom: string;
+};
+
+type InitialCompensationInput = {
   staffId: string;
   hourlyRateYen: number;
   effectiveFrom: string;
@@ -48,6 +58,14 @@ function validDate(value: unknown): value is string {
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+function validMonth(value: unknown): value is string {
+  if (typeof value !== "string" || !isoMonthPattern.test(value)) return false;
+  const [yearText, monthText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  return Number.isInteger(year) && month >= 1 && month <= 12;
+}
+
 function validCompensationInput(body: RequestBody): body is ValidCompensationBody {
   return typeof body.staffId === "string"
     && uuidPattern.test(body.staffId)
@@ -55,6 +73,23 @@ function validCompensationInput(body: RequestBody): body is ValidCompensationBod
     && Number.isInteger(body.hourlyRateYen)
     && body.hourlyRateYen > 0
     && validDate(body.effectiveFrom);
+}
+
+function parseInitialCompensationTerms(value: unknown): InitialCompensationInput[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 100) return null;
+  const terms: InitialCompensationInput[] = [];
+  const staffIds = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return null;
+    const candidate = item as Record<string, unknown>;
+    if (typeof candidate.staffId !== "string" || !uuidPattern.test(candidate.staffId)) return null;
+    if (staffIds.has(candidate.staffId)) return null;
+    if (typeof candidate.hourlyRateYen !== "number" || !Number.isInteger(candidate.hourlyRateYen) || candidate.hourlyRateYen <= 0) return null;
+    if (!validDate(candidate.effectiveFrom)) return null;
+    staffIds.add(candidate.staffId);
+    terms.push({ staffId: candidate.staffId, hourlyRateYen: candidate.hourlyRateYen, effectiveFrom: candidate.effectiveFrom });
+  }
+  return terms;
 }
 
 function validStoreSettings(body: RequestBody) {
@@ -188,6 +223,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, settings: rows[0] });
     }
 
+    if (action === "saveStatutoryHolidayMonth") {
+      if (!validMonth(body.holidayMonth) || !Array.isArray(body.holidayDates) || body.holidayDates.length > 31) {
+        return NextResponse.json({ ok: false, code: "INVALID_STATUTORY_HOLIDAY_DATE" }, { status: 400 });
+      }
+      const holidayDates = [...new Set(body.holidayDates)];
+      if (!holidayDates.every((date) => validDate(date) && date.startsWith(`${body.holidayMonth}-`))) {
+        return NextResponse.json({ ok: false, code: "INVALID_STATUTORY_HOLIDAY_DATE" }, { status: 400 });
+      }
+      const monthStart = `${body.holidayMonth}-01`;
+      const [yearText, monthText] = body.holidayMonth.split("-");
+      const nextMonth = new Date(Date.UTC(Number(yearText), Number(monthText), 1)).toISOString().slice(0, 10);
+      await sql.transaction((tx) => [
+        tx`DELETE FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid AND holiday_date >= ${monthStart}::date AND holiday_date < ${nextMonth}::date`,
+        ...holidayDates.map((holidayDate) => tx`
+          INSERT INTO payroll_statutory_holidays (store_id, holiday_date, created_by_line_user_id)
+          VALUES (${storeId}::uuid, ${holidayDate}::date, ${identity.sub})
+          ON CONFLICT (store_id, holiday_date) DO NOTHING
+        `),
+      ]);
+      return NextResponse.json({ ok: true, statutoryHolidayDates: holidayDates.sort() });
+    }
+
     if (action === "addStatutoryHolidayDate") {
       if (!validDate(body.holidayDate)) {
         return NextResponse.json({ ok: false, code: "INVALID_STATUTORY_HOLIDAY_DATE" }, { status: 400 });
@@ -210,6 +267,45 @@ export async function POST(request: Request) {
           AND holiday_date = ${body.holidayDate}::date
       `;
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "saveInitialCompensationTerms") {
+      const terms = parseInitialCompensationTerms(body.initialCompensationTerms);
+      if (!terms) {
+        return NextResponse.json({ ok: false, code: "INVALID_COMPENSATION_TERM" }, { status: 400 });
+      }
+      const staffIds = terms.map((term) => term.staffId);
+      const existing = await sql`
+        SELECT staff_id
+        FROM payroll_compensation_terms
+        WHERE store_id = ${storeId}::uuid
+          AND staff_id = ANY(${staffIds}::uuid[])
+        LIMIT 1
+      `;
+      if (existing.length > 0) {
+        return NextResponse.json({ ok: false, code: "COMPENSATION_HISTORY_EXISTS" }, { status: 409 });
+      }
+      try {
+        const inserted = await sql.transaction((tx) => terms.map((term) => tx`
+          INSERT INTO payroll_compensation_terms (
+            store_id, staff_id, hourly_rate_yen, effective_from, created_by_line_user_id
+          )
+          VALUES (
+            ${storeId}::uuid,
+            ${term.staffId}::uuid,
+            ${term.hourlyRateYen},
+            ${term.effectiveFrom}::date,
+            ${identity.sub}
+          )
+          RETURNING id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at
+        `));
+        return NextResponse.json({ ok: true, compensationTerms: inserted.flat() });
+      } catch (error) {
+        if (postgresCode(error) === "23P01") {
+          return NextResponse.json({ ok: false, code: "COMPENSATION_HISTORY_EXISTS" }, { status: 409 });
+        }
+        throw error;
+      }
     }
 
     if (action === "createInitialCompensationTerm") {
