@@ -15,15 +15,16 @@ test("preview UI uses payroll month instead of asking for raw dates", async () =
   assert.doesNotMatch(page, /開始日<input/);
 });
 
-test("holiday calendar is saved atomically and verified from database", async () => {
+test("holiday month save writes only deltas and verifies persisted dates", async () => {
   const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
   assert.match(page, /action: "saveStatutoryHolidayMonth"/);
   assert.match(route, /action === "saveStatutoryHolidayMonth"/);
-  assert.match(route, /sql\.transaction/);
+  assert.match(route, /existingDates\.filter/);
+  assert.match(route, /holidayDates\.filter/);
   assert.match(route, /verifiedRows/);
   assert.match(route, /STATUTORY_HOLIDAY_SAVE_NOT_VERIFIED/);
-  assert.match(route, /SELECT holiday_date::text AS holiday_date FROM payroll_statutory_holidays/);
+  assert.doesNotMatch(route, /DELETE FROM payroll_statutory_holidays WHERE store_id = \$\{storeId\}::uuid AND holiday_date >= \$\{monthStart\}/);
 });
 
 test("initial wages are saved in one atomic request and show durable saved state", async () => {
@@ -36,10 +37,12 @@ test("initial wages are saved in one atomic request and show durable saved state
   assert.match(route, /sql\.transaction/);
 });
 
-test("payroll preview uses one full-width result card per staff", async () => {
+test("payroll preview forces page, sections, grid and staff cards to full width", async () => {
   const css = await readFile(new URL("../app/manager/payroll/payroll.module.css", import.meta.url), "utf8");
-  assert.match(css, /previewPage[\s\S]*max-width:\s*1080px/);
-  assert.match(css, /staffGrid[\s\S]*grid-template-columns:\s*1fr/);
-  assert.match(css, /staffResultCard[\s\S]*width:\s*100%/);
+  assert.match(css, /\.page\s*\{[\s\S]*?width:\s*100%/);
+  assert.match(css, /\.previewPage\s*\{[\s\S]*?width:\s*100%[\s\S]*?max-width:\s*1080px/);
+  assert.match(css, /\.previewPage > \.card[\s\S]*?width:\s*100%/);
+  assert.match(css, /\.staffGrid[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/);
+  assert.match(css, /\.staffResultCard[\s\S]*?width:\s*100%/);
   assert.doesNotMatch(css, /grid-template-columns:\s*repeat\(2/);
 });
