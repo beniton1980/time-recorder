@@ -70,6 +70,7 @@ export default function PayrollSettingsPage() {
   const [savingInitialWages, setSavingInitialWages] = useState(false);
   const [revisingStaffId, setRevisingStaffId] = useState<string | null>(null);
   const [showHistoryFor, setShowHistoryFor] = useState<string | null>(null);
+  const [savedInitialStaffIds, setSavedInitialStaffIds] = useState<string[]>([]);
 
   const termsByStaff = useMemo(() => {
     const map = new Map<string, CompensationTerm[]>();
@@ -95,7 +96,7 @@ export default function PayrollSettingsPage() {
 
   useEffect(() => {
     setSelectedHolidayDates((data?.statutoryHolidayDates ?? []).filter((date) => date.startsWith(`${holidayMonth}-`)));
-  }, [data, holidayMonth]);
+  }, [data?.statutoryHolidayDates, holidayMonth]);
 
   async function api(body: Record<string, unknown>) {
     const idToken = liff.getIDToken();
@@ -110,6 +111,8 @@ export default function PayrollSettingsPage() {
       if (result.code === "COMPENSATION_PERIOD_OVERLAP") throw new Error("その改定日は既存の時給期間と重なります。履歴を確認してください。");
       if (result.code === "COMPENSATION_CURRENT_TERM_REQUIRED") throw new Error("現在有効な時給を1件に特定できません。履歴を確認してください。");
       if (result.code === "INVALID_PAYROLL_STORE_SETTINGS") throw new Error("勤務制度・残業の区切り・法定休日の設定を確認してください。");
+      if (result.code === "INVALID_STATUTORY_HOLIDAY_DATE") throw new Error("法定休日の日付を確認してください。");
+      if (result.code === "INVALID_COMPENSATION_TERM") throw new Error("時給と適用開始日を確認してください。");
       if (result.code === "PAYROLL_SETTINGS_UNAVAILABLE") throw new Error("給与設定を利用できませんでした。");
       throw new Error("給与設定を保存できませんでした。");
     }
@@ -141,6 +144,7 @@ export default function PayrollSettingsPage() {
       for (const staff of next.staff) revisions[staff.staff_id] = preserveDrafts && current[staff.staff_id] ? current[staff.staff_id] : { hourlyRate: "", effectiveFrom: todayJst() };
       return revisions;
     });
+    if (!preserveDrafts) setSavedInitialStaffIds([]);
     setMessage("");
   }
 
@@ -181,8 +185,8 @@ export default function PayrollSettingsPage() {
     if (!storeId) return;
     setSavingStore(true); setError(null);
     try {
-      await api({ action: "saveStoreSettings", storeId, workTimeSystem, overtimeMonthRule, statutoryHolidayRule, statutoryHolidayWeekday: statutoryHolidayRule === "FIXED_WEEKDAY" ? statutoryHolidayWeekday : null });
-      await loadPayroll(storeId, true);
+      const result = await api({ action: "saveStoreSettings", storeId, workTimeSystem, overtimeMonthRule, statutoryHolidayRule, statutoryHolidayWeekday: statutoryHolidayRule === "FIXED_WEEKDAY" ? statutoryHolidayWeekday : null });
+      setData((current) => current ? { ...current, settings: result.settings } : current);
       setMessage("店舗の給与設定を保存しました。");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "保存できませんでした。"); }
     finally { setSavingStore(false); }
@@ -194,14 +198,16 @@ export default function PayrollSettingsPage() {
 
   async function saveHolidayDates() {
     if (!storeId) return;
-    const registered = (data?.statutoryHolidayDates ?? []).filter((date) => date.startsWith(`${holidayMonth}-`));
-    const toAdd = selectedHolidayDates.filter((date) => !registered.includes(date));
-    const toRemove = registered.filter((date) => !selectedHolidayDates.includes(date));
     setSavingHoliday(true); setError(null);
     try {
-      for (const holidayDate of toAdd) await api({ action: "addStatutoryHolidayDate", storeId, holidayDate });
-      for (const holidayDate of toRemove) await api({ action: "removeStatutoryHolidayDate", storeId, holidayDate });
-      await loadPayroll(storeId, true);
+      const result = await api({ action: "saveStatutoryHolidayMonth", storeId, holidayMonth, holidayDates: selectedHolidayDates });
+      const savedDates = result.statutoryHolidayDates as string[];
+      setData((current) => {
+        if (!current) return current;
+        const outsideMonth = current.statutoryHolidayDates.filter((date) => !date.startsWith(`${holidayMonth}-`));
+        return { ...current, statutoryHolidayDates: [...outsideMonth, ...savedDates].sort() };
+      });
+      setSelectedHolidayDates(savedDates);
       setMessage(`${holidayMonth.replace("-", "年")}月の法定休日を保存しました。`);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "法定休日を保存できませんでした。"); }
     finally { setSavingHoliday(false); }
@@ -222,11 +228,25 @@ export default function PayrollSettingsPage() {
     }
     setSavingInitialWages(true); setError(null);
     try {
-      for (const { staff, draft } of targets) {
-        await api({ action: "createInitialCompensationTerm", storeId, staffId: staff.staff_id, hourlyRateYen: Number(draft.hourlyRate), effectiveFrom: draft.effectiveFrom });
-      }
-      await loadPayroll(storeId, true);
-      setMessage(`${targets.length}名の時給を登録しました。`);
+      const result = await api({
+        action: "saveInitialCompensationTerms",
+        storeId,
+        initialCompensationTerms: targets.map(({ staff, draft }) => ({
+          staffId: staff.staff_id,
+          hourlyRateYen: Number(draft.hourlyRate),
+          effectiveFrom: draft.effectiveFrom,
+        })),
+      });
+      const savedTerms = result.compensationTerms as CompensationTerm[];
+      const savedIds = savedTerms.map((term) => term.staff_id);
+      setData((current) => current ? { ...current, compensationTerms: [...current.compensationTerms, ...savedTerms] } : current);
+      setSavedInitialStaffIds((current) => [...new Set([...current, ...savedIds])]);
+      setWageDrafts((current) => {
+        const next = { ...current };
+        for (const staffId of savedIds) next[staffId] = { hourlyRate: "", effectiveFrom: todayJst() };
+        return next;
+      });
+      setMessage(`${savedTerms.length}名の時給を保存しました。`);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "時給を登録できませんでした。"); }
     finally { setSavingInitialWages(false); }
   }
@@ -278,7 +298,7 @@ export default function PayrollSettingsPage() {
             <div className={styles.calendarWeekdays}>{shortWeekdays.map((name) => <span key={name}>{name}</span>)}</div>
             <div className={styles.calendarGrid}>{calendarBlanks.map((_, index) => <span className={styles.calendarBlank} key={`blank-${index}`} />)}{calendarDates.map((date) => { const selected = selectedHolidayDates.includes(date); return <button type="button" key={date} className={`${styles.calendarDay} ${selected ? styles.calendarDaySelected : ""}`} aria-pressed={selected} onClick={() => toggleHolidayDate(date)}>{Number(date.slice(-2))}</button>; })}</div>
             <button className={`${styles.secondaryButton} ${styles.fullButton}`} disabled={savingHoliday} onClick={() => void saveHolidayDates()}>{savingHoliday ? "保存中…" : "この月の法定休日を保存"}</button>
-            <p className={styles.revisionNote}>カレンダーで複数日を選んでから、1回で保存できます。登録済みの日を外して保存すると、その日付は削除されます。</p>
+            <p className={styles.revisionNote}>選んだ日付は1回の保存でまとめて反映します。保存後も選択状態はそのまま残ります。</p>
           </div>
         )}
         <p className={styles.revisionNote}>法定休日は「店休日」と同じとは限りません。4週4休など固定曜日以外の複雑な制度は、v1では無理に自動判定せず要確認にします。</p>
@@ -287,7 +307,7 @@ export default function PayrollSettingsPage() {
 
       <section className={styles.card}>
         <h2>2. スタッフの時給</h2>
-        <p className={styles.help}>未登録のスタッフは必要な人をまとめて入力し、最後に1回で登録できます。時給を変更するときは上書きせず、改定日で履歴を分けます。</p>
+        <p className={styles.help}>未登録のスタッフは必要な人をまとめて入力し、最後に1回で登録できます。時給を変更するときは上書きせず、改定日で履歴を分けます。履歴を残すことで、過去月の再集計でも当時の時給を使えます。</p>
         <div className={styles.staffList}>
           {(data?.staff ?? []).map((staff) => {
             const term = currentTerms.get(staff.staff_id);
@@ -295,7 +315,7 @@ export default function PayrollSettingsPage() {
             const draft = wageDrafts[staff.staff_id] ?? { hourlyRate: "", effectiveFrom: todayJst() };
             const revision = revisionDrafts[staff.staff_id] ?? { hourlyRate: "", effectiveFrom: todayJst() };
             return <article className={styles.staffRow} key={staff.staff_id}>
-              <div className={styles.staffIdentity}><strong>{staff.legal_name}</strong>{staff.status !== "active" && <span className={styles.inactive}>在籍停止</span>}</div>
+              <div className={styles.staffIdentity}><strong>{staff.legal_name}</strong>{staff.status !== "active" && <span className={styles.inactive}>在籍停止</span>}{savedInitialStaffIds.includes(staff.staff_id) && <span className={styles.inactive}>保存済み</span>}</div>
               {term ? <>
                 <div className={styles.registered}><span>現在の登録</span><strong>{Number(term.hourly_rate_yen).toLocaleString("ja-JP")}円 / 時</strong><small>{term.effective_from} から</small></div>
                 <div className={styles.revisionBox}><strong>時給を改定</strong><div className={styles.inputs}><label>新しい時給<input inputMode="numeric" value={revision.hourlyRate} onChange={(event) => setRevisionDrafts((current) => ({ ...current, [staff.staff_id]: { ...revision, hourlyRate: event.target.value } }))} placeholder="例 1300" /></label><label>改定日<input type="date" min={term.effective_from} value={revision.effectiveFrom} onChange={(event) => setRevisionDrafts((current) => ({ ...current, [staff.staff_id]: { ...revision, effectiveFrom: event.target.value } }))} /></label><button className={styles.secondaryButton} disabled={revisingStaffId === staff.staff_id} onClick={() => void reviseWage(staff.staff_id)}>{revisingStaffId === staff.staff_id ? "改定中…" : "改定する"}</button></div><p className={styles.revisionNote}>改定日前日までを現在の時給として残し、改定日から新しい時給を適用します。</p></div>
@@ -304,7 +324,7 @@ export default function PayrollSettingsPage() {
             </article>;
           })}
         </div>
-        {unregisteredCount > 0 && <button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={savingInitialWages} onClick={() => void saveInitialWages()}>{savingInitialWages ? "登録中…" : "入力した時給をまとめて登録"}</button>}
+        {unregisteredCount > 0 && <button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={savingInitialWages} onClick={() => void saveInitialWages()}>{savingInitialWages ? "登録中…" : "入力した時給をまとめて保存"}</button>}
       </section>
     </main>
   );
