@@ -1,5 +1,7 @@
 BEGIN;
 
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 -- Payroll settings are intentionally isolated from attendance facts.
 -- Staff-facing request modes must never be able to read wage data.
 CREATE TABLE public.payroll_store_settings (
@@ -34,7 +36,12 @@ CREATE TABLE public.payroll_compensation_terms (
   CHECK (effective_to IS NULL OR effective_to >= effective_from),
   FOREIGN KEY (staff_id, store_id)
     REFERENCES public.staff(id, store_id)
-    ON DELETE RESTRICT
+    ON DELETE RESTRICT,
+  EXCLUDE USING gist (
+    store_id WITH =,
+    staff_id WITH =,
+    daterange(effective_from, COALESCE(effective_to + 1, 'infinity'::date), '[)') WITH &&
+  )
 );
 
 CREATE INDEX idx_payroll_compensation_terms_staff_period
@@ -47,34 +54,6 @@ CREATE TABLE public.payroll_statutory_holidays (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (store_id, holiday_date)
 );
-
--- Fail closed on overlapping wage terms. A historical payroll result must resolve
--- to exactly one wage term for every worked date.
-CREATE OR REPLACE FUNCTION public.prevent_overlapping_payroll_terms()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = pg_catalog, public
-AS $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM public.payroll_compensation_terms existing
-    WHERE existing.store_id = NEW.store_id
-      AND existing.staff_id = NEW.staff_id
-      AND existing.id <> NEW.id
-      AND daterange(existing.effective_from, COALESCE(existing.effective_to + 1, 'infinity'::date), '[)')
-          && daterange(NEW.effective_from, COALESCE(NEW.effective_to + 1, 'infinity'::date), '[)')
-  ) THEN
-    RAISE EXCEPTION 'overlapping payroll compensation terms'
-      USING ERRCODE = '23514';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER payroll_compensation_terms_no_overlap
-BEFORE INSERT OR UPDATE ON public.payroll_compensation_terms
-FOR EACH ROW EXECUTE FUNCTION public.prevent_overlapping_payroll_terms();
 
 ALTER TABLE public.payroll_store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payroll_compensation_terms ENABLE ROW LEVEL SECURITY;
@@ -108,7 +87,6 @@ CREATE POLICY payroll_statutory_holidays_manager_scope
 REVOKE ALL ON public.payroll_store_settings FROM PUBLIC;
 REVOKE ALL ON public.payroll_compensation_terms FROM PUBLIC;
 REVOKE ALL ON public.payroll_statutory_holidays FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.prevent_overlapping_payroll_terms() FROM PUBLIC;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.payroll_store_settings TO onogami_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.payroll_compensation_terms TO onogami_app;
