@@ -21,6 +21,12 @@ type RequestBody = {
   effectiveFrom?: unknown;
 };
 
+type ValidCompensationBody = RequestBody & {
+  staffId: string;
+  hourlyRateYen: number;
+  effectiveFrom: string;
+};
+
 type CompensationTermRow = {
   id: string;
   staff_id: string;
@@ -36,11 +42,12 @@ function validDate(value: unknown): value is string {
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-function validCompensationInput(body: RequestBody) {
+function validCompensationInput(body: RequestBody): body is ValidCompensationBody {
   return typeof body.staffId === "string"
     && uuidPattern.test(body.staffId)
+    && typeof body.hourlyRateYen === "number"
     && Number.isInteger(body.hourlyRateYen)
-    && Number(body.hourlyRateYen) > 0
+    && body.hourlyRateYen > 0
     && validDate(body.effectiveFrom);
 }
 
@@ -155,7 +162,7 @@ export async function POST(request: Request) {
         VALUES (
           ${storeId}::uuid,
           ${body.staffId}::uuid,
-          ${Number(body.hourlyRateYen)},
+          ${body.hourlyRateYen},
           ${body.effectiveFrom}::date,
           ${identity.sub}
         )
@@ -204,7 +211,7 @@ export async function POST(request: Request) {
             VALUES (
               ${storeId}::uuid,
               ${body.staffId}::uuid,
-              ${Number(body.hourlyRateYen)},
+              ${body.hourlyRateYen},
               ${body.effectiveFrom}::date,
               ${identity.sub}
             )
