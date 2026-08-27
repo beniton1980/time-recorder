@@ -209,10 +209,12 @@ export default function PayrollSettingsPage() {
 
   async function saveInitialWages() {
     if (!storeId || !data) return;
-    const targets = data.staff
-      .filter((staff) => !currentTerms.has(staff.staff_id))
-      .map((staff) => ({ staff, draft: wageDrafts[staff.staff_id] }))
-      .filter(({ draft }) => Boolean(draft?.hourlyRate.trim()));
+    const targets = data.staff.flatMap((staff) => {
+      if (currentTerms.has(staff.staff_id)) return [];
+      const draft = wageDrafts[staff.staff_id];
+      if (!draft?.hourlyRate.trim()) return [];
+      return [{ staff, draft }];
+    });
     if (targets.length === 0) { setError("登録するスタッフの時給を入力してください。"); return; }
     for (const { staff, draft } of targets) {
       const rate = Number(draft.hourlyRate);
@@ -285,7 +287,7 @@ export default function PayrollSettingsPage() {
 
       <section className={styles.card}>
         <h2>2. スタッフの時給</h2>
-        <p className={styles.help}>未登録のスタッフは必要な人をまとめて入力し、最後に1回で登録できます。時給改定は履歴を残すため個別に行います。</p>
+        <p className={styles.help}>未登録のスタッフは必要な人をまとめて入力し、最後に1回で登録できます。時給を変更するときは上書きせず、改定日で履歴を分けます。</p>
         <div className={styles.staffList}>
           {(data?.staff ?? []).map((staff) => {
             const term = currentTerms.get(staff.staff_id);
