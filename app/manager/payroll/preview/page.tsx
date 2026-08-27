@@ -14,15 +14,16 @@ type PreviewStaff = {
 };
 type Preview = { period: { start: string; end: string }; staff: PreviewStaff[]; summary: { staffCount: number; confirmedCount: number; needsReviewCount: number; grossPay: number } };
 type PayrollPeriod = { start: string; end: string };
+type PeriodResponse = { period: PayrollPeriod; payrollMonth: string };
 
 function currentMonth() {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-  const [year, month] = parts.split("-");
-  const end = new Date(Date.UTC(Number(year), Number(month), 0)).toISOString().slice(0, 10);
-  return { start: `${year}-${month}-01`, end };
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit" }).format(new Date());
 }
 function hours(minutes: number) { return `${Math.floor(minutes / 60)}時間${minutes % 60}分`; }
+function monthLabel(value: string) {
+  const [year, month] = value.split("-");
+  return `${Number(year)}年${Number(month)}月度`;
+}
 function reasonLabel(code: string) {
   const labels: Record<string, string> = {
     UNSUPPORTED_WORK_TIME_SYSTEM: "勤務制度が未確定",
@@ -38,11 +39,11 @@ function reasonLabel(code: string) {
 }
 
 export default function PayrollPreviewPage() {
-  const initial = currentMonth();
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [storeId, setStoreId] = useState("");
-  const [periodStart, setPeriodStart] = useState(initial.start);
-  const [periodEnd, setPeriodEnd] = useState(initial.end);
+  const [payrollMonth, setPayrollMonth] = useState(currentMonth());
+  const [periodStart, setPeriodStart] = useState("");
+  const [periodEnd, setPeriodEnd] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,34 +61,27 @@ export default function PayrollPreviewPage() {
     return result as Preview;
   }
 
-  async function defaultPeriodApi(targetStore: string) {
+  async function periodApi(targetStore: string, targetMonth?: string) {
     const idToken = liff.getIDToken();
     if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
     const response = await fetch("/api/manager/payroll/default-period", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken, storeId: targetStore }),
+      body: JSON.stringify({ idToken, storeId: targetStore, payrollMonth: targetMonth }),
     });
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error("店舗の締め期間を読み込めませんでした。");
-    return result.period as PayrollPeriod;
+    return result as PeriodResponse;
   }
 
-  async function loadPreview(targetStore = storeId, period: PayrollPeriod = { start: periodStart, end: periodEnd }) {
-    if (!targetStore) return;
-    setLoading(true); setError(null);
-    try { setPreview(await previewApi(targetStore, period)); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "給与プレビューを計算できませんでした。"); }
-    finally { setLoading(false); }
-  }
-
-  async function loadCurrentClosingPeriod(targetStore: string) {
+  async function loadPayrollMonth(targetStore: string, targetMonth?: string) {
     setLoading(true); setError(null); setPreview(null);
     try {
-      const period = await defaultPeriodApi(targetStore);
-      setPeriodStart(period.start);
-      setPeriodEnd(period.end);
-      setPreview(await previewApi(targetStore, period));
+      const resolved = await periodApi(targetStore, targetMonth);
+      setPayrollMonth(resolved.payrollMonth);
+      setPeriodStart(resolved.period.start);
+      setPeriodEnd(resolved.period.end);
+      setPreview(await previewApi(targetStore, resolved.period));
     } catch (caught) { setError(caught instanceof Error ? caught.message : "給与プレビューを読み込めませんでした。"); }
     finally { setLoading(false); }
   }
@@ -109,7 +103,7 @@ export default function PayrollPreviewPage() {
         const first = next[0]?.store_id ?? "";
         if (!first) throw new Error("対象店舗がありません。");
         setStoreId(first);
-        await loadCurrentClosingPeriod(first);
+        await loadPayrollMonth(first);
       } catch (caught) { if (active) setError(caught instanceof Error ? caught.message : "読み込めませんでした。"); }
     })();
     return () => { active = false; };
@@ -117,21 +111,30 @@ export default function PayrollPreviewPage() {
 
   async function changeStore(nextStoreId: string) {
     setStoreId(nextStoreId);
-    await loadCurrentClosingPeriod(nextStoreId);
+    await loadPayrollMonth(nextStoreId);
   }
 
-  return <main className={styles.page}>
+  async function changePayrollMonth(nextMonth: string) {
+    setPayrollMonth(nextMonth);
+    await loadPayrollMonth(storeId, nextMonth);
+  }
+
+  return <main className={`${styles.page} ${styles.previewPage}`}>
     <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>給与プレビュー</h1><p className={styles.lead}>実際の勤怠と時給設定から控除前の総支給額を試算します。ここでは保存・確定しません。</p></div><a className={styles.backLink} href="/manager/payroll">給与設定へ戻る</a></header>
     {error && <p className={styles.error}>{error}</p>}
     <section className={styles.card}>
       <h2>対象期間</h2>
       {memberships.length > 1 && <><label className={styles.label}>店舗</label><select className={styles.select} value={storeId} onChange={(e) => void changeStore(e.target.value)}>{memberships.map((m) => <option value={m.store_id} key={m.store_id}>{m.store_name}</option>)}</select></>}
-      <div className={styles.inputs}><label>開始日<input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /></label><label>終了日<input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label><button className={styles.secondaryButton} disabled={loading || !storeId} onClick={() => void loadPreview()}>{loading ? "計算中…" : "再計算"}</button></div>
-      <p className={styles.revisionNote}>最初は店舗の締め日に合わせた現在の集計期間を自動表示します。過去の期間を確認するときだけ日付を変更してください。給与額はまだDBへ保存されません。</p>
+      <div className={styles.monthSelector}>
+        <label>給与月度<input type="month" value={payrollMonth} onChange={(e) => void changePayrollMonth(e.target.value)} /></label>
+        <div className={styles.periodSummary}><strong>{monthLabel(payrollMonth)}</strong><span>{periodStart && periodEnd ? `${periodStart} 〜 ${periodEnd}` : "締め期間を確認中…"}</span></div>
+      </div>
+      <p className={styles.revisionNote}>月度を選ぶだけで、店舗の締め日に合わせた集計期間へ自動変換します。</p>
     </section>
+    {loading && <p className={styles.message}>給与を計算しています…</p>}
     {preview && <>
-      <section className={styles.card}><h2>集計結果</h2><div className={styles.registered}><span>{preview.period.start} 〜 {preview.period.end}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>確認不要 {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div></section>
-      <section className={styles.card}><h2>スタッフ別</h2><div className={styles.staffList}>{preview.staff.map((member) => <article className={styles.staffRow} key={member.staffId}><div className={styles.staffIdentity}><strong>{member.legalName}</strong><span className={styles.inactive}>{member.status === "CONFIRMED" ? "確認不要" : `要確認 ${member.reviewReasons.length}件`}</span></div><div className={styles.registered}><span>控除前の総支給額</span><strong>{member.grossPay.toLocaleString("ja-JP")}円</strong><small>{member.payableDayCount}日 / 実働 {hours(member.minutes.worked)}</small></div><div className={styles.revisionBox}><strong>内訳</strong><ul className={styles.historyList}><li><span>基本給</span><strong>{member.components.basePay.toLocaleString("ja-JP")}円</strong></li><li><span>時間外割増</span><strong>{(member.components.overtimePremium + member.components.highOvertimePremium).toLocaleString("ja-JP")}円</strong></li><li><span>深夜割増</span><strong>{member.components.lateNightPremium.toLocaleString("ja-JP")}円</strong></li><li><span>法定休日割増</span><strong>{member.components.statutoryHolidayPremium.toLocaleString("ja-JP")}円</strong></li></ul>{member.reviewReasons.length > 0 && <><strong>要確認</strong><ul className={styles.historyList}>{member.reviewReasons.map((reason) => <li key={reason}><span>{reasonLabel(reason)}</span></li>)}</ul></>}</div></article>)}</div></section>
+      <section className={`${styles.card} ${styles.summaryCard}`}><h2>集計結果</h2><div className={styles.registered}><span>{monthLabel(payrollMonth)} / {preview.period.start} 〜 {preview.period.end}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>確認不要 {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div></section>
+      <section className={styles.card}><h2>スタッフ別</h2><div className={styles.staffGrid}>{preview.staff.map((member) => <article className={styles.staffResultCard} key={member.staffId}><div className={styles.staffIdentity}><strong>{member.legalName}</strong><span className={styles.inactive}>{member.status === "CONFIRMED" ? "確認不要" : `要確認 ${member.reviewReasons.length}件`}</span></div><div className={styles.registered}><span>控除前の総支給額</span><strong>{member.grossPay.toLocaleString("ja-JP")}円</strong><small>{member.payableDayCount}日 / 実働 {hours(member.minutes.worked)}</small></div><div className={styles.revisionBox}><strong>内訳</strong><ul className={styles.historyList}><li><span>基本給</span><strong>{member.components.basePay.toLocaleString("ja-JP")}円</strong></li><li><span>時間外割増</span><strong>{(member.components.overtimePremium + member.components.highOvertimePremium).toLocaleString("ja-JP")}円</strong></li><li><span>深夜割増</span><strong>{member.components.lateNightPremium.toLocaleString("ja-JP")}円</strong></li><li><span>法定休日割増</span><strong>{member.components.statutoryHolidayPremium.toLocaleString("ja-JP")}円</strong></li></ul>{member.reviewReasons.length > 0 && <><strong>要確認</strong><ul className={styles.historyList}>{member.reviewReasons.map((reason) => <li key={reason}><span>{reasonLabel(reason)}</span></li>)}</ul></>}</div></article>)}</div></section>
     </>}
   </main>;
 }
