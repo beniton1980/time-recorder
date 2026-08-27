@@ -15,12 +15,26 @@ test("preview UI uses payroll month instead of asking for raw dates", async () =
   assert.doesNotMatch(page, /開始日<input/);
 });
 
-test("payroll settings supports batch holiday and initial wage saves", async () => {
+test("holiday calendar is saved in one atomic request", async () => {
   const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /saveHolidayDates/);
-  assert.match(page, /法定休日をまとめて登録/);
-  assert.match(page, /saveInitialWages/);
-  assert.match(page, /入力した時給をまとめて登録/);
+  const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
+  assert.match(page, /action: "saveStatutoryHolidayMonth"/);
+  assert.doesNotMatch(page, /for \(const holidayDate of toAdd\)/);
+  assert.match(route, /action === "saveStatutoryHolidayMonth"/);
+  assert.match(route, /sql\.transaction/);
+  assert.match(route, /DELETE FROM payroll_statutory_holidays/);
+  assert.match(route, /INSERT INTO payroll_statutory_holidays/);
+});
+
+test("initial wages are saved in one atomic request and show durable saved state", async () => {
+  const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
+  assert.match(page, /action: "saveInitialCompensationTerms"/);
+  assert.doesNotMatch(page, /for \(const \{ staff, draft \} of targets\) \{\s*await api/);
+  assert.match(page, /保存済み/);
+  assert.match(route, /action === "saveInitialCompensationTerms"/);
+  assert.match(route, /COMPENSATION_HISTORY_EXISTS/);
+  assert.match(route, /sql\.transaction/);
 });
 
 test("payroll preview gets a wider result layout", async () => {
