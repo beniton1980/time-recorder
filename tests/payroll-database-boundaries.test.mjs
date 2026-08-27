@@ -26,11 +26,11 @@ test("payroll wage data is store-scoped and hidden behind manager RLS", async ()
 test("payroll terms preserve wage history and reject ambiguous overlapping periods", async () => {
   const migration = await source("db/migrations/0031_payroll_terms.sql");
 
+  assert.match(migration, /CREATE EXTENSION IF NOT EXISTS btree_gist/);
   assert.match(migration, /effective_from DATE NOT NULL/);
   assert.match(migration, /effective_to DATE/);
-  assert.match(migration, /prevent_overlapping_payroll_terms/);
-  assert.match(migration, /daterange\(existing\.effective_from/);
-  assert.match(migration, /overlapping payroll compensation terms/);
+  assert.match(migration, /EXCLUDE USING gist/);
+  assert.match(migration, /daterange\(effective_from, COALESCE\(effective_to \+ 1, 'infinity'::date\), '\[\)'\) WITH &&/);
 });
 
 test("payroll settings fail closed for unsupported work-time systems", async () => {
