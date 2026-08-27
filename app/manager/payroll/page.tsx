@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./payroll.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
+const weekdays = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"];
 
 type Membership = { store_id: string; store_name: string };
 type Staff = { staff_id: string; legal_name: string; status: "active" | "inactive" };
@@ -18,12 +19,16 @@ type CompensationTerm = {
 type Settings = {
   store_id: string;
   work_time_system: "STANDARD_40H" | "SPECIAL_44H" | "OTHER_REVIEW_REQUIRED";
+  overtime_month_rule: "PAY_PERIOD" | "CALENDAR_MONTH" | "OTHER_REVIEW_REQUIRED";
+  statutory_holiday_rule: "FIXED_WEEKDAY" | "MANUAL_DATES" | "OTHER_REVIEW_REQUIRED";
+  statutory_holiday_weekday: number | null;
 };
 
 type PayrollData = {
   settings: Settings | null;
   staff: Staff[];
   compensationTerms: CompensationTerm[];
+  statutoryHolidayDates: string[];
 };
 
 type WageDraft = { hourlyRate: string; effectiveFrom: string };
@@ -45,6 +50,11 @@ export default function PayrollSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingStore, setSavingStore] = useState(false);
   const [workTimeSystem, setWorkTimeSystem] = useState<Settings["work_time_system"]>("OTHER_REVIEW_REQUIRED");
+  const [overtimeMonthRule, setOvertimeMonthRule] = useState<Settings["overtime_month_rule"]>("OTHER_REVIEW_REQUIRED");
+  const [statutoryHolidayRule, setStatutoryHolidayRule] = useState<Settings["statutory_holiday_rule"]>("OTHER_REVIEW_REQUIRED");
+  const [statutoryHolidayWeekday, setStatutoryHolidayWeekday] = useState(0);
+  const [holidayDate, setHolidayDate] = useState(todayJst());
+  const [savingHoliday, setSavingHoliday] = useState(false);
   const [wageDrafts, setWageDrafts] = useState<Record<string, WageDraft>>({});
   const [revisionDrafts, setRevisionDrafts] = useState<Record<string, WageDraft>>({});
   const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
@@ -84,6 +94,7 @@ export default function PayrollSettingsPage() {
       if (result.code === "COMPENSATION_REVISION_DATE_INVALID") throw new Error("改定日は現在の時給の開始日より後の日付を指定してください。");
       if (result.code === "COMPENSATION_PERIOD_OVERLAP") throw new Error("その改定日は既存の時給期間と重なります。履歴を確認してください。");
       if (result.code === "COMPENSATION_CURRENT_TERM_REQUIRED") throw new Error("現在有効な時給を1件に特定できません。履歴を確認してください。");
+      if (result.code === "INVALID_PAYROLL_STORE_SETTINGS") throw new Error("勤務制度・残業の区切り・法定休日の設定を確認してください。");
       if (result.code === "PAYROLL_SETTINGS_UNAVAILABLE") throw new Error("給与設定を利用できませんでした。");
       throw new Error("給与設定を保存できませんでした。");
     }
@@ -98,9 +109,13 @@ export default function PayrollSettingsPage() {
       settings: result.settings,
       staff: result.staff,
       compensationTerms: result.compensationTerms,
+      statutoryHolidayDates: result.statutoryHolidayDates ?? [],
     };
     setData(next);
     setWorkTimeSystem(result.settings?.work_time_system ?? "OTHER_REVIEW_REQUIRED");
+    setOvertimeMonthRule(result.settings?.overtime_month_rule ?? "OTHER_REVIEW_REQUIRED");
+    setStatutoryHolidayRule(result.settings?.statutory_holiday_rule ?? "OTHER_REVIEW_REQUIRED");
+    setStatutoryHolidayWeekday(result.settings?.statutory_holiday_weekday ?? 0);
     const drafts: Record<string, WageDraft> = {};
     const revisions: Record<string, WageDraft> = {};
     for (const staff of next.staff) {
@@ -156,11 +171,40 @@ export default function PayrollSettingsPage() {
     if (!storeId) return;
     setSavingStore(true); setError(null);
     try {
-      await api({ action: "saveStoreSettings", storeId, workTimeSystem });
+      await api({
+        action: "saveStoreSettings",
+        storeId,
+        workTimeSystem,
+        overtimeMonthRule,
+        statutoryHolidayRule,
+        statutoryHolidayWeekday: statutoryHolidayRule === "FIXED_WEEKDAY" ? statutoryHolidayWeekday : null,
+      });
       await loadPayroll(storeId);
       setMessage("店舗の給与設定を保存しました。");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "保存できませんでした。"); }
     finally { setSavingStore(false); }
+  }
+
+  async function addHolidayDate() {
+    if (!storeId || !holidayDate) return;
+    setSavingHoliday(true); setError(null);
+    try {
+      await api({ action: "addStatutoryHolidayDate", storeId, holidayDate });
+      await loadPayroll(storeId);
+      setMessage("法定休日を追加しました。");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "法定休日を追加できませんでした。"); }
+    finally { setSavingHoliday(false); }
+  }
+
+  async function removeHolidayDate(targetDate: string) {
+    if (!storeId) return;
+    setSavingHoliday(true); setError(null);
+    try {
+      await api({ action: "removeStatutoryHolidayDate", storeId, holidayDate: targetDate });
+      await loadPayroll(storeId);
+      setMessage("法定休日を削除しました。");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "法定休日を削除できませんでした。"); }
+    finally { setSavingHoliday(false); }
   }
 
   async function saveInitialWage(staffId: string) {
@@ -224,14 +268,56 @@ export default function PayrollSettingsPage() {
       {error && <p className={styles.error}>{error}</p>}
 
       <section className={styles.card}>
-        <h2>1. 店舗の勤務制度</h2>
-        <p className={styles.help}>分からない場合は「要確認」のままにできます。その場合、給与額は自動確定しません。</p>
+        <h2>1. 店舗の勤務・残業ルール</h2>
+        <p className={styles.help}>分からない項目は「要確認」のままにできます。その場合、給与額は自動確定しません。</p>
+
+        <label className={styles.label}>法定労働時間</label>
         <select className={styles.select} value={workTimeSystem} onChange={(event) => setWorkTimeSystem(event.target.value as Settings["work_time_system"])}>
           <option value="OTHER_REVIEW_REQUIRED">要確認（まだ分からない）</option>
           <option value="STANDARD_40H">原則：週40時間</option>
           <option value="SPECIAL_44H">特例：週44時間</option>
         </select>
-        <button className={styles.primaryButton} disabled={savingStore} onClick={() => void saveStoreSettings()}>{savingStore ? "保存中…" : "保存する"}</button>
+        {workTimeSystem === "SPECIAL_44H" && <p className={styles.revisionNote}>週44時間特例は対象事業場の条件を満たしている場合だけ選択してください。飲食店という理由だけでは自動適用しません。</p>}
+
+        <label className={styles.label}>月60時間超の残業を数える1か月</label>
+        <select className={styles.select} value={overtimeMonthRule} onChange={(event) => setOvertimeMonthRule(event.target.value as Settings["overtime_month_rule"])}>
+          <option value="OTHER_REVIEW_REQUIRED">要確認（まだ分からない）</option>
+          <option value="PAY_PERIOD">給与の締め期間と同じ</option>
+          <option value="CALENDAR_MONTH">毎月1日〜月末</option>
+        </select>
+        <p className={styles.revisionNote}>就業規則などで定めている1か月の区切りに合わせます。給与締め日と同じとは限りません。</p>
+
+        <label className={styles.label}>法定休日</label>
+        <select className={styles.select} value={statutoryHolidayRule} onChange={(event) => setStatutoryHolidayRule(event.target.value as Settings["statutory_holiday_rule"])}>
+          <option value="OTHER_REVIEW_REQUIRED">要確認（まだ分からない）</option>
+          <option value="FIXED_WEEKDAY">毎週同じ曜日</option>
+          <option value="MANUAL_DATES">日付を指定する</option>
+        </select>
+
+        {statutoryHolidayRule === "FIXED_WEEKDAY" && (
+          <select className={styles.select} value={statutoryHolidayWeekday} onChange={(event) => setStatutoryHolidayWeekday(Number(event.target.value))}>
+            {weekdays.map((name, index) => <option value={index} key={name}>{name}</option>)}
+          </select>
+        )}
+        {statutoryHolidayRule === "MANUAL_DATES" && (
+          <div className={styles.revisionBox}>
+            <strong>法定休日の日付</strong>
+            <div className={styles.inputs}>
+              <label>日付<input type="date" value={holidayDate} onChange={(event) => setHolidayDate(event.target.value)} /></label>
+              <button className={styles.secondaryButton} disabled={savingHoliday} onClick={() => void addHolidayDate()}>{savingHoliday ? "保存中…" : "追加"}</button>
+            </div>
+            {(data?.statutoryHolidayDates.length ?? 0) > 0 ? (
+              <ul className={styles.historyList}>
+                {data?.statutoryHolidayDates.map((date) => (
+                  <li key={date}><strong>{date}</strong><button className={styles.textButton} disabled={savingHoliday} onClick={() => void removeHolidayDate(date)}>削除</button></li>
+                ))}
+              </ul>
+            ) : <p className={styles.revisionNote}>まだ日付が登録されていません。給与集計を確定する前に対象期間の法定休日を登録します。</p>}
+          </div>
+        )}
+        <p className={styles.revisionNote}>法定休日は「店休日」と同じとは限りません。4週4休など固定曜日以外の複雑な制度は、v1では無理に自動判定せず要確認にします。</p>
+
+        <button className={styles.primaryButton} disabled={savingStore} onClick={() => void saveStoreSettings()}>{savingStore ? "保存中…" : "店舗ルールを保存"}</button>
       </section>
 
       <section className={styles.card}>

@@ -10,12 +10,18 @@ export const dynamic = "force-dynamic";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const supportedWorkTimeSystems = new Set(["STANDARD_40H", "SPECIAL_44H", "OTHER_REVIEW_REQUIRED"]);
+const supportedOvertimeMonthRules = new Set(["PAY_PERIOD", "CALENDAR_MONTH", "OTHER_REVIEW_REQUIRED"]);
+const supportedStatutoryHolidayRules = new Set(["FIXED_WEEKDAY", "MANUAL_DATES", "OTHER_REVIEW_REQUIRED"]);
 
 type RequestBody = {
   idToken?: unknown;
   storeId?: unknown;
   action?: unknown;
   workTimeSystem?: unknown;
+  overtimeMonthRule?: unknown;
+  statutoryHolidayRule?: unknown;
+  statutoryHolidayWeekday?: unknown;
+  holidayDate?: unknown;
   staffId?: unknown;
   hourlyRateYen?: unknown;
   effectiveFrom?: unknown;
@@ -51,6 +57,19 @@ function validCompensationInput(body: RequestBody): body is ValidCompensationBod
     && validDate(body.effectiveFrom);
 }
 
+function validStoreSettings(body: RequestBody) {
+  if (typeof body.workTimeSystem !== "string" || !supportedWorkTimeSystems.has(body.workTimeSystem)) return false;
+  if (typeof body.overtimeMonthRule !== "string" || !supportedOvertimeMonthRules.has(body.overtimeMonthRule)) return false;
+  if (typeof body.statutoryHolidayRule !== "string" || !supportedStatutoryHolidayRules.has(body.statutoryHolidayRule)) return false;
+  if (body.statutoryHolidayRule === "FIXED_WEEKDAY") {
+    return typeof body.statutoryHolidayWeekday === "number"
+      && Number.isInteger(body.statutoryHolidayWeekday)
+      && body.statutoryHolidayWeekday >= 0
+      && body.statutoryHolidayWeekday <= 6;
+  }
+  return body.statutoryHolidayWeekday == null;
+}
+
 function postgresCode(error: unknown) {
   if (typeof error !== "object" || error === null || !("code" in error)) return null;
   return typeof error.code === "string" ? error.code : null;
@@ -82,12 +101,15 @@ export async function POST(request: Request) {
     const action = typeof body.action === "string" ? body.action : "load";
 
     if (action === "load") {
-      const [settingsRows, staffRows, termRows] = await Promise.all([
+      const [settingsRows, staffRows, termRows, holidayRows] = await Promise.all([
         sql`
           SELECT
             store_id,
             work_time_system,
             week_starts_on,
+            overtime_month_rule,
+            statutory_holiday_rule,
+            statutory_holiday_weekday,
             overtime_premium_rate::float8 AS overtime_premium_rate,
             high_overtime_premium_rate::float8 AS high_overtime_premium_rate,
             statutory_holiday_premium_rate::float8 AS statutory_holiday_premium_rate,
@@ -109,6 +131,13 @@ export async function POST(request: Request) {
           WHERE store_id = ${storeId}::uuid
           ORDER BY staff_id, effective_from DESC, created_at DESC
         `,
+        sql`
+          SELECT holiday_date::text AS holiday_date
+          FROM payroll_statutory_holidays
+          WHERE store_id = ${storeId}::uuid
+          ORDER BY holiday_date DESC
+          LIMIT 120
+        `,
       ]);
 
       return NextResponse.json({
@@ -116,20 +145,40 @@ export async function POST(request: Request) {
         settings: settingsRows[0] ?? null,
         staff: staffRows,
         compensationTerms: termRows,
+        statutoryHolidayDates: holidayRows.map((row) => row.holiday_date),
       });
     }
 
     if (action === "saveStoreSettings") {
-      if (typeof body.workTimeSystem !== "string" || !supportedWorkTimeSystems.has(body.workTimeSystem)) {
-        return NextResponse.json({ ok: false, code: "INVALID_WORK_TIME_SYSTEM" }, { status: 400 });
+      if (!validStoreSettings(body)) {
+        return NextResponse.json({ ok: false, code: "INVALID_PAYROLL_STORE_SETTINGS" }, { status: 400 });
       }
+      const weekday = body.statutoryHolidayRule === "FIXED_WEEKDAY" ? body.statutoryHolidayWeekday : null;
       const rows = await sql`
-        INSERT INTO payroll_store_settings (store_id, work_time_system, updated_at)
-        VALUES (${storeId}::uuid, ${body.workTimeSystem}, NOW())
+        INSERT INTO payroll_store_settings (
+          store_id,
+          work_time_system,
+          overtime_month_rule,
+          statutory_holiday_rule,
+          statutory_holiday_weekday,
+          updated_at
+        )
+        VALUES (
+          ${storeId}::uuid,
+          ${body.workTimeSystem},
+          ${body.overtimeMonthRule},
+          ${body.statutoryHolidayRule},
+          ${weekday},
+          NOW()
+        )
         ON CONFLICT (store_id) DO UPDATE
         SET work_time_system = EXCLUDED.work_time_system,
+            overtime_month_rule = EXCLUDED.overtime_month_rule,
+            statutory_holiday_rule = EXCLUDED.statutory_holiday_rule,
+            statutory_holiday_weekday = EXCLUDED.statutory_holiday_weekday,
             updated_at = NOW()
         RETURNING store_id, work_time_system, week_starts_on,
+          overtime_month_rule, statutory_holiday_rule, statutory_holiday_weekday,
           overtime_premium_rate::float8 AS overtime_premium_rate,
           high_overtime_premium_rate::float8 AS high_overtime_premium_rate,
           statutory_holiday_premium_rate::float8 AS statutory_holiday_premium_rate,
@@ -137,6 +186,30 @@ export async function POST(request: Request) {
           rounding_mode
       `;
       return NextResponse.json({ ok: true, settings: rows[0] });
+    }
+
+    if (action === "addStatutoryHolidayDate") {
+      if (!validDate(body.holidayDate)) {
+        return NextResponse.json({ ok: false, code: "INVALID_STATUTORY_HOLIDAY_DATE" }, { status: 400 });
+      }
+      await sql`
+        INSERT INTO payroll_statutory_holidays (store_id, holiday_date, created_by_line_user_id)
+        VALUES (${storeId}::uuid, ${body.holidayDate}::date, ${identity.sub})
+        ON CONFLICT (store_id, holiday_date) DO NOTHING
+      `;
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "removeStatutoryHolidayDate") {
+      if (!validDate(body.holidayDate)) {
+        return NextResponse.json({ ok: false, code: "INVALID_STATUTORY_HOLIDAY_DATE" }, { status: 400 });
+      }
+      await sql`
+        DELETE FROM payroll_statutory_holidays
+        WHERE store_id = ${storeId}::uuid
+          AND holiday_date = ${body.holidayDate}::date
+      `;
+      return NextResponse.json({ ok: true });
     }
 
     if (action === "createInitialCompensationTerm") {
