@@ -2,13 +2,11 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import PayrollWeekBoundaryCard from "./PayrollWeekBoundaryCard";
 
 export default function PayrollLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   return <>
     {children}
-    {pathname === "/manager/payroll" && <PayrollWeekBoundaryCard />}
     {pathname === "/manager/payroll" && (
       <a
         href="/manager/payroll/preview"

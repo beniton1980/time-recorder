@@ -19,7 +19,7 @@ test("manual holiday dates are saved from the single store-rules save action", a
   const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
   assert.match(page, /statutoryHolidayRule === "MANUAL_DATES"[\s\S]*action: "saveStatutoryHolidayMonth"/);
-  assert.match(page, /店舗ルールと法定休日を保存/);
+  assert.match(page, /店舗ルール・週の区切り・法定休日を保存/);
   assert.doesNotMatch(page, /この月の法定休日を保存/);
   assert.doesNotMatch(page, /function saveHolidayDates/);
   assert.match(route, /action === "saveStatutoryHolidayMonth"/);
