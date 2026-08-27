@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { enforceRateLimit } from "@/lib/api-security";
 import { getSql } from "@/lib/db";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
-import { currentPayrollPeriod, payrollPeriodForMonth } from "@/lib/payroll-default-period.mjs";
+import { payrollPeriodForMonth } from "@/lib/payroll-default-period.mjs";
 import { logServerError } from "@/lib/safe-log";
 
 export const runtime = "nodejs";
@@ -49,8 +49,7 @@ export async function POST(request: Request) {
     if (rows.length !== 1) return NextResponse.json({ ok: false, code: "STORE_NOT_FOUND" }, { status: 404 });
     const today = todayInTimezone(String(rows[0].timezone));
     const closingRule = String(rows[0].closing_rule);
-    const currentPeriod = currentPayrollPeriod(closingRule, today);
-    const payrollMonth = typeof body.payrollMonth === "string" ? body.payrollMonth : currentPeriod.end.slice(0, 7);
+    const payrollMonth = typeof body.payrollMonth === "string" ? body.payrollMonth : today.slice(0, 7);
     const period = payrollPeriodForMonth(closingRule, payrollMonth);
     return NextResponse.json({ ok: true, today, closingRule, payrollMonth, period });
   } catch (error) {
