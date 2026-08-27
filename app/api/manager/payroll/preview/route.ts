@@ -16,6 +16,7 @@ type RequestBody = { idToken?: unknown; storeId?: unknown; periodStart?: unknown
 
 type SettingsRow = {
   work_time_system: string;
+  week_start_rule: string;
   week_starts_on: number;
   overtime_month_rule: string;
   statutory_holiday_rule: string;
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     const sql = getSql({ mode: "manager", lineIdentity: identity.sub, storeId: body.storeId });
     const [settingsRows, staffRows, termRows, manualHolidayRows] = await Promise.all([
       sql`
-        SELECT work_time_system, week_starts_on, overtime_month_rule,
+        SELECT work_time_system, week_start_rule, week_starts_on, overtime_month_rule,
           statutory_holiday_rule, statutory_holiday_weekday,
           overtime_premium_rate::float8 AS overtime_premium_rate,
           high_overtime_premium_rate::float8 AS high_overtime_premium_rate,
@@ -87,7 +88,8 @@ export async function POST(request: Request) {
     const row = (settingsRows[0] ?? null) as SettingsRow | null;
     const settings = {
       workTimeSystem: row?.work_time_system ?? "OTHER_REVIEW_REQUIRED",
-      weekStartsOn: row?.week_starts_on ?? 1,
+      weekStartRule: row?.week_start_rule ?? "OTHER_REVIEW_REQUIRED",
+      weekStartsOn: row?.week_starts_on ?? 0,
       overtimeMonthRule: row?.overtime_month_rule ?? "OTHER_REVIEW_REQUIRED",
       statutoryHolidayRule: row?.statutory_holiday_rule ?? "OTHER_REVIEW_REQUIRED",
       statutoryHolidayWeekday: row?.statutory_holiday_weekday ?? null,
@@ -135,6 +137,7 @@ export async function POST(request: Request) {
         queryPeriod: context.queryPeriod,
         overtimeMonth: context.overtimeMonth,
         payPeriodInsideOvertimeMonth: context.payPeriodInsideOvertimeMonth,
+        weekRuleSupported: context.weekRuleSupported,
       },
       staff: visible,
       summary: {
