@@ -5,6 +5,10 @@
   color: #1d1d1f;
 }
 
+.previewPage {
+  max-width: 1080px;
+}
+
 .header {
   display: flex;
   justify-content: space-between;
@@ -50,6 +54,14 @@
   box-shadow: 0 4px 18px rgba(0, 0, 0, .04);
 }
 
+.summaryCard {
+  padding: 22px 24px;
+}
+
+.summaryCard .registered > strong {
+  font-size: clamp(28px, 5vw, 40px);
+}
+
 .label {
   display: block;
   font-weight: 700;
@@ -57,7 +69,8 @@
 }
 
 .select,
-.inputs input {
+.inputs input,
+.monthSelector input {
   width: 100%;
   box-sizing: border-box;
   min-height: 44px;
@@ -94,6 +107,11 @@
   cursor: default;
 }
 
+.fullButton {
+  width: 100%;
+  margin-top: 16px;
+}
+
 .message,
 .error {
   border-radius: 10px;
@@ -115,9 +133,23 @@
   margin-top: 14px;
 }
 
+.staffGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
 .staffRow {
   border-top: 1px solid #ececec;
   padding-top: 14px;
+}
+
+.staffResultCard {
+  border: 1px solid #e5e5e5;
+  border-radius: 14px;
+  padding: 16px;
+  min-width: 0;
 }
 
 .staffIdentity {
@@ -152,11 +184,36 @@
   align-items: end;
 }
 
-.inputs label {
+.inputs label,
+.monthSelector label {
   display: grid;
   gap: 6px;
   font-size: 13px;
   font-weight: 700;
+}
+
+.monthSelector {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.periodSummary {
+  min-height: 44px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #f7f7f7;
+}
+
+.periodSummary span {
+  color: #666;
+  font-size: 13px;
 }
 
 .revisionBox {
@@ -176,6 +233,69 @@
   color: #666;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.calendarToolbar {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.calendarToolbar input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  border: 1px solid #cfcfcf;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  font-size: 16px;
+}
+
+.calendarSummary {
+  color: #666;
+  font-size: 13px;
+  padding-bottom: 11px;
+}
+
+.calendarWeekdays,
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.calendarWeekdays {
+  margin-top: 14px;
+  color: #777;
+  font-size: 11px;
+  text-align: center;
+}
+
+.calendarGrid {
+  margin-top: 6px;
+}
+
+.calendarBlank {
+  min-height: 40px;
+}
+
+.calendarDay {
+  min-height: 42px;
+  border: 1px solid #ddd;
+  border-radius: 9px;
+  background: #fff;
+  color: #222;
+  font: inherit;
+  cursor: pointer;
+}
+
+.calendarDaySelected {
+  border-color: #111;
+  background: #111;
+  color: #fff;
+  font-weight: 700;
 }
 
 .historyBlock {
@@ -216,7 +336,18 @@
   text-align: right;
 }
 
+@media (max-width: 760px) {
+  .staffGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
+  .page,
+  .previewPage {
+    padding: 18px 12px 40px;
+  }
+
   .header {
     display: block;
   }
@@ -226,12 +357,27 @@
     margin-top: 12px;
   }
 
-  .inputs {
+  .inputs,
+  .monthSelector,
+  .calendarToolbar {
     grid-template-columns: 1fr;
   }
 
   .secondaryButton {
     width: 100%;
+  }
+
+  .summaryCard {
+    padding: 18px;
+  }
+
+  .calendarSummary {
+    padding-bottom: 0;
+  }
+
+  .calendarDay {
+    min-height: 38px;
+    padding: 4px;
   }
 
   .historyList li {
