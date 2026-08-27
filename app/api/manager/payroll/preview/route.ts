@@ -36,6 +36,11 @@ function validDate(value: unknown): value is string {
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 
+function normalizeWeekStartRule(value: string | undefined) {
+  if (value === "CALENDAR_DEFAULT" || value === "EXPLICIT_WEEKDAY") return value;
+  return "OTHER_REVIEW_REQUIRED" as const;
+}
+
 export async function POST(request: Request) {
   let body: RequestBody;
   try { body = (await request.json()) as RequestBody; }
@@ -88,7 +93,7 @@ export async function POST(request: Request) {
     const row = (settingsRows[0] ?? null) as SettingsRow | null;
     const settings = {
       workTimeSystem: row?.work_time_system ?? "OTHER_REVIEW_REQUIRED",
-      weekStartRule: row?.week_start_rule ?? "OTHER_REVIEW_REQUIRED",
+      weekStartRule: normalizeWeekStartRule(row?.week_start_rule),
       weekStartsOn: row?.week_starts_on ?? 0,
       overtimeMonthRule: row?.overtime_month_rule ?? "OTHER_REVIEW_REQUIRED",
       statutoryHolidayRule: row?.statutory_holiday_rule ?? "OTHER_REVIEW_REQUIRED",
