@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { enforceRateLimit } from "@/lib/api-security";
 import { getSql } from "@/lib/db";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
-import { currentPayrollPeriod } from "@/lib/payroll-default-period.mjs";
+import { currentPayrollPeriod, payrollPeriodForMonth } from "@/lib/payroll-default-period.mjs";
 import { logServerError } from "@/lib/safe-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const payrollMonthPattern = /^\d{4}-\d{2}$/;
 
-type RequestBody = { idToken?: unknown; storeId?: unknown };
+type RequestBody = { idToken?: unknown; storeId?: unknown; payrollMonth?: unknown };
 
 function todayInTimezone(timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -29,6 +30,9 @@ export async function POST(request: Request) {
   if (typeof body.idToken !== "string" || typeof body.storeId !== "string" || !uuidPattern.test(body.storeId)) {
     return NextResponse.json({ ok: false, code: "INVALID_INPUT" }, { status: 400 });
   }
+  if (body.payrollMonth != null && (typeof body.payrollMonth !== "string" || !payrollMonthPattern.test(body.payrollMonth))) {
+    return NextResponse.json({ ok: false, code: "INVALID_PAYROLL_MONTH" }, { status: 400 });
+  }
 
   const limited = await enforceRateLimit(request, { scope: "manager-payroll-default-period", limit: 60, windowSeconds: 300 }, body.idToken);
   if (limited) return limited;
@@ -44,8 +48,11 @@ export async function POST(request: Request) {
     `;
     if (rows.length !== 1) return NextResponse.json({ ok: false, code: "STORE_NOT_FOUND" }, { status: 404 });
     const today = todayInTimezone(String(rows[0].timezone));
-    const period = currentPayrollPeriod(String(rows[0].closing_rule), today);
-    return NextResponse.json({ ok: true, today, closingRule: rows[0].closing_rule, period });
+    const closingRule = String(rows[0].closing_rule);
+    const currentPeriod = currentPayrollPeriod(closingRule, today);
+    const payrollMonth = typeof body.payrollMonth === "string" ? body.payrollMonth : currentPeriod.end.slice(0, 7);
+    const period = payrollPeriodForMonth(closingRule, payrollMonth);
+    return NextResponse.json({ ok: true, today, closingRule, payrollMonth, period });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });

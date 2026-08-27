@@ -40,7 +40,7 @@ test("payroll settings UI explains safe calculation and wage history", async () 
   assert.match(page, /要確認（まだ分からない）/);
   assert.match(page, /給与額は自動確定しません/);
   assert.match(page, /改定日で履歴を分けます/);
-  assert.match(page, /過去月の再集計に以前の時給を使える/);
+  assert.match(page, /過去の時給履歴は保持されています/);
 });
 
 test("payroll settings UI makes overtime month and statutory holiday explicit", async () => {

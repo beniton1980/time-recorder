@@ -32,7 +32,6 @@ test("manager UI explains history-preserving wage revisions", async () => {
   const page = await source("app/manager/payroll/page.tsx");
 
   assert.match(page, /上書きせず、改定日で履歴を分けます/);
-  assert.match(page, /過去月の再集計に以前の時給を使える/);
   assert.match(page, /action: "reviseCompensationTerm"/);
   assert.match(page, /過去の時給履歴は保持されています/);
   assert.match(page, /時給履歴を見る/);
