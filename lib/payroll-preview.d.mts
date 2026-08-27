@@ -9,10 +9,13 @@ export type PayrollPreviewContext = {
   statutoryHolidayDates: string[];
   overtimeRuleSupported: boolean;
   holidayRuleSupported: boolean;
+  weekRuleSupported: boolean;
+  weekStartsOn: number;
 };
 
 export type PayrollPreviewSettings = {
   workTimeSystem?: string;
+  weekStartRule?: "CALENDAR_DEFAULT" | "EXPLICIT_WEEKDAY" | "OTHER_REVIEW_REQUIRED";
   weekStartsOn?: number;
   overtimeMonthRule?: string;
   statutoryHolidayRule?: string;

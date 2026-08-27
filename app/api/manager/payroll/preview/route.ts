@@ -13,9 +13,11 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 type RequestBody = { idToken?: unknown; storeId?: unknown; periodStart?: unknown; periodEnd?: unknown };
+type WeekStartRule = "CALENDAR_DEFAULT" | "EXPLICIT_WEEKDAY" | "OTHER_REVIEW_REQUIRED";
 
 type SettingsRow = {
   work_time_system: string;
+  week_start_rule: string;
   week_starts_on: number;
   overtime_month_rule: string;
   statutory_holiday_rule: string;
@@ -33,6 +35,11 @@ function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !isoDatePattern.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+}
+
+function normalizeWeekStartRule(value: string | undefined): WeekStartRule {
+  if (value === "CALENDAR_DEFAULT" || value === "EXPLICIT_WEEKDAY") return value;
+  return "OTHER_REVIEW_REQUIRED";
 }
 
 export async function POST(request: Request) {
@@ -53,7 +60,7 @@ export async function POST(request: Request) {
     const sql = getSql({ mode: "manager", lineIdentity: identity.sub, storeId: body.storeId });
     const [settingsRows, staffRows, termRows, manualHolidayRows] = await Promise.all([
       sql`
-        SELECT work_time_system, week_starts_on, overtime_month_rule,
+        SELECT work_time_system, week_start_rule, week_starts_on, overtime_month_rule,
           statutory_holiday_rule, statutory_holiday_weekday,
           overtime_premium_rate::float8 AS overtime_premium_rate,
           high_overtime_premium_rate::float8 AS high_overtime_premium_rate,
@@ -87,7 +94,8 @@ export async function POST(request: Request) {
     const row = (settingsRows[0] ?? null) as SettingsRow | null;
     const settings = {
       workTimeSystem: row?.work_time_system ?? "OTHER_REVIEW_REQUIRED",
-      weekStartsOn: row?.week_starts_on ?? 1,
+      weekStartRule: normalizeWeekStartRule(row?.week_start_rule),
+      weekStartsOn: row?.week_starts_on ?? 0,
       overtimeMonthRule: row?.overtime_month_rule ?? "OTHER_REVIEW_REQUIRED",
       statutoryHolidayRule: row?.statutory_holiday_rule ?? "OTHER_REVIEW_REQUIRED",
       statutoryHolidayWeekday: row?.statutory_holiday_weekday ?? null,
@@ -135,6 +143,7 @@ export async function POST(request: Request) {
         queryPeriod: context.queryPeriod,
         overtimeMonth: context.overtimeMonth,
         payPeriodInsideOvertimeMonth: context.payPeriodInsideOvertimeMonth,
+        weekRuleSupported: context.weekRuleSupported,
       },
       staff: visible,
       summary: {
