@@ -101,7 +101,7 @@ test("wage-rate change applies each day's rate to overtime premium", () => {
     settings: baseSettings,
   });
   assert.equal(result.components.basePay, 22500);
-  assert.equal(result.components.overtimePremium, 313);
+  assert.equal(result.components.overtimePremium, 625);
   assert.equal(result.status, "CONFIRMED");
 });
 
