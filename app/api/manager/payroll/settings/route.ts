@@ -234,15 +234,14 @@ export async function POST(request: Request) {
       const monthStart = `${body.holidayMonth}-01`;
       const [yearText, monthText] = body.holidayMonth.split("-");
       const nextMonth = new Date(Date.UTC(Number(yearText), Number(monthText), 1)).toISOString().slice(0, 10);
-      const statements = [
-        sql`DELETE FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid AND holiday_date >= ${monthStart}::date AND holiday_date < ${nextMonth}::date`,
-        ...holidayDates.map((holidayDate) => sql`
+      await sql.transaction((tx) => [
+        tx`DELETE FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid AND holiday_date >= ${monthStart}::date AND holiday_date < ${nextMonth}::date`,
+        ...holidayDates.map((holidayDate) => tx`
           INSERT INTO payroll_statutory_holidays (store_id, holiday_date, created_by_line_user_id)
           VALUES (${storeId}::uuid, ${holidayDate}::date, ${identity.sub})
           ON CONFLICT (store_id, holiday_date) DO NOTHING
         `),
-      ];
-      await sql.transaction(() => statements);
+      ]);
       return NextResponse.json({ ok: true, statutoryHolidayDates: holidayDates.sort() });
     }
 
@@ -286,21 +285,27 @@ export async function POST(request: Request) {
       if (existing.length > 0) {
         return NextResponse.json({ ok: false, code: "COMPENSATION_HISTORY_EXISTS" }, { status: 409 });
       }
-      const statements = terms.map((term) => sql`
-        INSERT INTO payroll_compensation_terms (
-          store_id, staff_id, hourly_rate_yen, effective_from, created_by_line_user_id
-        )
-        VALUES (
-          ${storeId}::uuid,
-          ${term.staffId}::uuid,
-          ${term.hourlyRateYen},
-          ${term.effectiveFrom}::date,
-          ${identity.sub}
-        )
-        RETURNING id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at
-      `);
-      const inserted = await sql.transaction(() => statements);
-      return NextResponse.json({ ok: true, compensationTerms: inserted.flat() });
+      try {
+        const inserted = await sql.transaction((tx) => terms.map((term) => tx`
+          INSERT INTO payroll_compensation_terms (
+            store_id, staff_id, hourly_rate_yen, effective_from, created_by_line_user_id
+          )
+          VALUES (
+            ${storeId}::uuid,
+            ${term.staffId}::uuid,
+            ${term.hourlyRateYen},
+            ${term.effectiveFrom}::date,
+            ${identity.sub}
+          )
+          RETURNING id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at
+        `));
+        return NextResponse.json({ ok: true, compensationTerms: inserted.flat() });
+      } catch (error) {
+        if (postgresCode(error) === "23P01") {
+          return NextResponse.json({ ok: false, code: "COMPENSATION_HISTORY_EXISTS" }, { status: 409 });
+        }
+        throw error;
+      }
     }
 
     if (action === "createInitialCompensationTerm") {
