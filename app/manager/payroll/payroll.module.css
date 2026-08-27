@@ -1,0 +1,179 @@
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+  color: #1d1d1f;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.header h1,
+.card h2 {
+  margin: 0;
+}
+
+.lead,
+.help {
+  color: #666;
+  line-height: 1.6;
+}
+
+.backLink {
+  white-space: nowrap;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid #d7d7d7;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 16px;
+  padding: 18px;
+  margin-top: 16px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .04);
+}
+
+.label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.select,
+.inputs input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  border: 1px solid #cfcfcf;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  font-size: 16px;
+}
+
+.primaryButton,
+.secondaryButton {
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primaryButton {
+  margin-top: 12px;
+  background: #111;
+  color: #fff;
+}
+
+.secondaryButton {
+  background: #f1f1f1;
+  color: #111;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.message,
+.error {
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 12px 0 0;
+}
+
+.message {
+  background: #f3f7f3;
+}
+
+.error {
+  background: #fff1f1;
+}
+
+.staffList {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.staffRow {
+  border-top: 1px solid #ececec;
+  padding-top: 14px;
+}
+
+.staffIdentity {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.inactive {
+  font-size: 12px;
+  color: #777;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.registered {
+  display: grid;
+  gap: 3px;
+}
+
+.registered span,
+.registered small {
+  color: #777;
+}
+
+.inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.inputs label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .header {
+    display: block;
+  }
+
+  .backLink {
+    display: inline-block;
+    margin-top: 12px;
+  }
+
+  .inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .secondaryButton {
+    width: 100%;
+  }
+}
