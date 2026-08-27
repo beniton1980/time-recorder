@@ -15,16 +15,18 @@ test("preview UI uses payroll month instead of asking for raw dates", async () =
   assert.doesNotMatch(page, /開始日<input/);
 });
 
-test("holiday month save writes only deltas and verifies persisted dates", async () => {
+test("manual holiday dates are saved from the single store-rules save action", async () => {
   const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
-  assert.match(page, /action: "saveStatutoryHolidayMonth"/);
+  assert.match(page, /statutoryHolidayRule === "MANUAL_DATES"[\s\S]*action: "saveStatutoryHolidayMonth"/);
+  assert.match(page, /店舗ルールと法定休日を保存/);
+  assert.doesNotMatch(page, /この月の法定休日を保存/);
+  assert.doesNotMatch(page, /function saveHolidayDates/);
   assert.match(route, /action === "saveStatutoryHolidayMonth"/);
   assert.match(route, /existingDates\.filter/);
   assert.match(route, /holidayDates\.filter/);
   assert.match(route, /verifiedRows/);
   assert.match(route, /STATUTORY_HOLIDAY_SAVE_NOT_VERIFIED/);
-  assert.doesNotMatch(route, /DELETE FROM payroll_statutory_holidays WHERE store_id = \$\{storeId\}::uuid AND holiday_date >= \$\{monthStart\}/);
 });
 
 test("initial wages are saved in one atomic request and show durable saved state", async () => {
