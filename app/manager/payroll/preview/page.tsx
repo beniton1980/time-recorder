@@ -13,6 +13,7 @@ type PreviewStaff = {
   components: { basePay: number; overtimePremium: number; highOvertimePremium: number; statutoryHolidayPremium: number; lateNightPremium: number; adjustments: number };
 };
 type Preview = { period: { start: string; end: string }; staff: PreviewStaff[]; summary: { staffCount: number; confirmedCount: number; needsReviewCount: number; grossPay: number } };
+type PayrollPeriod = { start: string; end: string };
 
 function currentMonth() {
   const now = new Date();
@@ -46,17 +47,49 @@ export default function PayrollPreviewPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadPreview(targetStore = storeId) {
-    if (!targetStore) return;
+  async function previewApi(targetStore: string, period: PayrollPeriod) {
     const idToken = liff.getIDToken();
     if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+    const response = await fetch("/api/manager/payroll/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken, storeId: targetStore, periodStart: period.start, periodEnd: period.end }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.code === "PAYROLL_PREVIEW_UNAVAILABLE" ? "給与プレビューを計算できませんでした。" : "対象期間を確認してください。");
+    return result as Preview;
+  }
+
+  async function defaultPeriodApi(targetStore: string) {
+    const idToken = liff.getIDToken();
+    if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+    const response = await fetch("/api/manager/payroll/default-period", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken, storeId: targetStore }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error("店舗の締め期間を読み込めませんでした。");
+    return result.period as PayrollPeriod;
+  }
+
+  async function loadPreview(targetStore = storeId, period: PayrollPeriod = { start: periodStart, end: periodEnd }) {
+    if (!targetStore) return;
     setLoading(true); setError(null);
+    try { setPreview(await previewApi(targetStore, period)); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "給与プレビューを計算できませんでした。"); }
+    finally { setLoading(false); }
+  }
+
+  async function loadCurrentClosingPeriod(targetStore: string) {
+    setLoading(true); setError(null); setPreview(null);
     try {
-      const response = await fetch("/api/manager/payroll/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId: targetStore, periodStart, periodEnd }) });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.code === "PAYROLL_PREVIEW_UNAVAILABLE" ? "給与プレビューを計算できませんでした。" : "対象期間を確認してください。");
-      setPreview(result as Preview);
-    } finally { setLoading(false); }
+      const period = await defaultPeriodApi(targetStore);
+      setPeriodStart(period.start);
+      setPeriodEnd(period.end);
+      setPreview(await previewApi(targetStore, period));
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "給与プレビューを読み込めませんでした。"); }
+    finally { setLoading(false); }
   }
 
   useEffect(() => {
@@ -74,20 +107,27 @@ export default function PayrollPreviewPage() {
         const next = session.manager.memberships as Membership[];
         setMemberships(next);
         const first = next[0]?.store_id ?? "";
+        if (!first) throw new Error("対象店舗がありません。");
         setStoreId(first);
+        await loadCurrentClosingPeriod(first);
       } catch (caught) { if (active) setError(caught instanceof Error ? caught.message : "読み込めませんでした。"); }
     })();
     return () => { active = false; };
   }, []);
+
+  async function changeStore(nextStoreId: string) {
+    setStoreId(nextStoreId);
+    await loadCurrentClosingPeriod(nextStoreId);
+  }
 
   return <main className={styles.page}>
     <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>給与プレビュー</h1><p className={styles.lead}>実際の勤怠と時給設定から控除前の総支給額を試算します。ここでは保存・確定しません。</p></div><a className={styles.backLink} href="/manager/payroll">給与設定へ戻る</a></header>
     {error && <p className={styles.error}>{error}</p>}
     <section className={styles.card}>
       <h2>対象期間</h2>
-      {memberships.length > 1 && <><label className={styles.label}>店舗</label><select className={styles.select} value={storeId} onChange={(e) => { setStoreId(e.target.value); setPreview(null); }}>{memberships.map((m) => <option value={m.store_id} key={m.store_id}>{m.store_name}</option>)}</select></>}
+      {memberships.length > 1 && <><label className={styles.label}>店舗</label><select className={styles.select} value={storeId} onChange={(e) => void changeStore(e.target.value)}>{memberships.map((m) => <option value={m.store_id} key={m.store_id}>{m.store_name}</option>)}</select></>}
       <div className={styles.inputs}><label>開始日<input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /></label><label>終了日<input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label><button className={styles.secondaryButton} disabled={loading || !storeId} onClick={() => void loadPreview()}>{loading ? "計算中…" : "再計算"}</button></div>
-      <p className={styles.revisionNote}>まず実データを検算するため期間を指定します。給与額はまだDBへ保存されません。</p>
+      <p className={styles.revisionNote}>最初は店舗の締め日に合わせた現在の集計期間を自動表示します。過去の期間を確認するときだけ日付を変更してください。給与額はまだDBへ保存されません。</p>
     </section>
     {preview && <>
       <section className={styles.card}><h2>集計結果</h2><div className={styles.registered}><span>{preview.period.start} 〜 {preview.period.end}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>確認不要 {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div></section>
