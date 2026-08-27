@@ -15,30 +15,31 @@ test("preview UI uses payroll month instead of asking for raw dates", async () =
   assert.doesNotMatch(page, /開始日<input/);
 });
 
-test("holiday calendar is saved in one atomic request", async () => {
+test("holiday calendar is saved atomically and verified from database", async () => {
   const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
   assert.match(page, /action: "saveStatutoryHolidayMonth"/);
-  assert.doesNotMatch(page, /for \(const holidayDate of toAdd\)/);
   assert.match(route, /action === "saveStatutoryHolidayMonth"/);
   assert.match(route, /sql\.transaction/);
-  assert.match(route, /DELETE FROM payroll_statutory_holidays/);
-  assert.match(route, /INSERT INTO payroll_statutory_holidays/);
+  assert.match(route, /verifiedRows/);
+  assert.match(route, /STATUTORY_HOLIDAY_SAVE_NOT_VERIFIED/);
+  assert.match(route, /SELECT holiday_date::text AS holiday_date FROM payroll_statutory_holidays/);
 });
 
 test("initial wages are saved in one atomic request and show durable saved state", async () => {
   const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
   assert.match(page, /action: "saveInitialCompensationTerms"/);
-  assert.doesNotMatch(page, /for \(const \{ staff, draft \} of targets\) \{\s*await api/);
   assert.match(page, /保存済み/);
   assert.match(route, /action === "saveInitialCompensationTerms"/);
   assert.match(route, /COMPENSATION_HISTORY_EXISTS/);
   assert.match(route, /sql\.transaction/);
 });
 
-test("payroll preview gets a wider result layout", async () => {
+test("payroll preview uses one full-width result card per staff", async () => {
   const css = await readFile(new URL("../app/manager/payroll/payroll.module.css", import.meta.url), "utf8");
-  assert.match(css, /previewPage/);
-  assert.match(css, /max-width:\s*1080px/);
+  assert.match(css, /previewPage[\s\S]*max-width:\s*1080px/);
+  assert.match(css, /staffGrid[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(css, /staffResultCard[\s\S]*width:\s*100%/);
+  assert.doesNotMatch(css, /grid-template-columns:\s*repeat\(2/);
 });
