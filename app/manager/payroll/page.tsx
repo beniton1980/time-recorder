@@ -64,7 +64,6 @@ export default function PayrollSettingsPage() {
   const [statutoryHolidayWeekday, setStatutoryHolidayWeekday] = useState(0);
   const [holidayMonth, setHolidayMonth] = useState(todayJst().slice(0, 7));
   const [selectedHolidayDates, setSelectedHolidayDates] = useState<string[]>([]);
-  const [savingHoliday, setSavingHoliday] = useState(false);
   const [wageDrafts, setWageDrafts] = useState<Record<string, WageDraft>>({});
   const [revisionDrafts, setRevisionDrafts] = useState<Record<string, WageDraft>>({});
   const [savingInitialWages, setSavingInitialWages] = useState(false);
@@ -112,6 +111,7 @@ export default function PayrollSettingsPage() {
       if (result.code === "COMPENSATION_CURRENT_TERM_REQUIRED") throw new Error("現在有効な時給を1件に特定できません。履歴を確認してください。");
       if (result.code === "INVALID_PAYROLL_STORE_SETTINGS") throw new Error("勤務制度・残業の区切り・法定休日の設定を確認してください。");
       if (result.code === "INVALID_STATUTORY_HOLIDAY_DATE") throw new Error("法定休日の日付を確認してください。");
+      if (result.code === "STATUTORY_HOLIDAY_SAVE_NOT_VERIFIED") throw new Error("法定休日をDBへ保存できませんでした。もう一度お試しください。");
       if (result.code === "INVALID_COMPENSATION_TERM") throw new Error("時給と適用開始日を確認してください。");
       if (result.code === "PAYROLL_SETTINGS_UNAVAILABLE") throw new Error("給与設定を利用できませんでした。");
       throw new Error("給与設定を保存できませんでした。");
@@ -186,31 +186,26 @@ export default function PayrollSettingsPage() {
     setSavingStore(true); setError(null);
     try {
       const result = await api({ action: "saveStoreSettings", storeId, workTimeSystem, overtimeMonthRule, statutoryHolidayRule, statutoryHolidayWeekday: statutoryHolidayRule === "FIXED_WEEKDAY" ? statutoryHolidayWeekday : null });
-      setData((current) => current ? { ...current, settings: result.settings } : current);
-      setMessage("店舗の給与設定を保存しました。");
+      let savedDates: string[] | null = null;
+      if (statutoryHolidayRule === "MANUAL_DATES") {
+        const holidayResult = await api({ action: "saveStatutoryHolidayMonth", storeId, holidayMonth, holidayDates: selectedHolidayDates });
+        savedDates = holidayResult.statutoryHolidayDates as string[];
+      }
+      setData((current) => {
+        if (!current) return current;
+        const next = { ...current, settings: result.settings };
+        if (!savedDates) return next;
+        const outsideMonth = current.statutoryHolidayDates.filter((date) => !date.startsWith(`${holidayMonth}-`));
+        return { ...next, statutoryHolidayDates: [...outsideMonth, ...savedDates].sort() };
+      });
+      if (savedDates) setSelectedHolidayDates(savedDates);
+      setMessage(statutoryHolidayRule === "MANUAL_DATES" ? "店舗ルールと法定休日を保存しました。" : "店舗の給与設定を保存しました。");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "保存できませんでした。"); }
     finally { setSavingStore(false); }
   }
 
   function toggleHolidayDate(date: string) {
     setSelectedHolidayDates((current) => current.includes(date) ? current.filter((item) => item !== date) : [...current, date].sort());
-  }
-
-  async function saveHolidayDates() {
-    if (!storeId) return;
-    setSavingHoliday(true); setError(null);
-    try {
-      const result = await api({ action: "saveStatutoryHolidayMonth", storeId, holidayMonth, holidayDates: selectedHolidayDates });
-      const savedDates = result.statutoryHolidayDates as string[];
-      setData((current) => {
-        if (!current) return current;
-        const outsideMonth = current.statutoryHolidayDates.filter((date) => !date.startsWith(`${holidayMonth}-`));
-        return { ...current, statutoryHolidayDates: [...outsideMonth, ...savedDates].sort() };
-      });
-      setSelectedHolidayDates(savedDates);
-      setMessage(`${holidayMonth.replace("-", "年")}月の法定休日を保存しました。`);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "法定休日を保存できませんでした。"); }
-    finally { setSavingHoliday(false); }
   }
 
   async function saveInitialWages() {
@@ -297,12 +292,11 @@ export default function PayrollSettingsPage() {
             <div className={styles.calendarToolbar}><label>対象月<input type="month" value={holidayMonth} onChange={(event) => setHolidayMonth(event.target.value)} /></label><div className={styles.calendarSummary}>選択中 {selectedHolidayDates.length}日</div></div>
             <div className={styles.calendarWeekdays}>{shortWeekdays.map((name) => <span key={name}>{name}</span>)}</div>
             <div className={styles.calendarGrid}>{calendarBlanks.map((_, index) => <span className={styles.calendarBlank} key={`blank-${index}`} />)}{calendarDates.map((date) => { const selected = selectedHolidayDates.includes(date); return <button type="button" key={date} className={`${styles.calendarDay} ${selected ? styles.calendarDaySelected : ""}`} aria-pressed={selected} onClick={() => toggleHolidayDate(date)}>{Number(date.slice(-2))}</button>; })}</div>
-            <button className={`${styles.secondaryButton} ${styles.fullButton}`} disabled={savingHoliday} onClick={() => void saveHolidayDates()}>{savingHoliday ? "保存中…" : "この月の法定休日を保存"}</button>
-            <p className={styles.revisionNote}>選んだ日付は1回の保存でまとめて反映します。保存後も選択状態はそのまま残ります。</p>
+            <p className={styles.revisionNote}>日付を選んだら、この項目の下にある「店舗ルールと法定休日を保存」を1回押してください。選択した日付も同時に保存します。</p>
           </div>
         )}
         <p className={styles.revisionNote}>法定休日は「店休日」と同じとは限りません。4週4休など固定曜日以外の複雑な制度は、v1では無理に自動判定せず要確認にします。</p>
-        <button className={styles.primaryButton} disabled={savingStore} onClick={() => void saveStoreSettings()}>{savingStore ? "保存中…" : "店舗ルールを保存"}</button>
+        <button className={styles.primaryButton} disabled={savingStore} onClick={() => void saveStoreSettings()}>{savingStore ? "保存中…" : statutoryHolidayRule === "MANUAL_DATES" ? "店舗ルールと法定休日を保存" : "店舗ルールを保存"}</button>
       </section>
 
       <section className={styles.card}>
