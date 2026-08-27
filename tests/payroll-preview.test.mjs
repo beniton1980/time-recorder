@@ -5,6 +5,7 @@ import { buildPayrollPreviewContext, calculateStaffPayrollPreview } from "../lib
 
 const baseSettings = {
   workTimeSystem: "STANDARD_40H",
+  weekStartRule: "EXPLICIT_WEEKDAY",
   weekStartsOn: 1,
   overtimeMonthRule: "PAY_PERIOD",
   statutoryHolidayRule: "FIXED_WEEKDAY",
