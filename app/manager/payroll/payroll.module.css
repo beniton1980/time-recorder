@@ -1,12 +1,24 @@
 .page {
+  width: 100%;
   max-width: 760px;
   margin: 0 auto;
   padding: 24px 16px 48px;
+  box-sizing: border-box;
   color: #1d1d1f;
 }
 
 .previewPage {
+  width: 100%;
   max-width: 1080px;
+}
+
+.previewPage > .card,
+.previewPage > .summaryCard,
+.staffGrid,
+.staffResultCard {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
 }
 
 .header {
@@ -46,6 +58,8 @@
 }
 
 .card {
+  width: 100%;
+  box-sizing: border-box;
   background: #fff;
   border: 1px solid #e5e5e5;
   border-radius: 16px;
@@ -135,7 +149,7 @@
 
 .staffGrid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   margin-top: 14px;
 }
@@ -150,8 +164,6 @@
   border-radius: 14px;
   padding: 20px;
   min-width: 0;
-  width: 100%;
-  box-sizing: border-box;
 }
 
 .staffIdentity {
@@ -341,6 +353,8 @@
 @media (max-width: 640px) {
   .page,
   .previewPage {
+    width: 100%;
+    max-width: none;
     padding: 18px 12px 40px;
   }
 
