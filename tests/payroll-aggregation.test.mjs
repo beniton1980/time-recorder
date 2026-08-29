@@ -138,3 +138,48 @@ test("minute-accurate work is never rounded or truncated", () => {
   assert.equal(result.minutes.worked, 481);
   assert.equal(result.components.basePay, 8017);
 });
+
+test("ordinary wages round only once at the monthly total and never against the worker", () => {
+  const result = aggregateGrossPay({
+    attendanceDays: [day("2026-08-03", 1), day("2026-08-04", 1)],
+    compensationTerms: terms(1201),
+    settings: baseSettings,
+  });
+  assert.equal(result.minutes.worked, 2);
+  assert.equal(result.components.basePay, 41);
+});
+
+test("premium yen fractions use exact half-up boundaries", () => {
+  const below = aggregateGrossPay({
+    attendanceDays: [day("2026-08-03", 481)],
+    compensationTerms: terms(119),
+    settings: { ...baseSettings, overtimePremiumRate: 0.25 },
+  });
+  const atBoundary = aggregateGrossPay({
+    attendanceDays: [day("2026-08-03", 481)],
+    compensationTerms: terms(120),
+    settings: { ...baseSettings, overtimePremiumRate: 0.25 },
+  });
+  assert.equal(below.components.overtimePremium, 0);
+  assert.equal(atBoundary.components.overtimePremium, 1);
+});
+
+test("ordinary and over-60-hour premiums are rounded once as monthly overtime", () => {
+  const attendanceDays = [];
+  for (let date = 1; date <= 31; date += 1) {
+    attendanceDays.push(day(`2026-08-${String(date).padStart(2, "0")}`, date <= 20 ? 720 : 0));
+  }
+  const result = aggregateGrossPay({ attendanceDays, compensationTerms: terms(121), settings: baseSettings });
+  assert.equal(
+    result.components.overtimePremium + result.components.highOvertimePremium,
+    Math.floor(((result.minutes.statutoryOvertime - result.minutes.highOvertime) * 121 * 0.25
+      + result.minutes.highOvertime * 121 * 0.5) / 60 + 0.5),
+  );
+});
+
+test("adjustments must already be whole yen", () => {
+  assert.throws(
+    () => aggregateGrossPay({ attendanceDays: [day("2026-08-03", 480)], compensationTerms: terms(), settings: baseSettings, adjustments: [{ amount: 0.5 }] }),
+    /integer yen amount/,
+  );
+});
