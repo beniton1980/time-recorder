@@ -249,6 +249,11 @@
   line-height: 1.5;
 }
 
+.revisionBox .revisionNote + strong {
+  display: block;
+  margin-top: 18px;
+}
+
 .calendarToolbar {
   display: grid;
   grid-template-columns: minmax(160px, 240px) 1fr;
@@ -363,6 +368,8 @@
 }
 
 .payBreakdownTop strong:last-child {
+  min-width: 7em;
+  text-align: right;
   white-space: nowrap;
 }
 
