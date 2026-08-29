@@ -67,9 +67,11 @@ test("payroll preview keeps time context inside money breakdown", async () => {
   assert.match(route, /rates:/);
 });
 
-test("payroll breakdown uses two-row layout styles", async () => {
+test("payroll breakdown uses two-row compact amount-column styles", async () => {
   const css = await source("app/manager/payroll/payroll.module.css");
   assert.match(css, /\.payBreakdownList li\s*\{[\s\S]*display:\s*grid/);
-  assert.match(css, /\.payBreakdownTop\s*\{[\s\S]*display:\s*flex/);
+  assert.match(css, /\.payBreakdownTop\s*\{[\s\S]*display:\s*grid/);
+  assert.match(css, /grid-template-columns:\s*minmax\(0,\s*12em\)\s*7em/);
+  assert.match(css, /\.payBreakdownTop strong:last-child\s*\{[\s\S]*text-align:\s*right/);
   assert.match(css, /\.payBreakdownMeta\s*\{[\s\S]*display:\s*block/);
 });
