@@ -25,9 +25,7 @@ function monthLabel(value: string) {
   const [year, month] = value.split("-");
   return `${Number(year)}年${Number(month)}月度`;
 }
-function percent(rate: number) {
-  return `${Math.round(rate * 100)}%`;
-}
+function percent(rate: number) { return `${Math.round(rate * 100)}%`; }
 function wageLabel(member: PreviewStaff) {
   if (member.hourlyRatesUsed.length === 1) return `時給 ${member.hourlyRatesUsed[0].toLocaleString("ja-JP")}円`;
   if (member.hourlyRatesUsed.length > 1) return "期間内で時給変更あり";
@@ -137,13 +135,13 @@ export default function PayrollPreviewPage() {
         return <article className={styles.staffResultCard} key={member.staffId}>
           <div className={styles.staffIdentity}><strong>{member.legalName}</strong><span className={styles.inactive}>{member.status === "CONFIRMED" ? "要確認なし" : `要確認 ${member.reviewReasons.length}件`}</span></div>
           <div className={styles.registered}><span>控除前の総支給額</span><strong>{member.grossPay.toLocaleString("ja-JP")}円</strong><small>{member.payableDayCount}日 / 実働 {hours(member.minutes.worked)}</small></div>
-          <div className={styles.revisionBox}><strong>金額内訳</strong><ul className={styles.historyList}>
-            <li><span>基本給 <small>実働 {hours(member.minutes.worked)} / {wageLabel(member)}</small></span><strong>{member.components.basePay.toLocaleString("ja-JP")}円</strong></li>
-            <li><span>時間外割増 <small>法定時間外 {hours(ordinaryOvertimeMinutes)} / {premiumLabel(member, preview.rates.overtimePremiumRate)}</small></span><strong>{member.components.overtimePremium.toLocaleString("ja-JP")}円</strong></li>
-            {member.minutes.highOvertime > 0 && <li><span>月60時間超割増 <small>{hours(member.minutes.highOvertime)} / {premiumLabel(member, preview.rates.highOvertimePremiumRate)}</small></span><strong>{member.components.highOvertimePremium.toLocaleString("ja-JP")}円</strong></li>}
-            <li><span>深夜割増 <small>深夜 {hours(member.minutes.lateNight)} / {premiumLabel(member, preview.rates.lateNightPremiumRate)}</small></span><strong>{member.components.lateNightPremium.toLocaleString("ja-JP")}円</strong></li>
-            <li><span>法定休日割増 <small>法定休日 {hours(member.minutes.statutoryHoliday)} / {premiumLabel(member, preview.rates.statutoryHolidayPremiumRate)}</small></span><strong>{member.components.statutoryHolidayPremium.toLocaleString("ja-JP")}円</strong></li>
-            {member.components.adjustments !== 0 && <li><span>調整額</span><strong>{member.components.adjustments.toLocaleString("ja-JP")}円</strong></li>}
+          <div className={styles.revisionBox}><strong>金額内訳</strong><ul className={`${styles.historyList} ${styles.payBreakdownList}`}>
+            <li><div className={styles.payBreakdownTop}><strong>基本給</strong><strong>{member.components.basePay.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>実働 {hours(member.minutes.worked)} / {wageLabel(member)}</small></li>
+            <li><div className={styles.payBreakdownTop}><strong>時間外割増</strong><strong>{member.components.overtimePremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>法定時間外 {hours(ordinaryOvertimeMinutes)} / {premiumLabel(member, preview.rates.overtimePremiumRate)}</small></li>
+            {member.minutes.highOvertime > 0 && <li><div className={styles.payBreakdownTop}><strong>月60時間超割増</strong><strong>{member.components.highOvertimePremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>{hours(member.minutes.highOvertime)} / {premiumLabel(member, preview.rates.highOvertimePremiumRate)}</small></li>}
+            <li><div className={styles.payBreakdownTop}><strong>深夜割増</strong><strong>{member.components.lateNightPremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>深夜 {hours(member.minutes.lateNight)} / {premiumLabel(member, preview.rates.lateNightPremiumRate)}</small></li>
+            <li><div className={styles.payBreakdownTop}><strong>法定休日割増</strong><strong>{member.components.statutoryHolidayPremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>法定休日 {hours(member.minutes.statutoryHoliday)} / {premiumLabel(member, preview.rates.statutoryHolidayPremiumRate)}</small></li>
+            {member.components.adjustments !== 0 && <li><div className={styles.payBreakdownTop}><strong>調整額</strong><strong>{member.components.adjustments.toLocaleString("ja-JP")}円</strong></div></li>}
           </ul><p className={styles.revisionNote}>深夜時間は、通常労働・法定時間外・法定休日労働と重複する場合があります。</p>{member.reviewReasons.length > 0 && <><strong>要確認</strong><ul className={styles.historyList}>{member.reviewReasons.map((reason) => <li key={reason}><span>{reasonLabel(reason)}</span></li>)}</ul></>}</div>
         </article>;
       })}</div></section>
