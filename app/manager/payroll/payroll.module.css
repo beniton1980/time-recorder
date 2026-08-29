@@ -350,6 +350,29 @@
   text-align: right;
 }
 
+.payBreakdownList li {
+  display: grid;
+  gap: 5px;
+}
+
+.payBreakdownTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.payBreakdownTop strong:last-child {
+  white-space: nowrap;
+}
+
+.payBreakdownMeta {
+  display: block;
+  color: #666;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 640px) {
   .page,
   .previewPage {
@@ -396,5 +419,9 @@
 
   .historyList span {
     text-align: left;
+  }
+
+  .payBreakdownTop {
+    display: flex;
   }
 }
