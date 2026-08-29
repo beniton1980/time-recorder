@@ -3,54 +3,19 @@ import { enforceRateLimit } from "@/lib/api-security";
 import { getSql } from "@/lib/db";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
 import { logServerError } from "@/lib/safe-log";
-import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
-import { buildPayrollPreviewContext, calculateStaffPayrollPreview } from "@/lib/payroll-preview.mjs";
+import { calculatePayrollPreviewForStore } from "@/lib/payroll-preview-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
-
 type RequestBody = { idToken?: unknown; storeId?: unknown; periodStart?: unknown; periodEnd?: unknown };
-type WeekStartRule = "CALENDAR_DEFAULT" | "EXPLICIT_WEEKDAY" | "OTHER_REVIEW_REQUIRED";
-
-type SettingsRow = {
-  work_time_system: string;
-  week_start_rule: string;
-  week_starts_on: number;
-  overtime_month_rule: string;
-  statutory_holiday_rule: string;
-  statutory_holiday_weekday: number | null;
-  overtime_premium_rate: number;
-  high_overtime_premium_rate: number;
-  statutory_holiday_premium_rate: number;
-  late_night_premium_rate: number;
-};
-
-type StaffRow = { staff_id: string; legal_name: string; status: string };
-type TermRow = { id: string; staff_id: string; hourly_rate_yen: number; effective_from: string; effective_to: string | null };
-type CompensationTerm = { id: string; hourlyRate: number; effectiveFrom: string; effectiveTo: string | null };
 
 function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !isoDatePattern.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
-}
-
-function normalizeWeekStartRule(value: string | undefined): WeekStartRule {
-  if (value === "CALENDAR_DEFAULT" || value === "EXPLICIT_WEEKDAY") return value;
-  return "OTHER_REVIEW_REQUIRED";
-}
-
-function hourlyRatesUsed(days: Array<{ businessDate: string; workedMinutes: number | null }>, terms: CompensationTerm[], payStart: string, payEnd: string) {
-  const rates = new Set<number>();
-  for (const day of days) {
-    if (day.businessDate < payStart || day.businessDate > payEnd || day.workedMinutes == null) continue;
-    const matches = terms.filter((term) => term.effectiveFrom <= day.businessDate && (term.effectiveTo == null || day.businessDate <= term.effectiveTo));
-    if (matches.length === 1) rates.add(matches[0].hourlyRate);
-  }
-  return [...rates].sort((a, b) => a - b);
 }
 
 export async function POST(request: Request) {
@@ -69,119 +34,8 @@ export async function POST(request: Request) {
   try {
     const identity = await verifyLineIdToken(body.idToken);
     const sql = getSql({ mode: "manager", lineIdentity: identity.sub, storeId: body.storeId });
-    const [settingsRows, staffRows, termRows, manualHolidayRows, manualHolidayConfirmationRows] = await Promise.all([
-      sql`
-        SELECT work_time_system, week_start_rule, week_starts_on, overtime_month_rule,
-          statutory_holiday_rule, statutory_holiday_weekday,
-          overtime_premium_rate::float8 AS overtime_premium_rate,
-          high_overtime_premium_rate::float8 AS high_overtime_premium_rate,
-          statutory_holiday_premium_rate::float8 AS statutory_holiday_premium_rate,
-          late_night_premium_rate::float8 AS late_night_premium_rate
-        FROM payroll_store_settings
-        WHERE store_id = ${body.storeId}::uuid
-      `,
-      sql`
-        SELECT id AS staff_id, legal_name, status
-        FROM staff
-        WHERE store_id = ${body.storeId}::uuid
-          AND status IN ('active', 'inactive')
-        ORDER BY status ASC, created_at ASC
-      `,
-      sql`
-        SELECT id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text
-        FROM payroll_compensation_terms
-        WHERE store_id = ${body.storeId}::uuid
-        ORDER BY staff_id, effective_from ASC
-      `,
-      sql`
-        SELECT holiday_date::text AS holiday_date
-        FROM payroll_statutory_holidays
-        WHERE store_id = ${body.storeId}::uuid
-          AND holiday_date BETWEEN ${body.periodStart}::date - INTERVAL '40 days' AND ${body.periodEnd}::date
-        ORDER BY holiday_date
-      `,
-      sql`
-        SELECT to_char(holiday_month, 'YYYY-MM') AS holiday_month
-        FROM payroll_statutory_holiday_month_confirmations
-        WHERE store_id = ${body.storeId}::uuid
-          AND holiday_month BETWEEN date_trunc('month', (${body.periodStart}::date - INTERVAL '40 days'))::date
-                                AND date_trunc('month', ${body.periodEnd}::date)::date
-        ORDER BY holiday_month
-      `,
-    ]);
-
-    const row = (settingsRows[0] ?? null) as SettingsRow | null;
-    const settings = {
-      workTimeSystem: row?.work_time_system ?? "OTHER_REVIEW_REQUIRED",
-      weekStartRule: normalizeWeekStartRule(row?.week_start_rule),
-      weekStartsOn: row?.week_starts_on ?? 0,
-      overtimeMonthRule: row?.overtime_month_rule ?? "OTHER_REVIEW_REQUIRED",
-      statutoryHolidayRule: row?.statutory_holiday_rule ?? "OTHER_REVIEW_REQUIRED",
-      statutoryHolidayWeekday: row?.statutory_holiday_weekday ?? null,
-      overtimePremiumRate: row?.overtime_premium_rate ?? 0.25,
-      highOvertimePremiumRate: row?.high_overtime_premium_rate ?? 0.50,
-      statutoryHolidayPremiumRate: row?.statutory_holiday_premium_rate ?? 0.35,
-      lateNightPremiumRate: row?.late_night_premium_rate ?? 0.25,
-    };
-    const context = buildPayrollPreviewContext({
-      payPeriodStart: body.periodStart,
-      payPeriodEnd: body.periodEnd,
-      settings,
-      manualHolidayDates: manualHolidayRows.map((value) => String(value.holiday_date)),
-      manualHolidayConfirmedMonths: manualHolidayConfirmationRows.map((value) => String(value.holiday_month)),
-    });
-    const monthly = await loadMonthlyAttendance(sql as never, body.storeId, context.queryPeriod);
-    const staff = staffRows as StaffRow[];
-    const terms = termRows as TermRow[];
-
-    const results = staff.map((member) => {
-      const memberDays = monthly.days.filter((day) => day.staffId === member.staff_id);
-      const memberTerms: CompensationTerm[] = terms.filter((term) => term.staff_id === member.staff_id).map((term) => ({
-        id: term.id,
-        hourlyRate: Number(term.hourly_rate_yen),
-        effectiveFrom: term.effective_from,
-        effectiveTo: term.effective_to,
-      }));
-      const preview = calculateStaffPayrollPreview({ attendanceDays: memberDays, compensationTerms: memberTerms, settings, context });
-      const payableDayCount = memberDays.filter((day) => context.payPeriod.start <= day.businessDate && day.businessDate <= context.payPeriod.end && day.workedMinutes != null).length;
-      return {
-        staffId: member.staff_id,
-        legalName: member.legal_name,
-        staffStatus: member.status,
-        payableDayCount,
-        hourlyRatesUsed: hourlyRatesUsed(memberDays, memberTerms, context.payPeriod.start, context.payPeriod.end),
-        ...preview,
-      };
-    });
-
-    const visible = results.filter((result) => result.payableDayCount > 0 || result.staffStatus === "active");
-    return NextResponse.json({
-      ok: true,
-      mode: "PREVIEW_ONLY",
-      persisted: false,
-      period: context.payPeriod,
-      rates: {
-        overtimePremiumRate: settings.overtimePremiumRate,
-        highOvertimePremiumRate: settings.highOvertimePremiumRate,
-        statutoryHolidayPremiumRate: settings.statutoryHolidayPremiumRate,
-        lateNightPremiumRate: settings.lateNightPremiumRate,
-      },
-      context: {
-        queryPeriod: context.queryPeriod,
-        overtimeMonth: context.overtimeMonth,
-        payPeriodInsideOvertimeMonth: context.payPeriodInsideOvertimeMonth,
-        weekRuleSupported: context.weekRuleSupported,
-        manualHolidayMonthsComplete: context.manualHolidayMonthsComplete,
-        unconfirmedManualHolidayMonths: context.unconfirmedManualHolidayMonths,
-      },
-      staff: visible,
-      summary: {
-        staffCount: visible.length,
-        confirmedCount: visible.filter((result) => result.status === "CONFIRMED").length,
-        needsReviewCount: visible.filter((result) => result.status !== "CONFIRMED").length,
-        grossPay: visible.reduce((sum, result) => sum + result.grossPay, 0),
-      },
-    });
+    const preview = await calculatePayrollPreviewForStore(sql, body.storeId, body.periodStart, body.periodEnd);
+    return NextResponse.json({ ok: true, mode: "PREVIEW_ONLY", persisted: false, ...preview });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
