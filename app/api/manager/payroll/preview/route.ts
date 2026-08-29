@@ -30,6 +30,7 @@ type SettingsRow = {
 
 type StaffRow = { staff_id: string; legal_name: string; status: string };
 type TermRow = { id: string; staff_id: string; hourly_rate_yen: number; effective_from: string; effective_to: string | null };
+type CompensationTerm = { id: string; hourlyRate: number; effectiveFrom: string; effectiveTo: string | null };
 
 function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !isoDatePattern.test(value)) return false;
@@ -40,6 +41,16 @@ function validDate(value: unknown): value is string {
 function normalizeWeekStartRule(value: string | undefined): WeekStartRule {
   if (value === "CALENDAR_DEFAULT" || value === "EXPLICIT_WEEKDAY") return value;
   return "OTHER_REVIEW_REQUIRED";
+}
+
+function hourlyRatesUsed(days: Array<{ businessDate: string; workedMinutes: number | null }>, terms: CompensationTerm[], payStart: string, payEnd: string) {
+  const rates = new Set<number>();
+  for (const day of days) {
+    if (day.businessDate < payStart || day.businessDate > payEnd || day.workedMinutes == null) continue;
+    const matches = terms.filter((term) => term.effectiveFrom <= day.businessDate && (term.effectiveTo == null || day.businessDate <= term.effectiveTo));
+    if (matches.length === 1) rates.add(matches[0].hourlyRate);
+  }
+  return [...rates].sort((a, b) => a - b);
 }
 
 export async function POST(request: Request) {
@@ -116,7 +127,7 @@ export async function POST(request: Request) {
 
     const results = staff.map((member) => {
       const memberDays = monthly.days.filter((day) => day.staffId === member.staff_id);
-      const memberTerms = terms.filter((term) => term.staff_id === member.staff_id).map((term) => ({
+      const memberTerms: CompensationTerm[] = terms.filter((term) => term.staff_id === member.staff_id).map((term) => ({
         id: term.id,
         hourlyRate: Number(term.hourly_rate_yen),
         effectiveFrom: term.effective_from,
@@ -129,6 +140,7 @@ export async function POST(request: Request) {
         legalName: member.legal_name,
         staffStatus: member.status,
         payableDayCount,
+        hourlyRatesUsed: hourlyRatesUsed(memberDays, memberTerms, context.payPeriod.start, context.payPeriod.end),
         ...preview,
       };
     });
@@ -139,6 +151,12 @@ export async function POST(request: Request) {
       mode: "PREVIEW_ONLY",
       persisted: false,
       period: context.payPeriod,
+      rates: {
+        overtimePremiumRate: settings.overtimePremiumRate,
+        highOvertimePremiumRate: settings.highOvertimePremiumRate,
+        statutoryHolidayPremiumRate: settings.statutoryHolidayPremiumRate,
+        lateNightPremiumRate: settings.lateNightPremiumRate,
+      },
       context: {
         queryPeriod: context.queryPeriod,
         overtimeMonth: context.overtimeMonth,
