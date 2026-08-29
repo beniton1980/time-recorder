@@ -93,13 +93,21 @@ export async function POST(request: Request) {
     const action = typeof body.action === "string" ? body.action : "load";
 
     if (action === "load") {
-      const [settingsRows, staffRows, termRows, holidayRows] = await Promise.all([
+      const [settingsRows, staffRows, termRows, holidayRows, holidayConfirmationRows] = await Promise.all([
         sql`SELECT store_id, work_time_system, week_starts_on, overtime_month_rule, statutory_holiday_rule, statutory_holiday_weekday, overtime_premium_rate::float8 AS overtime_premium_rate, high_overtime_premium_rate::float8 AS high_overtime_premium_rate, statutory_holiday_premium_rate::float8 AS statutory_holiday_premium_rate, late_night_premium_rate::float8 AS late_night_premium_rate, rounding_mode FROM payroll_store_settings WHERE store_id = ${storeId}::uuid`,
         sql`SELECT id AS staff_id, legal_name, status FROM staff WHERE store_id = ${storeId}::uuid AND status IN ('active', 'inactive') ORDER BY status ASC, created_at ASC`,
         sql`SELECT id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at FROM payroll_compensation_terms WHERE store_id = ${storeId}::uuid ORDER BY staff_id, effective_from DESC, created_at DESC`,
         sql`SELECT holiday_date::text AS holiday_date FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid ORDER BY holiday_date DESC LIMIT 120`,
+        sql`SELECT to_char(holiday_month, 'YYYY-MM') AS holiday_month, confirmed_at FROM payroll_statutory_holiday_month_confirmations WHERE store_id = ${storeId}::uuid ORDER BY holiday_month DESC LIMIT 120`,
       ]);
-      return NextResponse.json({ ok: true, settings: settingsRows[0] ?? null, staff: staffRows, compensationTerms: termRows, statutoryHolidayDates: holidayRows.map((row) => row.holiday_date) });
+      return NextResponse.json({
+        ok: true,
+        settings: settingsRows[0] ?? null,
+        staff: staffRows,
+        compensationTerms: termRows,
+        statutoryHolidayDates: holidayRows.map((row) => row.holiday_date),
+        statutoryHolidayConfirmedMonths: holidayConfirmationRows.map((row) => row.holiday_month),
+      });
     }
 
     if (action === "saveStoreSettings") {
@@ -132,7 +140,14 @@ export async function POST(request: Request) {
         logServerError("manager_payroll_holiday_save_verification_failed");
         return NextResponse.json({ ok: false, code: "STATUTORY_HOLIDAY_SAVE_NOT_VERIFIED" }, { status: 503 });
       }
-      return NextResponse.json({ ok: true, statutoryHolidayDates: verifiedDates });
+      await sql`
+        INSERT INTO payroll_statutory_holiday_month_confirmations (store_id, holiday_month, confirmed_by_line_user_id, confirmed_at)
+        VALUES (${storeId}::uuid, ${monthStart}::date, ${identity.sub}, NOW())
+        ON CONFLICT (store_id, holiday_month) DO UPDATE SET
+          confirmed_by_line_user_id = EXCLUDED.confirmed_by_line_user_id,
+          confirmed_at = EXCLUDED.confirmed_at
+      `;
+      return NextResponse.json({ ok: true, statutoryHolidayDates: verifiedDates, statutoryHolidayMonthConfirmed: body.holidayMonth });
     }
 
     if (action === "addStatutoryHolidayDate") {

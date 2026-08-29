@@ -30,6 +30,7 @@ type PayrollData = {
   staff: Staff[];
   compensationTerms: CompensationTerm[];
   statutoryHolidayDates: string[];
+  statutoryHolidayConfirmedMonths: string[];
 };
 type WageDraft = { hourlyRate: string; effectiveFrom: string };
 
@@ -67,6 +68,7 @@ export default function PayrollSettingsPage() {
   const [statutoryHolidayWeekday, setStatutoryHolidayWeekday] = useState(0);
   const [holidayMonth, setHolidayMonth] = useState(todayJst().slice(0, 7));
   const [selectedHolidayDates, setSelectedHolidayDates] = useState<string[]>([]);
+  const [holidayMonthReviewed, setHolidayMonthReviewed] = useState(false);
   const [wageDrafts, setWageDrafts] = useState<Record<string, WageDraft>>({});
   const [revisionDrafts, setRevisionDrafts] = useState<Record<string, WageDraft>>({});
   const [savingInitialWages, setSavingInitialWages] = useState(false);
@@ -98,7 +100,8 @@ export default function PayrollSettingsPage() {
 
   useEffect(() => {
     setSelectedHolidayDates((data?.statutoryHolidayDates ?? []).filter((date) => date.startsWith(`${holidayMonth}-`)));
-  }, [data?.statutoryHolidayDates, holidayMonth]);
+    setHolidayMonthReviewed((data?.statutoryHolidayConfirmedMonths ?? []).includes(holidayMonth));
+  }, [data?.statutoryHolidayDates, data?.statutoryHolidayConfirmedMonths, holidayMonth]);
 
   async function api(body: Record<string, unknown>) {
     const idToken = liff.getIDToken();
@@ -152,6 +155,7 @@ export default function PayrollSettingsPage() {
       staff: result.staff,
       compensationTerms: result.compensationTerms,
       statutoryHolidayDates: result.statutoryHolidayDates ?? [],
+      statutoryHolidayConfirmedMonths: result.statutoryHolidayConfirmedMonths ?? [],
     };
     setData(next);
     setWorkTimeSystem(result.settings?.work_time_system ?? "OTHER_REVIEW_REQUIRED");
@@ -216,7 +220,7 @@ export default function PayrollSettingsPage() {
       setWeekStartRule(savedWeekBoundary.weekStartRule as WeekStartRule);
       setWeekStartsOn(Number(savedWeekBoundary.weekStartsOn ?? 0));
       let savedDates: string[] | null = null;
-      if (statutoryHolidayRule === "MANUAL_DATES") {
+      if (statutoryHolidayRule === "MANUAL_DATES" && holidayMonthReviewed) {
         const holidayResult = await api({ action: "saveStatutoryHolidayMonth", storeId, holidayMonth, holidayDates: selectedHolidayDates });
         savedDates = holidayResult.statutoryHolidayDates as string[];
       }
@@ -225,16 +229,23 @@ export default function PayrollSettingsPage() {
         const next = { ...current, settings: result.settings };
         if (!savedDates) return next;
         const outsideMonth = current.statutoryHolidayDates.filter((date) => !date.startsWith(`${holidayMonth}-`));
-        return { ...next, statutoryHolidayDates: [...outsideMonth, ...savedDates].sort() };
+        return {
+          ...next,
+          statutoryHolidayDates: [...outsideMonth, ...savedDates].sort(),
+          statutoryHolidayConfirmedMonths: [...new Set([...current.statutoryHolidayConfirmedMonths, holidayMonth])].sort(),
+        };
       });
       if (savedDates) setSelectedHolidayDates(savedDates);
-      setMessage(statutoryHolidayRule === "MANUAL_DATES" ? "店舗ルール・1週間の区切り・法定休日を保存しました。" : "店舗ルールと1週間の区切りを保存しました。");
+      if (statutoryHolidayRule !== "MANUAL_DATES") setMessage("店舗ルールと1週間の区切りを保存しました。");
+      else if (savedDates) setMessage(`店舗ルール・1週間の区切り・${holidayMonth}の法定休日（確認済み）を保存しました。`);
+      else setMessage("店舗ルールと1週間の区切りを保存しました。法定休日は「この月の法定休日をすべて確認しました」にチェックしていないため更新していません。");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "保存できませんでした。"); }
     finally { setSavingStore(false); }
   }
 
   function toggleHolidayDate(date: string) {
     setSelectedHolidayDates((current) => current.includes(date) ? current.filter((item) => item !== date) : [...current, date].sort());
+    setHolidayMonthReviewed(false);
   }
 
   async function saveInitialWages() {
@@ -331,7 +342,8 @@ export default function PayrollSettingsPage() {
             <div className={styles.calendarToolbar}><label>対象月<input type="month" value={holidayMonth} onChange={(event) => setHolidayMonth(event.target.value)} /></label><div className={styles.calendarSummary}>選択中 {selectedHolidayDates.length}日</div></div>
             <div className={styles.calendarWeekdays}>{shortWeekdays.map((name) => <span key={name}>{name}</span>)}</div>
             <div className={styles.calendarGrid}>{calendarBlanks.map((_, index) => <span className={styles.calendarBlank} key={`blank-${index}`} />)}{calendarDates.map((date) => { const selected = selectedHolidayDates.includes(date); return <button type="button" key={date} className={`${styles.calendarDay} ${selected ? styles.calendarDaySelected : ""}`} aria-pressed={selected} onClick={() => toggleHolidayDate(date)}>{Number(date.slice(-2))}</button>; })}</div>
-            <p className={styles.revisionNote}>日付を選んだら、この項目の下にある保存ボタンを1回押してください。選択した日付も同時に保存します。</p>
+            <label className={styles.label}><input type="checkbox" checked={holidayMonthReviewed} onChange={(event) => setHolidayMonthReviewed(event.target.checked)} /> この月の法定休日をすべて確認しました</label>
+            <p className={styles.revisionNote}>法定休日が0日でも、内容を確認してチェックしたうえで保存してください。日付を変更すると確認チェックは自動で外れます。</p>
           </div>
         )}
         <p className={styles.revisionNote}>法定休日は「店休日」と同じとは限りません。4週4休など固定曜日以外の複雑な制度は、v1では無理に自動判定せず要確認にします。</p>

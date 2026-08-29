@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   try {
     const identity = await verifyLineIdToken(body.idToken);
     const sql = getSql({ mode: "manager", lineIdentity: identity.sub, storeId: body.storeId });
-    const [settingsRows, staffRows, termRows, manualHolidayRows] = await Promise.all([
+    const [settingsRows, staffRows, termRows, manualHolidayRows, manualHolidayConfirmationRows] = await Promise.all([
       sql`
         SELECT work_time_system, week_start_rule, week_starts_on, overtime_month_rule,
           statutory_holiday_rule, statutory_holiday_weekday,
@@ -100,6 +100,14 @@ export async function POST(request: Request) {
           AND holiday_date BETWEEN ${body.periodStart}::date - INTERVAL '40 days' AND ${body.periodEnd}::date
         ORDER BY holiday_date
       `,
+      sql`
+        SELECT to_char(holiday_month, 'YYYY-MM') AS holiday_month
+        FROM payroll_statutory_holiday_month_confirmations
+        WHERE store_id = ${body.storeId}::uuid
+          AND holiday_month BETWEEN date_trunc('month', (${body.periodStart}::date - INTERVAL '40 days'))::date
+                                AND date_trunc('month', ${body.periodEnd}::date)::date
+        ORDER BY holiday_month
+      `,
     ]);
 
     const row = (settingsRows[0] ?? null) as SettingsRow | null;
@@ -120,6 +128,7 @@ export async function POST(request: Request) {
       payPeriodEnd: body.periodEnd,
       settings,
       manualHolidayDates: manualHolidayRows.map((value) => String(value.holiday_date)),
+      manualHolidayConfirmedMonths: manualHolidayConfirmationRows.map((value) => String(value.holiday_month)),
     });
     const monthly = await loadMonthlyAttendance(sql as never, body.storeId, context.queryPeriod);
     const staff = staffRows as StaffRow[];
@@ -162,6 +171,8 @@ export async function POST(request: Request) {
         overtimeMonth: context.overtimeMonth,
         payPeriodInsideOvertimeMonth: context.payPeriodInsideOvertimeMonth,
         weekRuleSupported: context.weekRuleSupported,
+        manualHolidayMonthsComplete: context.manualHolidayMonthsComplete,
+        unconfirmedManualHolidayMonths: context.unconfirmedManualHolidayMonths,
       },
       staff: visible,
       summary: {

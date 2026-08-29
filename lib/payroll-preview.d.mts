@@ -11,6 +11,8 @@ export type PayrollPreviewContext = {
   holidayRuleSupported: boolean;
   weekRuleSupported: boolean;
   weekStartsOn: number;
+  manualHolidayMonthsComplete: boolean;
+  unconfirmedManualHolidayMonths: string[];
 };
 
 export type PayrollPreviewSettings = {
@@ -31,6 +33,7 @@ export function buildPayrollPreviewContext(input: {
   payPeriodEnd: string;
   settings?: PayrollPreviewSettings;
   manualHolidayDates?: string[];
+  manualHolidayConfirmedMonths?: string[];
 }): PayrollPreviewContext;
 
 export function calculateStaffPayrollPreview(input: {

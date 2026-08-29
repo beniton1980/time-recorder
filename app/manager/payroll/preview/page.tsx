@@ -47,6 +47,7 @@ function reasonLabel(code: string) {
     OVERTIME_MONTH_CONTEXT_INCOMPLETE: "月60時間判定の期間が不足",
     PAY_PERIOD_CROSSES_OVERTIME_MONTH_BOUNDARY: "給与期間が残業判定月をまたいでいる",
     STATUTORY_HOLIDAY_RULE_MISSING: "法定休日が未確定",
+    STATUTORY_HOLIDAY_MONTH_UNCONFIRMED: "法定休日を確認していない月がある",
     OVERTIME_MONTH_RULE_MISSING: "月60時間の区切りが未確定",
     WEEK_START_RULE_MISSING: "1週間の区切りが未確定",
     ATTENDANCE_NEEDS_REVIEW: "勤怠に要確認あり",

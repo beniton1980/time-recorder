@@ -42,3 +42,16 @@ test("payroll settings fail closed for unsupported work-time systems", async () 
   assert.match(migration, /OTHER_REVIEW_REQUIRED/);
   assert.match(migration, /week_starts_on SMALLINT/);
 });
+
+test("monthly statutory holiday confirmations are manager-scoped and auditable", async () => {
+  const migration = await source("db/migrations/0034_payroll_statutory_holiday_month_confirmations.sql");
+  assert.match(migration, /CREATE TABLE public\.payroll_statutory_holiday_month_confirmations/);
+  assert.match(migration, /PRIMARY KEY \(store_id, holiday_month\)/);
+  assert.match(migration, /confirmed_by_line_user_id TEXT NOT NULL/);
+  assert.match(migration, /confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW\(\)/);
+  assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /FORCE ROW LEVEL SECURITY/);
+  assert.match(migration, /app_manager_store_allowed\(store_id\)/);
+  assert.match(migration, /REVOKE ALL ON public\.payroll_statutory_holiday_month_confirmations FROM PUBLIC/);
+  assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON public\.payroll_statutory_holiday_month_confirmations TO onogami_app/);
+});
