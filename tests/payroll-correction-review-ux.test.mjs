@@ -51,14 +51,25 @@ test("payroll preview keeps time context inside money breakdown", async () => {
   assert.doesNotMatch(page, /確認不要/);
   assert.doesNotMatch(page, />時間内訳</);
   assert.match(page, /金額内訳/);
-  assert.match(page, /基本給 <small>実働/);
-  assert.match(page, /時間外割増 <small>法定時間外/);
+  assert.match(page, /payBreakdownTop/);
+  assert.match(page, /payBreakdownMeta/);
+  assert.match(page, /<strong>基本給<\/strong><strong>/);
+  assert.match(page, /実働 \{hours\(member\.minutes\.worked\)\} \/ \{wageLabel\(member\)\}/);
+  assert.match(page, /<strong>時間外割増<\/strong><strong>/);
+  assert.match(page, /法定時間外 \{hours\(ordinaryOvertimeMinutes\)\}/);
   assert.match(page, /月60時間超割増/);
-  assert.match(page, /深夜割増 <small>深夜/);
-  assert.match(page, /法定休日割増 <small>法定休日/);
+  assert.match(page, /深夜割増/);
+  assert.match(page, /法定休日割増/);
   assert.match(page, /加算 .*円\/時/);
   assert.match(page, /期間内で時給変更あり/);
   assert.match(page, /深夜時間は、通常労働・法定時間外・法定休日労働と重複する場合があります/);
   assert.match(route, /hourlyRatesUsed/);
   assert.match(route, /rates:/);
+});
+
+test("payroll breakdown uses two-row layout styles", async () => {
+  const css = await source("app/manager/payroll/payroll.module.css");
+  assert.match(css, /\.payBreakdownList li\s*\{[\s\S]*display:\s*grid/);
+  assert.match(css, /\.payBreakdownTop\s*\{[\s\S]*display:\s*flex/);
+  assert.match(css, /\.payBreakdownMeta\s*\{[\s\S]*display:\s*block/);
 });
