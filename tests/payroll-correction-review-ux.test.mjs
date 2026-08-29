@@ -46,7 +46,7 @@ test("attendance navigation has explicit destinations", async () => {
 
 test("payroll preview keeps time context inside money breakdown", async () => {
   const page = await source("app/manager/payroll/preview/page.tsx");
-  const route = await source("app/api/manager/payroll/preview/route.ts");
+  const service = await source("lib/payroll-preview-server.ts");
   assert.match(page, /要確認なし/);
   assert.doesNotMatch(page, /確認不要/);
   assert.doesNotMatch(page, />時間内訳</);
@@ -63,8 +63,8 @@ test("payroll preview keeps time context inside money breakdown", async () => {
   assert.match(page, /加算 .*円\/時/);
   assert.match(page, /期間内で時給変更あり/);
   assert.match(page, /深夜時間は、通常労働・法定時間外・法定休日労働と重複する場合があります/);
-  assert.match(route, /hourlyRatesUsed/);
-  assert.match(route, /rates:/);
+  assert.match(service, /hourlyRatesUsed/);
+  assert.match(service, /rates:/);
 });
 
 test("payroll review amounts are explicitly marked as unconfirmed reference values", async () => {
