@@ -18,6 +18,13 @@ type CompensationTerm = {
   effective_from: string;
   effective_to: string | null;
 };
+type OtherEmploymentStatus = "NONE" | "HAS_OTHER_EMPLOYER" | "UNKNOWN";
+type OtherEmploymentConfirmation = {
+  staff_id: string;
+  status: OtherEmploymentStatus;
+  confirmed_at: string;
+  confirmation_current: boolean;
+};
 type Settings = {
   store_id: string;
   work_time_system: "STANDARD_40H" | "SPECIAL_44H" | "OTHER_REVIEW_REQUIRED";
@@ -31,6 +38,7 @@ type PayrollData = {
   compensationTerms: CompensationTerm[];
   statutoryHolidayDates: string[];
   statutoryHolidayConfirmedMonths: string[];
+  otherEmploymentConfirmations: OtherEmploymentConfirmation[];
 };
 type WageDraft = { hourlyRate: string; effectiveFrom: string };
 
@@ -75,6 +83,8 @@ export default function PayrollSettingsPage() {
   const [revisingStaffId, setRevisingStaffId] = useState<string | null>(null);
   const [showHistoryFor, setShowHistoryFor] = useState<string | null>(null);
   const [savedInitialStaffIds, setSavedInitialStaffIds] = useState<string[]>([]);
+  const [otherEmploymentDrafts, setOtherEmploymentDrafts] = useState<Record<string, OtherEmploymentStatus>>({});
+  const [savingOtherEmploymentStaffId, setSavingOtherEmploymentStaffId] = useState<string | null>(null);
 
   const termsByStaff = useMemo(() => {
     const map = new Map<string, CompensationTerm[]>();
@@ -156,6 +166,7 @@ export default function PayrollSettingsPage() {
       compensationTerms: result.compensationTerms,
       statutoryHolidayDates: result.statutoryHolidayDates ?? [],
       statutoryHolidayConfirmedMonths: result.statutoryHolidayConfirmedMonths ?? [],
+      otherEmploymentConfirmations: result.otherEmploymentConfirmations ?? [],
     };
     setData(next);
     setWorkTimeSystem(result.settings?.work_time_system ?? "OTHER_REVIEW_REQUIRED");
@@ -174,6 +185,10 @@ export default function PayrollSettingsPage() {
       for (const staff of next.staff) revisions[staff.staff_id] = preserveDrafts && current[staff.staff_id] ? current[staff.staff_id] : { hourlyRate: "", effectiveFrom: todayJst() };
       return revisions;
     });
+    setOtherEmploymentDrafts(Object.fromEntries(next.staff.map((staff) => {
+      const confirmation = next.otherEmploymentConfirmations.find((item) => item.staff_id === staff.staff_id);
+      return [staff.staff_id, confirmation?.status ?? "UNKNOWN"];
+    })));
     if (!preserveDrafts) setSavedInitialStaffIds([]);
     setMessage("");
   }
@@ -301,6 +316,25 @@ export default function PayrollSettingsPage() {
     finally { setRevisingStaffId(null); }
   }
 
+  async function confirmOtherEmployment(staffId: string) {
+    const otherEmploymentStatus = otherEmploymentDrafts[staffId];
+    if (!storeId || !otherEmploymentStatus) return;
+    setSavingOtherEmploymentStaffId(staffId); setError(null);
+    try {
+      const result = await api({ action: "confirmOtherEmployment", storeId, staffId, otherEmploymentStatus });
+      const saved = result.otherEmploymentConfirmation as OtherEmploymentConfirmation;
+      setData((current) => current ? {
+        ...current,
+        otherEmploymentConfirmations: [
+          ...current.otherEmploymentConfirmations.filter((item) => item.staff_id !== staffId),
+          saved,
+        ],
+      } : current);
+      setMessage("他の勤務先の状況を確認済みとして保存しました。状況が変わったときはいつでも更新してください。");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "他の勤務先の状況を保存できませんでした。"); }
+    finally { setSavingOtherEmploymentStaffId(null); }
+  }
+
   const unregisteredCount = (data?.staff ?? []).filter((staff) => !currentTerms.has(staff.staff_id)).length;
 
   return (
@@ -351,7 +385,35 @@ export default function PayrollSettingsPage() {
       </section>
 
       <section className={styles.card}>
-        <h2>2. スタッフの時給</h2>
+        <h2>2. 他の勤務先の確認</h2>
+        <p className={styles.help}>入社時に確認し、副業の開始・終了など状況が変わったときは更新してください。最終確認から6か月を過ぎると、給与は要確認になり保存できません。</p>
+        <div className={styles.staffList}>
+          {(data?.staff ?? []).map((staff) => {
+            const confirmation = data?.otherEmploymentConfirmations.find((item) => item.staff_id === staff.staff_id);
+            const draft = otherEmploymentDrafts[staff.staff_id] ?? "UNKNOWN";
+            const confirmedLabel = confirmation
+              ? `${new Date(confirmation.confirmed_at).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })} 確認${confirmation.confirmation_current ? "" : "（再確認期限切れ）"}`
+              : "未確認";
+            return <article className={styles.staffRow} key={staff.staff_id}>
+              <div className={styles.staffIdentity}><strong>{staff.legal_name}</strong><span className={styles.inactive}>{confirmedLabel}</span></div>
+              <div className={styles.inputs}>
+                <label>他の雇用主の勤務先
+                  <select value={draft} onChange={(event) => setOtherEmploymentDrafts((current) => ({ ...current, [staff.staff_id]: event.target.value as OtherEmploymentStatus }))}>
+                    <option value="NONE">なし</option>
+                    <option value="HAS_OTHER_EMPLOYER">あり</option>
+                    <option value="UNKNOWN">わからない</option>
+                  </select>
+                </label>
+                <button className={styles.secondaryButton} disabled={savingOtherEmploymentStaffId === staff.staff_id} onClick={() => void confirmOtherEmployment(staff.staff_id)}>{savingOtherEmploymentStaffId === staff.staff_id ? "保存中…" : "確認済みとして保存"}</button>
+              </div>
+              {draft !== "NONE" && <p className={styles.revisionNote}>給与額は参考値として表示しますが、労働時間の通算確認が必要なため保存は止まります。</p>}
+            </article>;
+          })}
+        </div>
+      </section>
+
+      <section className={styles.card}>
+        <h2>3. スタッフの時給</h2>
         <p className={styles.help}>未登録のスタッフは必要な人をまとめて入力し、最後に1回で登録できます。時給を変更するときは上書きせず、改定日で履歴を分けます。履歴を残すことで、過去月の再集計でも当時の時給を使えます。</p>
         <div className={styles.staffList}>
           {(data?.staff ?? []).map((staff) => {

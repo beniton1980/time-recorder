@@ -14,7 +14,14 @@ type SettingsRow = {
   statutory_holiday_premium_rate: number;
   late_night_premium_rate: number;
 };
-type StaffRow = { staff_id: string; legal_name: string; status: string };
+type StaffRow = {
+  staff_id: string;
+  legal_name: string;
+  status: string;
+  other_employment_status: "NONE" | "HAS_OTHER_EMPLOYER" | "UNKNOWN" | null;
+  other_employment_confirmed_at: string | null;
+  other_employment_confirmation_current: boolean;
+};
 type TermRow = { id: string; staff_id: string; hourly_rate_yen: number; effective_from: string; effective_to: string | null };
 type CompensationTerm = { id: string; hourlyRate: number; effectiveFrom: string; effectiveTo: string | null };
 
@@ -46,11 +53,16 @@ export async function calculatePayrollPreviewForStore(sql: any, storeId: string,
       WHERE store_id = ${storeId}::uuid
     `,
     sql`
-      SELECT id AS staff_id, legal_name, status
-      FROM staff
-      WHERE store_id = ${storeId}::uuid
-        AND status IN ('active', 'inactive')
-      ORDER BY status ASC, created_at ASC
+      SELECT st.id AS staff_id, st.legal_name, st.status,
+        confirmation.status AS other_employment_status,
+        confirmation.confirmed_at::text AS other_employment_confirmed_at,
+        COALESCE(confirmation.confirmed_at >= NOW() - INTERVAL '6 months', false) AS other_employment_confirmation_current
+      FROM staff st
+      LEFT JOIN staff_other_employment_confirmations confirmation
+        ON confirmation.store_id = st.store_id AND confirmation.staff_id = st.id
+      WHERE st.store_id = ${storeId}::uuid
+        AND st.status IN ('active', 'inactive')
+      ORDER BY st.status ASC, st.created_at ASC
     `,
     sql`
       SELECT id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text
@@ -107,7 +119,22 @@ export async function calculatePayrollPreviewForStore(sql: any, storeId: string,
       effectiveFrom: term.effective_from,
       effectiveTo: term.effective_to,
     }));
-    const preview = calculateStaffPayrollPreview({ attendanceDays: memberDays, compensationTerms: memberTerms, settings, context });
+    const calculated = calculateStaffPayrollPreview({ attendanceDays: memberDays, compensationTerms: memberTerms, settings, context });
+    const otherEmploymentReason = member.other_employment_status == null
+      ? "OTHER_EMPLOYMENT_UNCONFIRMED"
+      : !member.other_employment_confirmation_current
+        ? "OTHER_EMPLOYMENT_CONFIRMATION_EXPIRED"
+        : member.other_employment_status === "HAS_OTHER_EMPLOYER"
+          ? "OTHER_EMPLOYMENT_PRESENT"
+          : member.other_employment_status === "UNKNOWN"
+            ? "OTHER_EMPLOYMENT_UNKNOWN"
+            : null;
+    const reviewReasons = [...new Set([...calculated.reviewReasons, ...(otherEmploymentReason ? [otherEmploymentReason] : [])])];
+    const preview = {
+      ...calculated,
+      status: calculated.status === "CONFIRMED" && otherEmploymentReason ? "NEEDS_REVIEW" as const : calculated.status,
+      reviewReasons,
+    };
     const payableDayCount = memberDays.filter((day) => context.payPeriod.start <= day.businessDate && day.businessDate <= context.payPeriod.end && day.workedMinutes != null).length;
     return {
       staffId: member.staff_id,
@@ -115,6 +142,11 @@ export async function calculatePayrollPreviewForStore(sql: any, storeId: string,
       staffStatus: member.status,
       payableDayCount,
       hourlyRatesUsed: hourlyRatesUsed(memberDays, memberTerms, context.payPeriod.start, context.payPeriod.end),
+      otherEmployment: {
+        status: member.other_employment_status,
+        confirmedAt: member.other_employment_confirmed_at,
+        confirmationCurrent: member.other_employment_confirmation_current,
+      },
       ...preview,
     };
   });
