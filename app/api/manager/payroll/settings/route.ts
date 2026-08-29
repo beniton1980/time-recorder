@@ -13,6 +13,7 @@ const isoMonthPattern = /^\d{4}-\d{2}$/;
 const supportedWorkTimeSystems = new Set(["STANDARD_40H", "SPECIAL_44H", "OTHER_REVIEW_REQUIRED"]);
 const supportedOvertimeMonthRules = new Set(["PAY_PERIOD", "CALENDAR_MONTH", "OTHER_REVIEW_REQUIRED"]);
 const supportedStatutoryHolidayRules = new Set(["FIXED_WEEKDAY", "MANUAL_DATES", "OTHER_REVIEW_REQUIRED"]);
+const supportedOtherEmploymentStatuses = new Set(["NONE", "HAS_OTHER_EMPLOYER", "UNKNOWN"]);
 
 type RequestBody = {
   idToken?: unknown;
@@ -29,6 +30,7 @@ type RequestBody = {
   hourlyRateYen?: unknown;
   effectiveFrom?: unknown;
   initialCompensationTerms?: unknown;
+  otherEmploymentStatus?: unknown;
 };
 
 type ValidCompensationBody = RequestBody & { staffId: string; hourlyRateYen: number; effectiveFrom: string };
@@ -93,12 +95,13 @@ export async function POST(request: Request) {
     const action = typeof body.action === "string" ? body.action : "load";
 
     if (action === "load") {
-      const [settingsRows, staffRows, termRows, holidayRows, holidayConfirmationRows] = await Promise.all([
+      const [settingsRows, staffRows, termRows, holidayRows, holidayConfirmationRows, otherEmploymentRows] = await Promise.all([
         sql`SELECT store_id, work_time_system, week_starts_on, overtime_month_rule, statutory_holiday_rule, statutory_holiday_weekday, overtime_premium_rate::float8 AS overtime_premium_rate, high_overtime_premium_rate::float8 AS high_overtime_premium_rate, statutory_holiday_premium_rate::float8 AS statutory_holiday_premium_rate, late_night_premium_rate::float8 AS late_night_premium_rate, rounding_mode FROM payroll_store_settings WHERE store_id = ${storeId}::uuid`,
         sql`SELECT id AS staff_id, legal_name, status FROM staff WHERE store_id = ${storeId}::uuid AND status IN ('active', 'inactive') ORDER BY status ASC, created_at ASC`,
         sql`SELECT id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at FROM payroll_compensation_terms WHERE store_id = ${storeId}::uuid ORDER BY staff_id, effective_from DESC, created_at DESC`,
         sql`SELECT holiday_date::text AS holiday_date FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid ORDER BY holiday_date DESC LIMIT 120`,
         sql`SELECT to_char(holiday_month, 'YYYY-MM') AS holiday_month, confirmed_at FROM payroll_statutory_holiday_month_confirmations WHERE store_id = ${storeId}::uuid ORDER BY holiday_month DESC LIMIT 120`,
+        sql`SELECT staff_id, status, confirmed_at, confirmed_by_line_user_id, confirmed_at >= NOW() - INTERVAL '6 months' AS confirmation_current FROM staff_other_employment_confirmations WHERE store_id = ${storeId}::uuid ORDER BY confirmed_at DESC`,
       ]);
       return NextResponse.json({
         ok: true,
@@ -107,7 +110,30 @@ export async function POST(request: Request) {
         compensationTerms: termRows,
         statutoryHolidayDates: holidayRows.map((row) => row.holiday_date),
         statutoryHolidayConfirmedMonths: holidayConfirmationRows.map((row) => row.holiday_month),
+        otherEmploymentConfirmations: otherEmploymentRows,
       });
+    }
+
+    if (action === "confirmOtherEmployment") {
+      if (typeof body.staffId !== "string" || !uuidPattern.test(body.staffId)
+          || typeof body.otherEmploymentStatus !== "string" || !supportedOtherEmploymentStatuses.has(body.otherEmploymentStatus)) {
+        return NextResponse.json({ ok: false, code: "INVALID_OTHER_EMPLOYMENT_CONFIRMATION" }, { status: 400 });
+      }
+      const staffRows = await sql`SELECT id FROM staff WHERE id = ${body.staffId}::uuid AND store_id = ${storeId}::uuid AND status IN ('active', 'inactive') LIMIT 1`;
+      if (staffRows.length !== 1) return NextResponse.json({ ok: false, code: "STAFF_NOT_FOUND" }, { status: 404 });
+      const rows = await sql`
+        INSERT INTO staff_other_employment_confirmations (
+          store_id, staff_id, status, confirmed_by_line_user_id, confirmed_at
+        ) VALUES (
+          ${storeId}::uuid, ${body.staffId}::uuid, ${body.otherEmploymentStatus}, ${identity.sub}, NOW()
+        )
+        ON CONFLICT (store_id, staff_id) DO UPDATE SET
+          status = EXCLUDED.status,
+          confirmed_by_line_user_id = EXCLUDED.confirmed_by_line_user_id,
+          confirmed_at = EXCLUDED.confirmed_at
+        RETURNING staff_id, status, confirmed_at, confirmed_by_line_user_id, true AS confirmation_current
+      `;
+      return NextResponse.json({ ok: true, otherEmploymentConfirmation: rows[0] });
     }
 
     if (action === "saveStoreSettings") {
