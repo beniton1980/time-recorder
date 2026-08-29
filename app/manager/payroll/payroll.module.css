@@ -361,14 +361,15 @@
 }
 
 .payBreakdownTop {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 12em) 7em;
   gap: 12px;
   align-items: baseline;
+  justify-content: start;
+  max-width: 100%;
 }
 
 .payBreakdownTop strong:last-child {
-  min-width: 7em;
   text-align: right;
   white-space: nowrap;
 }
@@ -429,6 +430,6 @@
   }
 
   .payBreakdownTop {
-    display: flex;
+    grid-template-columns: minmax(0, 12em) 7em;
   }
 }
