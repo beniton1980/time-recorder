@@ -162,8 +162,8 @@ export default function PayrollPreviewPage() {
     {preview && <>
       <section className={`${styles.card} ${styles.summaryCard}`}>
         <h2>集計結果</h2>
-        <div className={styles.registered}><span>{monthLabel(payrollMonth)} / {preview.period.start} 〜 {preview.period.end}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>要確認なし {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div>
-        <p className={styles.revisionNote}>{preview.summary.needsReviewCount === 0 ? "保存時にサーバー側でもう一度再計算し、その時点の時給・時間内訳・金額内訳を履歴として残します。" : "要確認事項をすべて解消して再計算すると、給与集計結果を保存できます。"}</p>
+        <div className={styles.registered}><span>{preview.summary.needsReviewCount === 0 ? `${monthLabel(payrollMonth)} / ${preview.period.start} 〜 ${preview.period.end}` : "控除前の総支給額（合計・参考値・未確定）"}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>要確認なし {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div>
+        <p className={styles.revisionNote}>{preview.summary.needsReviewCount === 0 ? "保存時にサーバー側でもう一度再計算し、その時点の時給・時間内訳・金額内訳を履歴として残します。" : "要確認のスタッフが含まれるため、この合計金額は参考値です。すべて解消して再計算すると、給与集計結果を保存できます。"}</p>
         <button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={saving || preview.summary.needsReviewCount > 0 || preview.summary.staffCount === 0} onClick={() => void savePayroll()}>{saving ? "保存前に再計算中…" : preview.summary.needsReviewCount > 0 ? "要確認を解消してから保存" : "この給与集計結果を保存"}</button>
       </section>
       <section className={styles.card}><h2>スタッフ別</h2><div className={styles.staffGrid}>{preview.staff.map((member) => {
