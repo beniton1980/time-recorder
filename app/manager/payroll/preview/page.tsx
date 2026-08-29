@@ -8,11 +8,12 @@ const LIFF_ID = "2010761826-6FNSE1PD";
 type Membership = { store_id: string; store_name: string };
 type PreviewStaff = {
   staffId: string; legalName: string; payableDayCount: number; status: "CONFIRMED" | "NEEDS_REVIEW";
-  reviewReasons: string[]; grossPay: number;
+  reviewReasons: string[]; grossPay: number; hourlyRatesUsed: number[];
   minutes: { worked: number; statutoryOvertime: number; highOvertime: number; statutoryHoliday: number; lateNight: number };
   components: { basePay: number; overtimePremium: number; highOvertimePremium: number; statutoryHolidayPremium: number; lateNightPremium: number; adjustments: number };
 };
-type Preview = { period: { start: string; end: string }; staff: PreviewStaff[]; summary: { staffCount: number; confirmedCount: number; needsReviewCount: number; grossPay: number } };
+type PreviewRates = { overtimePremiumRate: number; highOvertimePremiumRate: number; statutoryHolidayPremiumRate: number; lateNightPremiumRate: number };
+type Preview = { period: { start: string; end: string }; rates: PreviewRates; staff: PreviewStaff[]; summary: { staffCount: number; confirmedCount: number; needsReviewCount: number; grossPay: number } };
 type PayrollPeriod = { start: string; end: string };
 type PeriodResponse = { period: PayrollPeriod; payrollMonth: string };
 
@@ -24,8 +25,22 @@ function monthLabel(value: string) {
   const [year, month] = value.split("-");
   return `${Number(year)}年${Number(month)}月度`;
 }
-function regularMinutes(member: PreviewStaff) {
-  return Math.max(0, member.minutes.worked - member.minutes.statutoryOvertime - member.minutes.statutoryHoliday);
+function percent(rate: number) {
+  return `${Math.round(rate * 100)}%`;
+}
+function wageLabel(member: PreviewStaff) {
+  if (member.hourlyRatesUsed.length === 1) return `時給 ${member.hourlyRatesUsed[0].toLocaleString("ja-JP")}円`;
+  if (member.hourlyRatesUsed.length > 1) return "期間内で時給変更あり";
+  return "時給を確認できません";
+}
+function premiumLabel(member: PreviewStaff, rate: number) {
+  if (member.hourlyRatesUsed.length === 1) {
+    const hourlyRate = member.hourlyRatesUsed[0];
+    const addYen = Math.round(hourlyRate * rate);
+    return `+${percent(rate)}・加算 ${addYen.toLocaleString("ja-JP")}円/時`;
+  }
+  if (member.hourlyRatesUsed.length > 1) return `+${percent(rate)}・期間内で時給変更あり`;
+  return `+${percent(rate)}`;
 }
 function reasonLabel(code: string) {
   const labels: Record<string, string> = {
@@ -117,12 +132,21 @@ export default function PayrollPreviewPage() {
     {loading && <p className={styles.message}>給与を計算しています…</p>}
     {preview && <>
       <section className={`${styles.card} ${styles.summaryCard}`}><h2>集計結果</h2><div className={styles.registered}><span>{monthLabel(payrollMonth)} / {preview.period.start} 〜 {preview.period.end}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>要確認なし {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div></section>
-      <section className={styles.card}><h2>スタッフ別</h2><div className={styles.staffGrid}>{preview.staff.map((member) => <article className={styles.staffResultCard} key={member.staffId}>
-        <div className={styles.staffIdentity}><strong>{member.legalName}</strong><span className={styles.inactive}>{member.status === "CONFIRMED" ? "要確認なし" : `要確認 ${member.reviewReasons.length}件`}</span></div>
-        <div className={styles.registered}><span>控除前の総支給額</span><strong>{member.grossPay.toLocaleString("ja-JP")}円</strong><small>{member.payableDayCount}日 / 実働 {hours(member.minutes.worked)}</small></div>
-        <div className={styles.revisionBox}><strong>時間内訳</strong><ul className={styles.historyList}><li><span>実働</span><strong>{hours(member.minutes.worked)}</strong></li><li><span>通常労働</span><strong>{hours(regularMinutes(member))}</strong></li><li><span>法定時間外</span><strong>{hours(member.minutes.statutoryOvertime)}</strong></li>{member.minutes.highOvertime > 0 && <li><span>うち月60時間超</span><strong>{hours(member.minutes.highOvertime)}</strong></li>}<li><span>法定休日労働</span><strong>{hours(member.minutes.statutoryHoliday)}</strong></li><li><span>深夜労働</span><strong>{hours(member.minutes.lateNight)}</strong></li></ul><p className={styles.revisionNote}>深夜労働は、通常労働・法定時間外・法定休日労働と重複する場合があります。</p></div>
-        <div className={styles.revisionBox}><strong>金額内訳</strong><ul className={styles.historyList}><li><span>基本給 <small>実働 {hours(member.minutes.worked)}</small></span><strong>{member.components.basePay.toLocaleString("ja-JP")}円</strong></li><li><span>時間外割増 <small>法定時間外 {hours(member.minutes.statutoryOvertime)}</small></span><strong>{(member.components.overtimePremium + member.components.highOvertimePremium).toLocaleString("ja-JP")}円</strong></li><li><span>深夜割増 <small>深夜 {hours(member.minutes.lateNight)}</small></span><strong>{member.components.lateNightPremium.toLocaleString("ja-JP")}円</strong></li><li><span>法定休日割増 <small>法定休日 {hours(member.minutes.statutoryHoliday)}</small></span><strong>{member.components.statutoryHolidayPremium.toLocaleString("ja-JP")}円</strong></li>{member.components.adjustments !== 0 && <li><span>調整額</span><strong>{member.components.adjustments.toLocaleString("ja-JP")}円</strong></li>}</ul>{member.reviewReasons.length > 0 && <><strong>要確認</strong><ul className={styles.historyList}>{member.reviewReasons.map((reason) => <li key={reason}><span>{reasonLabel(reason)}</span></li>)}</ul></>}</div>
-      </article>)}</div></section>
+      <section className={styles.card}><h2>スタッフ別</h2><div className={styles.staffGrid}>{preview.staff.map((member) => {
+        const ordinaryOvertimeMinutes = Math.max(0, member.minutes.statutoryOvertime - member.minutes.highOvertime);
+        return <article className={styles.staffResultCard} key={member.staffId}>
+          <div className={styles.staffIdentity}><strong>{member.legalName}</strong><span className={styles.inactive}>{member.status === "CONFIRMED" ? "要確認なし" : `要確認 ${member.reviewReasons.length}件`}</span></div>
+          <div className={styles.registered}><span>控除前の総支給額</span><strong>{member.grossPay.toLocaleString("ja-JP")}円</strong><small>{member.payableDayCount}日 / 実働 {hours(member.minutes.worked)}</small></div>
+          <div className={styles.revisionBox}><strong>金額内訳</strong><ul className={styles.historyList}>
+            <li><span>基本給 <small>実働 {hours(member.minutes.worked)} / {wageLabel(member)}</small></span><strong>{member.components.basePay.toLocaleString("ja-JP")}円</strong></li>
+            <li><span>時間外割増 <small>法定時間外 {hours(ordinaryOvertimeMinutes)} / {premiumLabel(member, preview.rates.overtimePremiumRate)}</small></span><strong>{member.components.overtimePremium.toLocaleString("ja-JP")}円</strong></li>
+            {member.minutes.highOvertime > 0 && <li><span>月60時間超割増 <small>{hours(member.minutes.highOvertime)} / {premiumLabel(member, preview.rates.highOvertimePremiumRate)}</small></span><strong>{member.components.highOvertimePremium.toLocaleString("ja-JP")}円</strong></li>}
+            <li><span>深夜割増 <small>深夜 {hours(member.minutes.lateNight)} / {premiumLabel(member, preview.rates.lateNightPremiumRate)}</small></span><strong>{member.components.lateNightPremium.toLocaleString("ja-JP")}円</strong></li>
+            <li><span>法定休日割増 <small>法定休日 {hours(member.minutes.statutoryHoliday)} / {premiumLabel(member, preview.rates.statutoryHolidayPremiumRate)}</small></span><strong>{member.components.statutoryHolidayPremium.toLocaleString("ja-JP")}円</strong></li>
+            {member.components.adjustments !== 0 && <li><span>調整額</span><strong>{member.components.adjustments.toLocaleString("ja-JP")}円</strong></li>}
+          </ul><p className={styles.revisionNote}>深夜時間は、通常労働・法定時間外・法定休日労働と重複する場合があります。</p>{member.reviewReasons.length > 0 && <><strong>要確認</strong><ul className={styles.historyList}>{member.reviewReasons.map((reason) => <li key={reason}><span>{reasonLabel(reason)}</span></li>)}</ul></>}</div>
+        </article>;
+      })}</div></section>
     </>}
   </main>;
 }

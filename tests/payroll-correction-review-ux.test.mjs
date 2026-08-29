@@ -17,12 +17,13 @@ test("attendance screens prevent horizontal drift", async () => {
   }
 });
 
-test("correction reasons are selected and free text appears only for other", async () => {
+test("correction reasons are selected and added punches default to manager confirmation", async () => {
   const page = await source("app/manager/staff-attendance/edit/page.tsx");
   assert.match(page, /打刻忘れ/);
   assert.match(page, /端末・通信の不具合/);
   assert.match(page, /打刻時刻の誤り/);
   assert.match(page, /重複打刻/);
+  assert.match(page, /operation: "ADD"[\s\S]*reasonChoice: "管理者確認による追加"/);
   assert.match(page, /reasonChoice === "その他"/);
 });
 
@@ -43,19 +44,21 @@ test("attendance navigation has explicit destinations", async () => {
   assert.doesNotMatch(attendancePage, /history\.back\(\)/);
 });
 
-test("payroll preview exposes time basis for review", async () => {
+test("payroll preview keeps time context inside money breakdown", async () => {
   const page = await source("app/manager/payroll/preview/page.tsx");
+  const route = await source("app/api/manager/payroll/preview/route.ts");
   assert.match(page, /要確認なし/);
   assert.doesNotMatch(page, /確認不要/);
-  assert.match(page, /時間内訳/);
-  assert.match(page, /通常労働/);
-  assert.match(page, /法定時間外/);
-  assert.match(page, /うち月60時間超/);
-  assert.match(page, /法定休日労働/);
-  assert.match(page, /深夜労働/);
-  assert.match(page, /深夜労働は、通常労働・法定時間外・法定休日労働と重複する場合があります/);
+  assert.doesNotMatch(page, />時間内訳</);
+  assert.match(page, /金額内訳/);
   assert.match(page, /基本給 <small>実働/);
   assert.match(page, /時間外割増 <small>法定時間外/);
+  assert.match(page, /月60時間超割増/);
   assert.match(page, /深夜割増 <small>深夜/);
   assert.match(page, /法定休日割増 <small>法定休日/);
+  assert.match(page, /加算 .*円\/時/);
+  assert.match(page, /期間内で時給変更あり/);
+  assert.match(page, /深夜時間は、通常労働・法定時間外・法定休日労働と重複する場合があります/);
+  assert.match(route, /hourlyRatesUsed/);
+  assert.match(route, /rates:/);
 });

@@ -156,7 +156,7 @@ export default function StaffAttendanceEditPage() {
   }
 
   function startAdd() {
-    startEdit({ operation: "ADD", eventType: "", date: businessDate, time: "", reason: "", reasonChoice: "" });
+    startEdit({ operation: "ADD", eventType: "", date: businessDate, time: "", reason: "", reasonChoice: "管理者確認による追加" });
   }
 
   function startReplace(event: StaffEvent) {
