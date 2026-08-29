@@ -67,6 +67,13 @@ test("payroll preview keeps time context inside money breakdown", async () => {
   assert.match(route, /rates:/);
 });
 
+test("payroll review amounts are explicitly marked as unconfirmed reference values", async () => {
+  const page = await source("app/manager/payroll/preview/page.tsx");
+  assert.match(page, /控除前の総支給額（参考値・未確定）/);
+  assert.match(page, /要確認事項が残っているため、この金額は参考値です。確認後に再計算してください。/);
+  assert.match(page, /member\.status === "CONFIRMED" \? "控除前の総支給額" : "控除前の総支給額（参考値・未確定）"/);
+});
+
 test("payroll breakdown uses two-row compact amount-column styles", async () => {
   const css = await source("app/manager/payroll/payroll.module.css");
   assert.match(css, /\.payBreakdownList li\s*\{[\s\S]*display:\s*grid/);
