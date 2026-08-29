@@ -56,7 +56,11 @@ export async function calculatePayrollPreviewForStore(sql: any, storeId: string,
       SELECT st.id AS staff_id, st.legal_name, st.status,
         confirmation.status AS other_employment_status,
         confirmation.confirmed_at::text AS other_employment_confirmed_at,
-        COALESCE(confirmation.confirmed_at >= NOW() - INTERVAL '6 months', false) AS other_employment_confirmation_current
+        COALESCE(
+          confirmation.confirmed_at >= NOW() - INTERVAL '6 months'
+          AND confirmation.confirmed_at >= TIMESTAMPTZ '2026-08-29 09:55:00+00',
+          false
+        ) AS other_employment_confirmation_current
       FROM staff st
       LEFT JOIN staff_other_employment_confirmations confirmation
         ON confirmation.store_id = st.store_id AND confirmation.staff_id = st.id

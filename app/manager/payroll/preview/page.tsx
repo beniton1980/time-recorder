@@ -52,10 +52,10 @@ function reasonLabel(code: string) {
     WEEK_START_RULE_MISSING: "1週間の区切りが未確定",
     ATTENDANCE_NEEDS_REVIEW: "勤怠に要確認あり",
     COMPENSATION_TERM_MISSING_OR_AMBIGUOUS: "時給設定が不足または重複",
-    OTHER_EMPLOYMENT_UNCONFIRMED: "他の勤務先の有無が未確認",
-    OTHER_EMPLOYMENT_CONFIRMATION_EXPIRED: "他の勤務先の確認から6か月以上経過",
-    OTHER_EMPLOYMENT_PRESENT: "他の雇用主の勤務先あり（労働時間の通算を要確認）",
-    OTHER_EMPLOYMENT_UNKNOWN: "他の勤務先の有無が不明",
+    OTHER_EMPLOYMENT_UNCONFIRMED: "この店舗以外の勤務先の有無が未確認",
+    OTHER_EMPLOYMENT_CONFIRMATION_EXPIRED: "この店舗以外の勤務先を再確認してください",
+    OTHER_EMPLOYMENT_PRESENT: "この店舗以外にも勤務先あり（労働時間の通算を要確認）",
+    OTHER_EMPLOYMENT_UNKNOWN: "この店舗以外の勤務先の有無が不明",
   };
   return labels[code] ?? code;
 }

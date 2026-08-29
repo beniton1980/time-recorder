@@ -101,7 +101,10 @@ export async function POST(request: Request) {
         sql`SELECT id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at FROM payroll_compensation_terms WHERE store_id = ${storeId}::uuid ORDER BY staff_id, effective_from DESC, created_at DESC`,
         sql`SELECT holiday_date::text AS holiday_date FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid ORDER BY holiday_date DESC LIMIT 120`,
         sql`SELECT to_char(holiday_month, 'YYYY-MM') AS holiday_month, confirmed_at FROM payroll_statutory_holiday_month_confirmations WHERE store_id = ${storeId}::uuid ORDER BY holiday_month DESC LIMIT 120`,
-        sql`SELECT staff_id, status, confirmed_at, confirmed_by_line_user_id, confirmed_at >= NOW() - INTERVAL '6 months' AS confirmation_current FROM staff_other_employment_confirmations WHERE store_id = ${storeId}::uuid ORDER BY confirmed_at DESC`,
+        sql`SELECT staff_id, status, confirmed_at, confirmed_by_line_user_id,
+          confirmed_at >= NOW() - INTERVAL '6 months'
+            AND confirmed_at >= TIMESTAMPTZ '2026-08-29 09:55:00+00' AS confirmation_current
+          FROM staff_other_employment_confirmations WHERE store_id = ${storeId}::uuid ORDER BY confirmed_at DESC`,
       ]);
       return NextResponse.json({
         ok: true,
