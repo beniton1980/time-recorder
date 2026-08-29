@@ -46,18 +46,28 @@ ALTER TABLE public.payroll_run_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payroll_runs FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.payroll_run_items FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY payroll_runs_manager_scope
+CREATE POLICY payroll_runs_manager_select
   ON public.payroll_runs
-  FOR ALL
+  FOR SELECT
   TO onogami_app
-  USING (public.app_manager_store_allowed(store_id))
+  USING (public.app_manager_store_allowed(store_id));
+
+CREATE POLICY payroll_runs_manager_insert
+  ON public.payroll_runs
+  FOR INSERT
+  TO onogami_app
   WITH CHECK (public.app_manager_store_allowed(store_id));
 
-CREATE POLICY payroll_run_items_manager_scope
+CREATE POLICY payroll_run_items_manager_select
   ON public.payroll_run_items
-  FOR ALL
+  FOR SELECT
   TO onogami_app
-  USING (public.app_manager_store_allowed(store_id))
+  USING (public.app_manager_store_allowed(store_id));
+
+CREATE POLICY payroll_run_items_manager_insert
+  ON public.payroll_run_items
+  FOR INSERT
+  TO onogami_app
   WITH CHECK (public.app_manager_store_allowed(store_id));
 
 REVOKE ALL ON public.payroll_runs FROM PUBLIC;
