@@ -35,6 +35,15 @@ test("legal payroll settings fail closed and remain manager scoped", async () =>
   assert.match(route, /WHERE store_id = \$\{storeId\}::uuid/);
 });
 
+test("manual statutory holiday save records month confirmation only after date verification", async () => {
+  const route = await source("app/api/manager/payroll/settings/route.ts");
+  assert.match(route, /STATUTORY_HOLIDAY_SAVE_NOT_VERIFIED/);
+  assert.match(route, /INSERT INTO payroll_statutory_holiday_month_confirmations/);
+  assert.match(route, /ON CONFLICT \(store_id, holiday_month\) DO UPDATE/);
+  assert.match(route, /confirmed_by_line_user_id = EXCLUDED\.confirmed_by_line_user_id/);
+  assert.match(route, /statutoryHolidayConfirmedMonths/);
+});
+
 test("payroll settings UI explains safe calculation and wage history", async () => {
   const page = await source("app/manager/payroll/page.tsx");
   assert.match(page, /要確認（まだ分からない）/);
@@ -52,6 +61,7 @@ test("payroll settings UI makes overtime month and statutory holiday explicit", 
   assert.match(page, /毎週同じ曜日/);
   assert.match(page, /日付を指定する/);
   assert.match(page, /4週4休/);
+  assert.match(page, /この月の法定休日をすべて確認しました/);
 });
 
 test("payroll legal period migration has safe defaults and consistency constraints", async () => {
