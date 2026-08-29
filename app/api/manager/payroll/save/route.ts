@@ -45,9 +45,19 @@ export async function POST(request: Request) {
 
     const calculationSpecVersion = preview.staff[0]?.calculationSpecVersion ?? "unknown";
     const settingsSnapshot = JSON.stringify({ settings: preview.settings, rates: preview.rates, context: preview.context });
+    const itemsSnapshot = JSON.stringify(preview.staff.map((member) => ({
+      staffId: member.staffId,
+      legalName: member.legalName,
+      hourlyRatesUsed: member.hourlyRatesUsed,
+      minutes: member.minutes,
+      components: member.components,
+      grossPay: member.grossPay,
+      calculationSpecVersion: member.calculationSpecVersion,
+      sourceAttendanceSpecVersions: member.sourceAttendanceSpecVersions,
+    })));
 
-    const saved = await sql.transaction(async (tx) => {
-      const runRows = await tx`
+    const rows = await sql`
+      WITH new_run AS (
         INSERT INTO payroll_runs (
           store_id, period_start, period_end, gross_pay_yen,
           calculation_spec_version, settings_snapshot, saved_by_line_user_id
@@ -56,26 +66,32 @@ export async function POST(request: Request) {
           ${preview.summary.grossPay}, ${calculationSpecVersion}, ${settingsSnapshot}::jsonb, ${identity.sub}
         )
         RETURNING id, saved_at
-      `;
-      const run = runRows[0];
-      for (const member of preview.staff) {
-        await tx`
-          INSERT INTO payroll_run_items (
-            payroll_run_id, store_id, staff_id, legal_name_snapshot,
-            hourly_rates_used, minutes_snapshot, components_snapshot,
-            gross_pay_yen, calculation_spec_version, source_attendance_spec_versions
-          ) VALUES (
-            ${run.id}::uuid, ${body.storeId}::uuid, ${member.staffId}::uuid, ${member.legalName},
-            ${JSON.stringify(member.hourlyRatesUsed)}::jsonb,
-            ${JSON.stringify(member.minutes)}::jsonb,
-            ${JSON.stringify(member.components)}::jsonb,
-            ${member.grossPay}, ${member.calculationSpecVersion},
-            ${JSON.stringify(member.sourceAttendanceSpecVersions)}::jsonb
-          )
-        `;
-      }
-      return run;
-    });
+      ), new_items AS (
+        INSERT INTO payroll_run_items (
+          payroll_run_id, store_id, staff_id, legal_name_snapshot,
+          hourly_rates_used, minutes_snapshot, components_snapshot,
+          gross_pay_yen, calculation_spec_version, source_attendance_spec_versions
+        )
+        SELECT
+          new_run.id,
+          ${body.storeId}::uuid,
+          (item->>'staffId')::uuid,
+          item->>'legalName',
+          item->'hourlyRatesUsed',
+          item->'minutes',
+          item->'components',
+          (item->>'grossPay')::integer,
+          item->>'calculationSpecVersion',
+          item->'sourceAttendanceSpecVersions'
+        FROM new_run
+        CROSS JOIN jsonb_array_elements(${itemsSnapshot}::jsonb) AS item
+        RETURNING id
+      )
+      SELECT new_run.id, new_run.saved_at, (SELECT COUNT(*)::int FROM new_items) AS item_count
+      FROM new_run
+    `;
+    const saved = rows[0];
+    if (!saved || Number(saved.item_count) !== preview.staff.length) throw new Error("PAYROLL_SNAPSHOT_ITEM_COUNT_MISMATCH");
 
     return NextResponse.json({
       ok: true,
