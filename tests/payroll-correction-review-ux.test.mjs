@@ -72,6 +72,8 @@ test("payroll review amounts are explicitly marked as unconfirmed reference valu
   assert.match(page, /控除前の総支給額（参考値・未確定）/);
   assert.match(page, /要確認事項が残っているため、この金額は参考値です。確認後に再計算してください。/);
   assert.match(page, /member\.status === "CONFIRMED" \? "控除前の総支給額" : "控除前の総支給額（参考値・未確定）"/);
+  assert.match(page, /preview\.summary\.needsReviewCount === 0 \? `\$\{monthLabel\(payrollMonth\)\} \/ \$\{preview\.period\.start\} 〜 \$\{preview\.period\.end\}` : "控除前の総支給額（合計・参考値・未確定）"/);
+  assert.match(page, /要確認のスタッフが含まれるため、この合計金額は参考値です。すべて解消して再計算すると、給与集計結果を保存できます。/);
 });
 
 test("payroll breakdown uses two-row compact amount-column styles", async () => {
