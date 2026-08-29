@@ -385,28 +385,28 @@ export default function PayrollSettingsPage() {
       </section>
 
       <section className={styles.card}>
-        <h2>2. 他の勤務先の確認</h2>
-        <p className={styles.help}>入社時に確認し、副業の開始・終了など状況が変わったときは更新してください。最終確認から6か月を過ぎると、給与は要確認になり保存できません。</p>
+        <h2>2. この店舗以外の勤務先の確認</h2>
+        <p className={styles.help}>同じ会社の別店舗も含め、この店舗以外で働いているか確認します。入社時や勤務先の変更時に更新してください。最終確認から6か月を過ぎると、給与は要確認になり保存できません。</p>
         <div className={styles.staffList}>
           {(data?.staff ?? []).map((staff) => {
             const confirmation = data?.otherEmploymentConfirmations.find((item) => item.staff_id === staff.staff_id);
             const draft = otherEmploymentDrafts[staff.staff_id] ?? "UNKNOWN";
             const confirmedLabel = confirmation
-              ? `${new Date(confirmation.confirmed_at).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })} 確認${confirmation.confirmation_current ? "" : "（再確認期限切れ）"}`
+              ? `${new Date(confirmation.confirmed_at).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })} 確認${confirmation.confirmation_current ? "" : "（再確認が必要）"}`
               : "未確認";
             return <article className={styles.staffRow} key={staff.staff_id}>
               <div className={styles.staffIdentity}><strong>{staff.legal_name}</strong><span className={styles.inactive}>{confirmedLabel}</span></div>
               <div className={styles.inputs}>
-                <label>他の雇用主の勤務先
+                <label>この店舗以外の勤務先
                   <select value={draft} onChange={(event) => setOtherEmploymentDrafts((current) => ({ ...current, [staff.staff_id]: event.target.value as OtherEmploymentStatus }))}>
-                    <option value="NONE">なし</option>
-                    <option value="HAS_OTHER_EMPLOYER">あり</option>
+                    <option value="NONE">なし（この店舗だけ）</option>
+                    <option value="HAS_OTHER_EMPLOYER">あり（同じ会社の別店舗・別会社）</option>
                     <option value="UNKNOWN">わからない</option>
                   </select>
                 </label>
                 <button className={styles.secondaryButton} disabled={savingOtherEmploymentStaffId === staff.staff_id} onClick={() => void confirmOtherEmployment(staff.staff_id)}>{savingOtherEmploymentStaffId === staff.staff_id ? "保存中…" : "確認済みとして保存"}</button>
               </div>
-              {draft !== "NONE" && <p className={styles.revisionNote}>給与額は参考値として表示しますが、労働時間の通算確認が必要なため保存は止まります。</p>}
+              {draft !== "NONE" && <p className={styles.revisionNote}>給与額は参考値として表示しますが、他の店舗・勤務先との労働時間の通算確認が必要なため保存は止まります。</p>}
             </article>;
           })}
         </div>
