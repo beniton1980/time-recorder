@@ -134,7 +134,8 @@ export default function PayrollPreviewPage() {
         const ordinaryOvertimeMinutes = Math.max(0, member.minutes.statutoryOvertime - member.minutes.highOvertime);
         return <article className={styles.staffResultCard} key={member.staffId}>
           <div className={styles.staffIdentity}><strong>{member.legalName}</strong><span className={styles.inactive}>{member.status === "CONFIRMED" ? "要確認なし" : `要確認 ${member.reviewReasons.length}件`}</span></div>
-          <div className={styles.registered}><span>控除前の総支給額</span><strong>{member.grossPay.toLocaleString("ja-JP")}円</strong><small>{member.payableDayCount}日 / 実働 {hours(member.minutes.worked)}</small></div>
+          <div className={styles.registered}><span>{member.status === "CONFIRMED" ? "控除前の総支給額" : "控除前の総支給額（参考値・未確定）"}</span><strong>{member.grossPay.toLocaleString("ja-JP")}円</strong><small>{member.payableDayCount}日 / 実働 {hours(member.minutes.worked)}</small></div>
+          {member.status === "NEEDS_REVIEW" && <p className={styles.revisionNote}>要確認事項が残っているため、この金額は参考値です。確認後に再計算してください。</p>}
           <div className={styles.revisionBox}><strong>金額内訳</strong><ul className={`${styles.historyList} ${styles.payBreakdownList}`}>
             <li><div className={styles.payBreakdownTop}><strong>基本給</strong><strong>{member.components.basePay.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>実働 {hours(member.minutes.worked)} / {wageLabel(member)}</small></li>
             <li><div className={styles.payBreakdownTop}><strong>時間外割増</strong><strong>{member.components.overtimePremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>法定時間外 {hours(ordinaryOvertimeMinutes)} / {premiumLabel(member, preview.rates.overtimePremiumRate)}</small></li>
