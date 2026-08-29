@@ -64,6 +64,8 @@ export default function PayrollPreviewPage() {
   const [periodEnd, setPeriodEnd] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function previewApi(targetStore: string, period: PayrollPeriod) {
@@ -85,13 +87,36 @@ export default function PayrollPreviewPage() {
   }
 
   async function loadPayrollMonth(targetStore: string, targetMonth?: string) {
-    setLoading(true); setError(null); setPreview(null);
+    setLoading(true); setError(null); setPreview(null); setSavedMessage(null);
     try {
       const resolved = await periodApi(targetStore, targetMonth);
       setPayrollMonth(resolved.payrollMonth); setPeriodStart(resolved.period.start); setPeriodEnd(resolved.period.end);
       setPreview(await previewApi(targetStore, resolved.period));
     } catch (caught) { setError(caught instanceof Error ? caught.message : "給与プレビューを読み込めませんでした。"); }
     finally { setLoading(false); }
+  }
+
+  async function savePayroll() {
+    if (!preview || !storeId || !periodStart || !periodEnd || preview.summary.needsReviewCount > 0) return;
+    setSaving(true); setError(null); setSavedMessage(null);
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/payroll/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, storeId, periodStart, periodEnd }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        if (result.code === "PAYROLL_REVIEW_REQUIRED") throw new Error("保存直前の再計算で要確認事項が見つかりました。内容を確認して再計算してください。");
+        if (result.code === "PAYROLL_NOTHING_TO_SAVE") throw new Error("保存する給与集計がありません。");
+        throw new Error("給与集計結果を保存できませんでした。");
+      }
+      const savedAt = new Date(result.savedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+      setSavedMessage(`給与集計結果を保存しました。保存日時 ${savedAt}`);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "給与集計結果を保存できませんでした。"); }
+    finally { setSaving(false); }
   }
 
   useEffect(() => {
@@ -120,7 +145,8 @@ export default function PayrollPreviewPage() {
   async function changePayrollMonth(nextMonth: string) { setPayrollMonth(nextMonth); await loadPayrollMonth(storeId, nextMonth); }
 
   return <main className={`${styles.page} ${styles.previewPage}`}>
-    <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>給与プレビュー</h1><p className={styles.lead}>実際の勤怠と時給設定から控除前の総支給額を試算します。ここでは保存・確定しません。</p></div><a className={styles.backLink} href="/manager/payroll">給与設定へ戻る</a></header>
+    <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>給与プレビュー</h1><p className={styles.lead}>実際の勤怠と時給設定から控除前の総支給額を計算します。要確認がなければ、この結果を履歴として保存できます。</p></div><a className={styles.backLink} href="/manager/payroll">給与設定へ戻る</a></header>
+    {savedMessage && <p className={styles.message}>{savedMessage}</p>}
     {error && <p className={styles.error}>{error}</p>}
     <section className={styles.card}>
       <h2>対象期間</h2>
@@ -130,7 +156,12 @@ export default function PayrollPreviewPage() {
     </section>
     {loading && <p className={styles.message}>給与を計算しています…</p>}
     {preview && <>
-      <section className={`${styles.card} ${styles.summaryCard}`}><h2>集計結果</h2><div className={styles.registered}><span>{monthLabel(payrollMonth)} / {preview.period.start} 〜 {preview.period.end}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>要確認なし {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div></section>
+      <section className={`${styles.card} ${styles.summaryCard}`}>
+        <h2>集計結果</h2>
+        <div className={styles.registered}><span>{monthLabel(payrollMonth)} / {preview.period.start} 〜 {preview.period.end}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>要確認なし {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div>
+        <p className={styles.revisionNote}>{preview.summary.needsReviewCount === 0 ? "保存時にサーバー側でもう一度再計算し、その時点の時給・時間内訳・金額内訳を履歴として残します。" : "要確認事項をすべて解消して再計算すると、給与集計結果を保存できます。"}</p>
+        <button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={saving || preview.summary.needsReviewCount > 0 || preview.summary.staffCount === 0} onClick={() => void savePayroll()}>{saving ? "保存前に再計算中…" : preview.summary.needsReviewCount > 0 ? "要確認を解消してから保存" : "この給与集計結果を保存"}</button>
+      </section>
       <section className={styles.card}><h2>スタッフ別</h2><div className={styles.staffGrid}>{preview.staff.map((member) => {
         const ordinaryOvertimeMinutes = Math.max(0, member.minutes.statutoryOvertime - member.minutes.highOvertime);
         return <article className={styles.staffResultCard} key={member.staffId}>

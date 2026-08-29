@@ -84,20 +84,23 @@ test("manual statutory holidays can confirm after every required context month i
   assert.ok(!result.reviewReasons.includes("STATUTORY_HOLIDAY_MONTH_UNCONFIRMED"));
 });
 
-test("manager preview API is read-only and reuses attendance SSOT", async () => {
+test("manager preview API stays read-only while shared service reuses attendance SSOT", async () => {
   const route = await readFile(new URL("../app/api/manager/payroll/preview/route.ts", import.meta.url), "utf8");
-  assert.match(route, /loadMonthlyAttendance/);
-  assert.match(route, /aggregateGrossPay|calculateStaffPayrollPreview/);
+  const service = await readFile(new URL("../lib/payroll-preview-server.ts", import.meta.url), "utf8");
+  assert.match(route, /calculatePayrollPreviewForStore/);
   assert.match(route, /getSql\(\{ mode: "manager", lineIdentity: identity\.sub, storeId: body\.storeId \}\)/);
-  assert.match(route, /payroll_statutory_holiday_month_confirmations/);
-  assert.match(route, /manualHolidayConfirmedMonths/);
   assert.doesNotMatch(route, /INSERT INTO payroll_runs|UPDATE payroll_runs|DELETE FROM payroll_runs/);
   assert.match(route, /persisted: false/);
+  assert.match(service, /loadMonthlyAttendance/);
+  assert.match(service, /calculateStaffPayrollPreview/);
+  assert.match(service, /payroll_statutory_holiday_month_confirmations/);
+  assert.match(service, /manualHolidayConfirmedMonths/);
 });
 
-test("preview UI states that result is not saved or finalized", async () => {
+test("preview UI distinguishes reference amounts from saved payroll snapshots", async () => {
   const page = await readFile(new URL("../app/manager/payroll/preview/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /保存・確定しません/);
+  assert.match(page, /この給与集計結果を保存/);
+  assert.match(page, /保存時にサーバー側でもう一度再計算/);
   assert.match(page, /控除前の総支給額/);
   assert.match(page, /要確認/);
   assert.match(page, /法定休日を確認していない月がある/);
