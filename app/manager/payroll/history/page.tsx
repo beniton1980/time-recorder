@@ -28,6 +28,7 @@ export default function PayrollHistoryPage() {
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportingRunId, setExportingRunId] = useState<string | null>(null);
 
   async function historyApi(targetStore: string, runId?: string) {
     const idToken = liff.getIDToken();
@@ -54,6 +55,34 @@ export default function PayrollHistoryPage() {
     try { setDetail(await historyApi(storeId, runId) as RunDetail); }
     catch (caught) { setError(caught instanceof Error ? caught.message : "給与の内訳を読み込めませんでした。"); }
     finally { setLoading(false); }
+  }
+
+  async function downloadCsv(run: PayrollRun) {
+    if (!run.is_latest || exportingRunId) return;
+    setExportingRunId(run.id); setError(null);
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const response = await fetch("/api/manager/payroll/history/csv", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, storeId, runId: run.id }),
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        const authError = managerApiAuthError(response.status, result);
+        if (authError) throw authError;
+        if (result.code === "PAYROLL_RUN_NOT_LATEST") throw new Error("この期間には新しい保存結果があります。最新版を開いてCSVを出力してください。");
+        if (result.code === "PAYROLL_SNAPSHOT_INCOMPLETE") throw new Error("保存結果の完全性を確認できないため、CSV出力を停止しました。");
+        throw new Error("給与CSVを出力できませんでした。");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `ONOGAMI-控除前給与集計-${run.period_start}-${run.period_end}-第${run.version_number}版.csv`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "給与CSVを出力できませんでした。"); }
+    finally { setExportingRunId(null); }
   }
 
   useEffect(() => {
@@ -86,6 +115,6 @@ export default function PayrollHistoryPage() {
     {memberships.length > 1 && <section className={styles.card}><label className={styles.label}>店舗</label><select className={styles.select} value={storeId} onChange={(e) => { setStoreId(e.target.value); void loadRuns(e.target.value); }}>{memberships.map((m) => <option value={m.store_id} key={m.store_id}>{m.store_name}</option>)}</select></section>}
     {loading && <p className={styles.message}>保存済み給与を読み込んでいます…</p>}
     {!detail && !loading && <section className={styles.card}><h2>保存履歴</h2>{runs.length === 0 ? <p className={styles.revisionNote}>保存済みの給与集計はありません。</p> : <ul className={styles.historyList}>{runs.map((run) => <li key={run.id}><button className={`${styles.secondaryButton} ${styles.fullButton}`} onClick={() => void loadDetail(run.id)}><span>{run.period_start} 〜 {run.period_end}<small>{versionLabel(run)} / 保存 {savedAt(run.saved_at)} / {run.staff_count}名</small></span><strong>{Number(run.gross_pay_yen).toLocaleString("ja-JP")}円</strong></button></li>)}</ul>}</section>}
-    {detail && <><section className={`${styles.card} ${styles.summaryCard}`}><button className={styles.secondaryButton} onClick={() => setDetail(null)}>履歴一覧へ戻る</button><div className={styles.registered}><span>{detail.run.period_start} 〜 {detail.run.period_end}</span><strong>{Number(detail.run.gross_pay_yen).toLocaleString("ja-JP")}円</strong><small>{versionLabel(detail.run)} / 保存 {savedAt(detail.run.saved_at)} / {detail.items.length}名</small></div><p className={styles.revisionNote}>{detail.run.is_latest ? "この期間で最後に保存した結果です。" : "この期間の以前の保存結果です。最新の保存結果と間違えないようご注意ください。"} 計算仕様 {detail.run.calculation_spec_version}</p></section><section className={styles.card}><h2>スタッフ別内訳</h2><div className={styles.staffGrid}>{detail.items.map((item) => <article className={styles.staffResultCard} key={item.staff_id}><div className={styles.staffIdentity}><strong>{item.legal_name_snapshot}</strong><span className={styles.inactive}>{detail.run.is_latest ? "最新版" : "以前の保存"}</span></div><div className={styles.registered}><span>控除前の総支給額</span><strong>{Number(item.gross_pay_yen).toLocaleString("ja-JP")}円</strong><small>実働 {hours(item.minutes_snapshot.worked)}</small></div><div className={styles.revisionBox}><strong>保存時の金額内訳</strong><ul className={styles.historyList}>{Object.entries(item.components_snapshot).map(([name, amount]) => <li key={name}><span>{componentLabel(name)}</span><strong>{Number(amount).toLocaleString("ja-JP")}円</strong></li>)}</ul></div></article>)}</div></section></>}
+    {detail && <><section className={`${styles.card} ${styles.summaryCard}`}><button className={styles.secondaryButton} onClick={() => setDetail(null)}>履歴一覧へ戻る</button><div className={styles.registered}><span>{detail.run.period_start} 〜 {detail.run.period_end}</span><strong>{Number(detail.run.gross_pay_yen).toLocaleString("ja-JP")}円</strong><small>{versionLabel(detail.run)} / 保存 {savedAt(detail.run.saved_at)} / {detail.items.length}名</small></div><p className={styles.revisionNote}>{detail.run.is_latest ? "この期間で最後に保存した結果です。" : "この期間の以前の保存結果です。最新の保存結果と間違えないようご注意ください。"} 計算仕様 {detail.run.calculation_spec_version}</p>{detail.run.is_latest ? <><button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={exportingRunId !== null} onClick={() => void downloadCsv(detail.run)}>{exportingRunId === detail.run.id ? "CSVを作成中…" : "最新版の控除前給与集計をCSV出力"}</button><p className={styles.revisionNote}>税・社会保険等の控除、手取り額、振込情報は含みません。氏名と給与額を含むため、ファイルの取扱いにご注意ください。</p></> : <p className={styles.revisionNote}>以前の保存結果は誤使用を防ぐためCSV出力できません。履歴一覧から最新版を開いてください。</p>}</section><section className={styles.card}><h2>スタッフ別内訳</h2><div className={styles.staffGrid}>{detail.items.map((item) => <article className={styles.staffResultCard} key={item.staff_id}><div className={styles.staffIdentity}><strong>{item.legal_name_snapshot}</strong><span className={styles.inactive}>{detail.run.is_latest ? "最新版" : "以前の保存"}</span></div><div className={styles.registered}><span>控除前の総支給額</span><strong>{Number(item.gross_pay_yen).toLocaleString("ja-JP")}円</strong><small>実働 {hours(item.minutes_snapshot.worked)}</small></div><div className={styles.revisionBox}><strong>保存時の金額内訳</strong><ul className={styles.historyList}>{Object.entries(item.components_snapshot).map(([name, amount]) => <li key={name}><span>{componentLabel(name)}</span><strong>{Number(amount).toLocaleString("ja-JP")}円</strong></li>)}</ul></div></article>)}</div></section></>}
   </main>;
 }
