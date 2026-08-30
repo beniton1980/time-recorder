@@ -249,6 +249,34 @@
   line-height: 1.5;
 }
 
+.warningNote {
+  margin: 12px 0 0;
+  padding: 11px 12px;
+  border-radius: 10px;
+  background: #fff5db;
+  color: #684b00;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.diffSummary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.diffSummary > div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f7f7f7;
+}
+
+.diffSummary span,
+.diffSummary small { color: #666; }
+
 .revisionBox .revisionNote + strong {
   display: block;
   margin-top: 18px;
@@ -400,7 +428,8 @@
 
   .inputs,
   .monthSelector,
-  .calendarToolbar {
+  .calendarToolbar,
+  .diffSummary {
     grid-template-columns: 1fr;
   }
 
