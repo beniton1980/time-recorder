@@ -2,6 +2,7 @@
 
 import liff from "@line/liff";
 import { useEffect, useState } from "react";
+import { managerApiAuthError } from "@/lib/manager-api-auth-error";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 const weekdays = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"];
@@ -27,7 +28,11 @@ export default function PayrollWeekBoundaryCard() {
       body: JSON.stringify({ idToken, storeId: targetStoreId, action, ...values }),
     });
     const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error("1週間の区切りを保存できませんでした。");
+    if (!response.ok || !data.ok) {
+      const authError = managerApiAuthError(response.status, data);
+      if (authError) throw authError;
+      throw new Error("1週間の区切りを保存できませんでした。");
+    }
     return data;
   }
 
@@ -54,7 +59,9 @@ export default function PayrollWeekBoundaryCard() {
           body: JSON.stringify({ idToken }),
         });
         const session = await response.json();
-        if (!response.ok || !session.ok) throw new Error("管理者権限を確認できませんでした。");
+        if (!response.ok || !session.ok) {
+          throw managerApiAuthError(response.status, session) ?? new Error("管理者情報を確認できませんでした。");
+        }
         if (!active) return;
         const nextMemberships = session.manager.memberships as Membership[];
         setMemberships(nextMemberships);

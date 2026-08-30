@@ -2,6 +2,7 @@
 
 import liff from "@line/liff";
 import { useEffect, useMemo, useState } from "react";
+import { managerApiAuthError } from "@/lib/manager-api-auth-error";
 import styles from "./payroll.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -121,6 +122,8 @@ export default function PayrollSettingsPage() {
     });
     const result = await response.json();
     if (!response.ok || !result.ok) {
+      const authError = managerApiAuthError(response.status, result);
+      if (authError) throw authError;
       if (result.code === "COMPENSATION_HISTORY_EXISTS") throw new Error("このスタッフにはすでに給与条件があります。");
       if (result.code === "COMPENSATION_REVISION_DATE_INVALID") throw new Error("改定日は現在の時給の開始日より後の日付を指定してください。");
       if (result.code === "COMPENSATION_PERIOD_OVERLAP") throw new Error("その改定日は既存の時給期間と重なります。履歴を確認してください。");
@@ -149,7 +152,11 @@ export default function PayrollSettingsPage() {
       }),
     });
     const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error("1週間の区切りを保存できませんでした。");
+    if (!response.ok || !result.ok) {
+      const authError = managerApiAuthError(response.status, result);
+      if (authError) throw authError;
+      throw new Error("1週間の区切りを保存できませんでした。");
+    }
     return result;
   }
 
@@ -203,7 +210,9 @@ export default function PayrollSettingsPage() {
         if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
         const response = await fetch("/api/manager/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken }) });
         const session = await response.json();
-        if (!response.ok || !session.ok) throw new Error("管理者権限を確認できませんでした。");
+        if (!response.ok || !session.ok) {
+          throw managerApiAuthError(response.status, session) ?? new Error("管理者情報を確認できませんでした。");
+        }
         if (!active) return;
         const nextMemberships = session.manager.memberships as Membership[];
         setMemberships(nextMemberships);
