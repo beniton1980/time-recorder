@@ -16,7 +16,7 @@ test("preview UI uses payroll month instead of asking for raw dates", async () =
 });
 
 test("manual holiday dates are saved from the single store-rules save action", async () => {
-  const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/manager/payroll/settings/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
   assert.match(page, /statutoryHolidayRule === "MANUAL_DATES"[\s\S]*action: "saveStatutoryHolidayMonth"/);
   assert.match(page, /店舗ルール・週の区切り・法定休日を保存/);
@@ -30,7 +30,7 @@ test("manual holiday dates are saved from the single store-rules save action", a
 });
 
 test("initial wages are saved in one atomic request and show durable saved state", async () => {
-  const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/manager/payroll/settings/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/manager/payroll/settings/route.ts", import.meta.url), "utf8");
   assert.match(page, /action: "saveInitialCompensationTerms"/);
   assert.match(page, /保存済み/);

@@ -118,7 +118,7 @@ export default function PayrollHistoryPage() {
   }, []);
 
   return <main className={`${styles.page} ${styles.previewPage}`}>
-    <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>保存済み給与</h1><p className={styles.lead}>保存時点の集計結果を、そのまま閲覧できます。過去の記録は変更されません。</p></div><a className={styles.backLink} href="/manager/payroll/preview">給与プレビューへ戻る</a></header>
+    <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>保存済み給与</h1><p className={styles.lead}>保存時点の集計結果を、そのまま閲覧できます。過去の記録は変更されません。</p></div><div><a className={styles.backLink} href="/manager/payroll/preview">給与プレビューを見る</a> <a className={styles.backLink} href="/manager/payroll">給与コンソールへ戻る</a></div></header>
     {error && <p className={styles.error}>{error}</p>}
     {memberships.length > 1 && <section className={styles.card}><label className={styles.label}>店舗</label><select className={styles.select} value={storeId} onChange={(e) => { setStoreId(e.target.value); void loadRuns(e.target.value); }}>{memberships.map((m) => <option value={m.store_id} key={m.store_id}>{m.store_name}</option>)}</select></section>}
     {loading && <p className={styles.message}>保存済み給与を読み込んでいます…</p>}

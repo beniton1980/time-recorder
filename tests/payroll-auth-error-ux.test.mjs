@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const helperPath = new URL("lib/manager-api-auth-error.ts", root);
 const payrollPages = [
-  "app/manager/payroll/page.tsx",
+  "app/manager/payroll/settings/page.tsx",
   "app/manager/payroll/history/page.tsx",
   "app/manager/payroll/preview/page.tsx",
   "app/manager/payroll/PayrollWeekBoundaryCard.tsx",
