@@ -2,6 +2,7 @@
 
 import liff from "@line/liff";
 import { useEffect, useState } from "react";
+import { managerApiAuthError } from "@/lib/manager-api-auth-error";
 import styles from "../payroll.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -29,7 +30,11 @@ export default function PayrollHistoryPage() {
     if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
     const response = await fetch("/api/manager/payroll/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId: targetStore, runId }) });
     const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error("保存済み給与を読み込めませんでした。");
+    if (!response.ok || !result.ok) {
+      const authError = managerApiAuthError(response.status, result);
+      if (authError) throw authError;
+      throw new Error("保存済み給与を読み込めませんでした。");
+    }
     return result;
   }
 
@@ -57,7 +62,9 @@ export default function PayrollHistoryPage() {
         if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
         const response = await fetch("/api/manager/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken }) });
         const session = await response.json();
-        if (!response.ok || !session.ok) throw new Error("管理者権限を確認できませんでした。");
+        if (!response.ok || !session.ok) {
+          throw managerApiAuthError(response.status, session) ?? new Error("管理者情報を確認できませんでした。");
+        }
         if (!active) return;
         const next = session.manager.memberships as Membership[];
         const first = next[0]?.store_id ?? "";
