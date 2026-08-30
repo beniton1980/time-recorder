@@ -174,7 +174,7 @@ export default function PayrollPreviewPage() {
   async function changePayrollMonth(nextMonth: string) { setPayrollMonth(nextMonth); await loadPayrollMonth(storeId, nextMonth); }
 
   return <main className={`${styles.page} ${styles.previewPage}`}>
-    <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>給与プレビュー</h1><p className={styles.lead}>実際の勤怠と時給設定から控除前の総支給額を計算します。要確認がなければ、この結果を履歴として保存できます。</p></div><div><a className={styles.backLink} href="/manager/payroll/history">保存履歴を見る</a> <a className={styles.backLink} href="/manager/payroll">給与設定へ戻る</a></div></header>
+    <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>給与プレビュー</h1><p className={styles.lead}>実際の勤怠と時給設定から控除前の総支給額を計算します。要確認がなければ、この結果を履歴として保存できます。</p></div><div><a className={styles.backLink} href="/manager/payroll/history">保存履歴を見る</a> <a className={styles.backLink} href="/manager/payroll/settings">給与設定を見る</a> <a className={styles.backLink} href="/manager/payroll">給与コンソールへ戻る</a></div></header>
     {savedMessage && <p className={styles.message}>{savedMessage}</p>}
     {error && <p className={styles.error}>{error}</p>}
     <section className={styles.card}>

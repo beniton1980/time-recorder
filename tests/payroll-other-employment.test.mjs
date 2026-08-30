@@ -29,7 +29,7 @@ test("payroll preview fails closed for missing, expired, present, or unknown oth
 });
 
 test("workplace confirmation includes same-employer stores and invalidates the old question", async () => {
-  const page = await source("app/manager/payroll/page.tsx");
+  const page = await source("app/manager/payroll/settings/page.tsx");
   const preview = await source("app/manager/payroll/preview/page.tsx");
   const settings = await source("app/api/manager/payroll/settings/route.ts");
   assert.match(page, /同じ会社の別店舗も含め、この店舗以外で働いているか確認します/);

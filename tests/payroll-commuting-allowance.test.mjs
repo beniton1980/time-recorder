@@ -41,7 +41,7 @@ test("commuting allowance persistence is manager scoped, effective dated and sna
 });
 
 test("commuting UI separates monthly pass and per-workday gas without tax claims", async () => {
-  const settings = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
+  const settings = await readFile(new URL("../app/manager/payroll/settings/page.tsx", import.meta.url), "utf8");
   const preview = await readFile(new URL("../app/manager/payroll/preview/page.tsx", import.meta.url), "utf8");
   assert.match(settings, /1か月の定期代/);
   assert.match(settings, /出勤日ごとのガソリン代/);

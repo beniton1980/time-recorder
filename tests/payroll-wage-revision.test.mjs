@@ -29,7 +29,7 @@ test("wage revision refuses ambiguous or backwards history changes", async () =>
 });
 
 test("manager UI explains history-preserving wage revisions", async () => {
-  const page = await source("app/manager/payroll/page.tsx");
+  const page = await source("app/manager/payroll/settings/page.tsx");
 
   assert.match(page, /上書きせず、改定日で履歴を分けます/);
   assert.match(page, /action: "reviseCompensationTerm"/);

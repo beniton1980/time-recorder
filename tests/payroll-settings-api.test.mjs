@@ -45,7 +45,7 @@ test("manual statutory holiday save records month confirmation only after date v
 });
 
 test("payroll settings UI explains safe calculation and wage history", async () => {
-  const page = await source("app/manager/payroll/page.tsx");
+  const page = await source("app/manager/payroll/settings/page.tsx");
   assert.match(page, /要確認（まだ分からない）/);
   assert.match(page, /給与額は自動確定しません/);
   assert.match(page, /改定日で履歴を分けます/);
@@ -53,7 +53,7 @@ test("payroll settings UI explains safe calculation and wage history", async () 
 });
 
 test("payroll settings UI makes overtime month and statutory holiday explicit", async () => {
-  const page = await source("app/manager/payroll/page.tsx");
+  const page = await source("app/manager/payroll/settings/page.tsx");
   assert.match(page, /月60時間超の残業を数える1か月/);
   assert.match(page, /給与の締め期間と同じ/);
   assert.match(page, /毎月1日〜月末/);

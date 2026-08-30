@@ -52,7 +52,7 @@ test("migration does not trust legacy Monday default", async () => {
 
 test("week boundary is part of the existing payroll settings flow", async () => {
   const api = await readFile(new URL("../app/api/manager/payroll/week-boundary/route.ts", import.meta.url), "utf8");
-  const page = await readFile(new URL("../app/manager/payroll/page.tsx", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/manager/payroll/settings/page.tsx", import.meta.url), "utf8");
   const layout = await readFile(new URL("../app/manager/payroll/layout.tsx", import.meta.url), "utf8");
   assert.match(api, /CALENDAR_DEFAULT/);
   assert.match(api, /EXPLICIT_WEEKDAY/);
