@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       hourlyRatesUsed: member.hourlyRatesUsed,
       minutes: member.minutes,
       components: member.components,
+      commutingAllowance: member.commutingAllowance,
       grossPay: member.grossPay,
       calculationSpecVersion: member.calculationSpecVersion,
       sourceAttendanceSpecVersions: member.sourceAttendanceSpecVersions,
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
         INSERT INTO payroll_run_items (
           payroll_run_id, store_id, staff_id, legal_name_snapshot,
           hourly_rates_used, minutes_snapshot, components_snapshot,
-          gross_pay_yen, calculation_spec_version, source_attendance_spec_versions
+          commuting_allowance_snapshot, gross_pay_yen, calculation_spec_version, source_attendance_spec_versions
         )
         SELECT
           new_run.id,
@@ -112,6 +113,7 @@ export async function POST(request: Request) {
           item->'hourlyRatesUsed',
           item->'minutes',
           item->'components',
+          item->'commutingAllowance',
           (item->>'grossPay')::integer,
           item->>'calculationSpecVersion',
           item->'sourceAttendanceSpecVersions'

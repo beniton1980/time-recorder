@@ -1,0 +1,2 @@
+export type CommutingAllowanceTerm = { id: string; method: "MONTHLY_PASS" | "PER_WORKDAY_GAS"; amountYen: number; effectiveFrom: string; effectiveTo: string | null; basisConfirmed: boolean };
+export function calculateCommutingAllowance(input: { terms: CommutingAllowanceTerm[]; payableDates: string[]; periodStart: string; periodEnd: string }): { status: "CONFIRMED" | "NEEDS_REVIEW"; reviewReasons: string[]; amountYen: number; snapshot: null | { method: string; unitAmountYen: number | null; payableDayCount: number; termIds: string[] } };

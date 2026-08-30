@@ -1,5 +1,6 @@
 import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
 import { buildPayrollPreviewContext, calculateStaffPayrollPreview } from "@/lib/payroll-preview.mjs";
+import { calculateCommutingAllowance } from "@/lib/payroll-commuting-allowance.mjs";
 
 type WeekStartRule = "CALENDAR_DEFAULT" | "EXPLICIT_WEEKDAY" | "OTHER_REVIEW_REQUIRED";
 type SettingsRow = {
@@ -24,6 +25,7 @@ type StaffRow = {
 };
 type TermRow = { id: string; staff_id: string; hourly_rate_yen: number; effective_from: string; effective_to: string | null };
 type CompensationTerm = { id: string; hourlyRate: number; effectiveFrom: string; effectiveTo: string | null };
+type CommutingTermRow = { id: string; staff_id: string; method: "MONTHLY_PASS" | "PER_WORKDAY_GAS"; amount_yen: number; effective_from: string; effective_to: string | null; basis_confirmed: boolean };
 
 function normalizeWeekStartRule(value: string | undefined): WeekStartRule {
   if (value === "CALENDAR_DEFAULT" || value === "EXPLICIT_WEEKDAY") return value;
@@ -41,7 +43,7 @@ function hourlyRatesUsed(days: Array<{ businessDate: string; workedMinutes: numb
 }
 
 export async function calculatePayrollPreviewForStore(sql: any, storeId: string, periodStart: string, periodEnd: string) {
-  const [settingsRows, staffRows, termRows, manualHolidayRows, manualHolidayConfirmationRows] = await Promise.all([
+  const [settingsRows, staffRows, termRows, commutingTermRows, manualHolidayRows, manualHolidayConfirmationRows] = await Promise.all([
     sql`
       SELECT work_time_system, week_start_rule, week_starts_on, overtime_month_rule,
         statutory_holiday_rule, statutory_holiday_weekday,
@@ -71,6 +73,12 @@ export async function calculatePayrollPreviewForStore(sql: any, storeId: string,
     sql`
       SELECT id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text
       FROM payroll_compensation_terms
+      WHERE store_id = ${storeId}::uuid
+      ORDER BY staff_id, effective_from ASC
+    `,
+    sql`
+      SELECT id, staff_id, method, amount_yen, effective_from::text, effective_to::text, basis_confirmed
+      FROM payroll_commuting_allowance_terms
       WHERE store_id = ${storeId}::uuid
       ORDER BY staff_id, effective_from ASC
     `,
@@ -114,6 +122,7 @@ export async function calculatePayrollPreviewForStore(sql: any, storeId: string,
   const monthly = await loadMonthlyAttendance(sql as never, storeId, context.queryPeriod);
   const staff = staffRows as StaffRow[];
   const terms = termRows as TermRow[];
+  const commutingTerms = commutingTermRows as CommutingTermRow[];
 
   const results = staff.map((member) => {
     const memberDays = monthly.days.filter((day) => day.staffId === member.staff_id);
@@ -124,6 +133,13 @@ export async function calculatePayrollPreviewForStore(sql: any, storeId: string,
       effectiveTo: term.effective_to,
     }));
     const calculated = calculateStaffPayrollPreview({ attendanceDays: memberDays, compensationTerms: memberTerms, settings, context });
+    const payableDates = memberDays.filter((day) => context.payPeriod.start <= day.businessDate && day.businessDate <= context.payPeriod.end && day.workedMinutes != null && day.workedMinutes > 0).map((day) => day.businessDate);
+    const commuting = calculateCommutingAllowance({
+      terms: commutingTerms.filter((term) => term.staff_id === member.staff_id).map((term) => ({ id: term.id, method: term.method, amountYen: Number(term.amount_yen), effectiveFrom: term.effective_from, effectiveTo: term.effective_to, basisConfirmed: term.basis_confirmed })),
+      payableDates,
+      periodStart: context.payPeriod.start,
+      periodEnd: context.payPeriod.end,
+    });
     const otherEmploymentReason = member.other_employment_status == null
       ? "OTHER_EMPLOYMENT_UNCONFIRMED"
       : !member.other_employment_confirmation_current
@@ -133,10 +149,13 @@ export async function calculatePayrollPreviewForStore(sql: any, storeId: string,
           : member.other_employment_status === "UNKNOWN"
             ? "OTHER_EMPLOYMENT_UNKNOWN"
             : null;
-    const reviewReasons = [...new Set([...calculated.reviewReasons, ...(otherEmploymentReason ? [otherEmploymentReason] : [])])];
+    const reviewReasons = [...new Set([...calculated.reviewReasons, ...commuting.reviewReasons, ...(otherEmploymentReason ? [otherEmploymentReason] : [])])];
     const preview = {
       ...calculated,
-      status: calculated.status === "CONFIRMED" && otherEmploymentReason ? "NEEDS_REVIEW" as const : calculated.status,
+      components: { ...calculated.components, commutingAllowance: commuting.amountYen },
+      grossPay: calculated.grossPay + commuting.amountYen,
+      commutingAllowance: commuting.snapshot,
+      status: calculated.status === "CONFIRMED" && (otherEmploymentReason || commuting.status !== "CONFIRMED") ? "NEEDS_REVIEW" as const : calculated.status,
       reviewReasons,
     };
     const payableDayCount = memberDays.filter((day) => context.payPeriod.start <= day.businessDate && day.businessDate <= context.payPeriod.end && day.workedMinutes != null).length;

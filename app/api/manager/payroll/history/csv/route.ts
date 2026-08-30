@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       return Response.json({ ok: false, code: "PAYROLL_SNAPSHOT_INCOMPLETE" }, { status: 409 });
     }
     const items = await sql`
-      SELECT legal_name_snapshot, hourly_rates_used, minutes_snapshot, components_snapshot,
+      SELECT legal_name_snapshot, hourly_rates_used, minutes_snapshot, components_snapshot, commuting_allowance_snapshot,
              gross_pay_yen, calculation_spec_version, source_attendance_spec_versions
       FROM payroll_run_items
       WHERE store_id = ${body.storeId}::uuid AND payroll_run_id = ${body.runId}::uuid
