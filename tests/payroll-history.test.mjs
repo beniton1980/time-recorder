@@ -7,7 +7,7 @@ const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8"
 test("saved payroll history is read-only and store scoped", async () => {
   const route = await source("app/api/manager/payroll/history/route.ts");
   assert.match(route, /getSql\(\{ mode: "manager"/);
-  assert.match(route, /WHERE store_id = \$\{body\.storeId\}::uuid AND id = \$\{body\.runId\}::uuid/);
+  assert.match(route, /WHERE r\.store_id = \$\{body\.storeId\}::uuid AND r\.id = \$\{body\.runId\}::uuid/);
   assert.match(route, /WHERE store_id = \$\{body\.storeId\}::uuid AND payroll_run_id = \$\{body\.runId\}::uuid/);
   assert.doesNotMatch(route, /INSERT INTO|UPDATE payroll_|DELETE FROM payroll_/);
 });

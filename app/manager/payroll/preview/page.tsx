@@ -71,6 +71,7 @@ export default function PayrollPreviewPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [savedRunId, setSavedRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function previewApi(targetStore: string, period: PayrollPeriod) {
@@ -100,7 +101,7 @@ export default function PayrollPreviewPage() {
   }
 
   async function loadPayrollMonth(targetStore: string, targetMonth?: string) {
-    setLoading(true); setError(null); setPreview(null); setSavedMessage(null);
+    setLoading(true); setError(null); setPreview(null); setSavedMessage(null); setSavedRunId(null);
     try {
       const resolved = await periodApi(targetStore, targetMonth);
       setPayrollMonth(resolved.payrollMonth); setPeriodStart(resolved.period.start); setPeriodEnd(resolved.period.end);
@@ -115,10 +116,13 @@ export default function PayrollPreviewPage() {
     try {
       const idToken = liff.getIDToken();
       if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      const requestStorageKey = `onogami-payroll-save:${storeId}:${periodStart}:${periodEnd}`;
+      const saveRequestId = window.sessionStorage.getItem(requestStorageKey) ?? window.crypto.randomUUID();
+      window.sessionStorage.setItem(requestStorageKey, saveRequestId);
       const response = await fetch("/api/manager/payroll/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken, storeId, periodStart, periodEnd }),
+        body: JSON.stringify({ idToken, storeId, periodStart, periodEnd, saveRequestId }),
       });
       const result = await response.json();
       if (!response.ok || !result.ok) {
@@ -126,10 +130,13 @@ export default function PayrollPreviewPage() {
         if (authError) throw authError;
         if (result.code === "PAYROLL_REVIEW_REQUIRED") throw new Error("保存直前の再計算で要確認事項が見つかりました。内容を確認して再計算してください。");
         if (result.code === "PAYROLL_NOTHING_TO_SAVE") throw new Error("保存する給与集計がありません。");
+        if (result.code === "PAYROLL_SAVE_REQUEST_CONFLICT") throw new Error("保存操作が競合しました。画面を開き直して、もう一度計算してください。");
         throw new Error("給与集計結果を保存できませんでした。");
       }
+      window.sessionStorage.removeItem(requestStorageKey);
+      setSavedRunId(result.runId as string);
       const savedAt = new Date(result.savedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
-      setSavedMessage(`給与集計結果を保存しました。保存日時 ${savedAt}`);
+      setSavedMessage(`${result.idempotentReplay ? "保存済みの同じ結果を確認しました。" : "給与集計結果を保存しました。"} 保存日時 ${savedAt}`);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "給与集計結果を保存できませんでした。"); }
     finally { setSaving(false); }
   }
@@ -177,7 +184,7 @@ export default function PayrollPreviewPage() {
         <h2>集計結果</h2>
         <div className={styles.registered}><span>{preview.summary.needsReviewCount === 0 ? `${monthLabel(payrollMonth)} / ${preview.period.start} 〜 ${preview.period.end}` : "控除前の総支給額（合計・参考値・未確定）"}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>要確認なし {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div>
         <p className={styles.revisionNote}>{preview.summary.needsReviewCount === 0 ? "保存時にサーバー側でもう一度再計算し、その時点の時給・時間内訳・金額内訳を履歴として残します。" : "要確認のスタッフが含まれるため、この合計金額は参考値です。すべて解消して再計算すると、給与集計結果を保存できます。"}</p>
-        <button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={saving || preview.summary.needsReviewCount > 0 || preview.summary.staffCount === 0} onClick={() => void savePayroll()}>{saving ? "保存前に再計算中…" : preview.summary.needsReviewCount > 0 ? "要確認を解消してから保存" : "この給与集計結果を保存"}</button>
+        <button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={saving || savedRunId !== null || preview.summary.needsReviewCount > 0 || preview.summary.staffCount === 0} onClick={() => void savePayroll()}>{saving ? "保存前に再計算中…" : savedRunId ? "保存済み（再計算すると再保存できます）" : preview.summary.needsReviewCount > 0 ? "要確認を解消してから保存" : "この給与集計結果を保存"}</button>
       </section>
       <section className={styles.card}><h2>スタッフ別</h2><div className={styles.staffGrid}>{preview.staff.map((member) => {
         const ordinaryOvertimeMinutes = Math.max(0, member.minutes.statutoryOvertime - member.minutes.highOvertime);
