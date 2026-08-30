@@ -11,7 +11,8 @@ type PreviewStaff = {
   staffId: string; legalName: string; payableDayCount: number; status: "CONFIRMED" | "NEEDS_REVIEW";
   reviewReasons: string[]; grossPay: number; hourlyRatesUsed: number[];
   minutes: { worked: number; statutoryOvertime: number; highOvertime: number; statutoryHoliday: number; lateNight: number };
-  components: { basePay: number; overtimePremium: number; highOvertimePremium: number; statutoryHolidayPremium: number; lateNightPremium: number; adjustments: number };
+  components: { basePay: number; overtimePremium: number; highOvertimePremium: number; statutoryHolidayPremium: number; lateNightPremium: number; adjustments: number; commutingAllowance?: number };
+  commutingAllowance?: { method: "MONTHLY_PASS" | "PER_WORKDAY_GAS"; unitAmountYen: number | null; payableDayCount: number; termIds: string[] } | null;
 };
 type PreviewRates = { overtimePremiumRate: number; highOvertimePremiumRate: number; statutoryHolidayPremiumRate: number; lateNightPremiumRate: number };
 type Preview = { period: { start: string; end: string }; rates: PreviewRates; staff: PreviewStaff[]; summary: { staffCount: number; confirmedCount: number; needsReviewCount: number; grossPay: number } };
@@ -57,6 +58,10 @@ function reasonLabel(code: string) {
     OTHER_EMPLOYMENT_CONFIRMATION_EXPIRED: "この店舗以外の勤務先を再確認してください",
     OTHER_EMPLOYMENT_PRESENT: "この店舗以外にも勤務先あり（労働時間の通算を要確認）",
     OTHER_EMPLOYMENT_UNKNOWN: "この店舗以外の勤務先の有無が不明",
+    COMMUTING_ALLOWANCE_BASIS_UNCONFIRMED: "通勤手当の算定根拠が未確認",
+    COMMUTING_ALLOWANCE_TERM_AMBIGUOUS: "通勤手当の適用期間が不足または重複",
+    COMMUTING_ALLOWANCE_TERM_MISSING_OR_AMBIGUOUS: "出勤日に有効な通勤手当を確認できない",
+    COMMUTING_MONTHLY_PASS_NO_ATTENDANCE: "定期代の対象期間に出勤実績がないため支給要否を確認",
   };
   return labels[code] ?? code;
 }
@@ -198,6 +203,7 @@ export default function PayrollPreviewPage() {
             {member.minutes.highOvertime > 0 && <li><div className={styles.payBreakdownTop}><strong>月60時間超割増</strong><strong>{member.components.highOvertimePremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>{hours(member.minutes.highOvertime)} / {premiumLabel(member, preview.rates.highOvertimePremiumRate)}</small></li>}
             <li><div className={styles.payBreakdownTop}><strong>深夜割増</strong><strong>{member.components.lateNightPremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>深夜 {hours(member.minutes.lateNight)} / {premiumLabel(member, preview.rates.lateNightPremiumRate)}</small></li>
             <li><div className={styles.payBreakdownTop}><strong>法定休日割増</strong><strong>{member.components.statutoryHolidayPremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>法定休日 {hours(member.minutes.statutoryHoliday)} / {premiumLabel(member, preview.rates.statutoryHolidayPremiumRate)}</small></li>
+            {(member.components.commutingAllowance ?? 0) !== 0 && <li><div className={styles.payBreakdownTop}><strong>通勤手当</strong><strong>{Number(member.components.commutingAllowance).toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>{member.commutingAllowance?.method === "MONTHLY_PASS" ? "定期代（月額・自動日割りなし）" : `${member.commutingAllowance?.payableDayCount ?? 0}出勤分`}</small></li>}
             {member.components.adjustments !== 0 && <li><div className={styles.payBreakdownTop}><strong>調整額</strong><strong>{member.components.adjustments.toLocaleString("ja-JP")}円</strong></div></li>}
           </ul><p className={styles.revisionNote}>深夜時間は、通常労働・法定時間外・法定休日労働と重複する場合があります。</p>{member.reviewReasons.length > 0 && <><strong>要確認</strong><ul className={styles.historyList}>{member.reviewReasons.map((reason) => <li key={reason}><span>{reasonLabel(reason)}</span></li>)}</ul></>}</div>
         </article>;

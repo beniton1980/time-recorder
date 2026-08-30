@@ -26,6 +26,9 @@ type OtherEmploymentConfirmation = {
   confirmed_at: string;
   confirmation_current: boolean;
 };
+type CommutingMethod = "MONTHLY_PASS" | "PER_WORKDAY_GAS";
+type CommutingAllowanceTerm = { id: string; staff_id: string; method: CommutingMethod; amount_yen: number; effective_from: string; effective_to: string | null; basis_confirmed: boolean };
+type CommutingDraft = { method: CommutingMethod; amount: string; effectiveFrom: string; basisConfirmed: boolean };
 type Settings = {
   store_id: string;
   work_time_system: "STANDARD_40H" | "SPECIAL_44H" | "OTHER_REVIEW_REQUIRED";
@@ -40,6 +43,7 @@ type PayrollData = {
   statutoryHolidayDates: string[];
   statutoryHolidayConfirmedMonths: string[];
   otherEmploymentConfirmations: OtherEmploymentConfirmation[];
+  commutingAllowanceTerms: CommutingAllowanceTerm[];
 };
 type WageDraft = { hourlyRate: string; effectiveFrom: string };
 
@@ -86,6 +90,8 @@ export default function PayrollSettingsPage() {
   const [savedInitialStaffIds, setSavedInitialStaffIds] = useState<string[]>([]);
   const [otherEmploymentDrafts, setOtherEmploymentDrafts] = useState<Record<string, OtherEmploymentStatus>>({});
   const [savingOtherEmploymentStaffId, setSavingOtherEmploymentStaffId] = useState<string | null>(null);
+  const [commutingDrafts, setCommutingDrafts] = useState<Record<string, CommutingDraft>>({});
+  const [savingCommutingStaffId, setSavingCommutingStaffId] = useState<string | null>(null);
 
   const termsByStaff = useMemo(() => {
     const map = new Map<string, CompensationTerm[]>();
@@ -105,6 +111,7 @@ export default function PayrollSettingsPage() {
     }
     return map;
   }, [termsByStaff]);
+  const currentCommutingTerms = useMemo(() => new Map((data?.commutingAllowanceTerms ?? []).filter((term) => term.effective_to === null).map((term) => [term.staff_id, term])), [data]);
 
   const calendarDates = useMemo(() => datesForMonth(holidayMonth), [holidayMonth]);
   const calendarBlanks = useMemo(() => Array.from({ length: firstWeekday(holidayMonth) }), [holidayMonth]);
@@ -132,6 +139,9 @@ export default function PayrollSettingsPage() {
       if (result.code === "INVALID_STATUTORY_HOLIDAY_DATE") throw new Error("法定休日の日付を確認してください。");
       if (result.code === "STATUTORY_HOLIDAY_SAVE_NOT_VERIFIED") throw new Error("法定休日をDBへ保存できませんでした。もう一度お試しください。");
       if (result.code === "INVALID_COMPENSATION_TERM") throw new Error("時給と適用開始日を確認してください。");
+      if (result.code === "INVALID_COMMUTING_ALLOWANCE") throw new Error("通勤手当の金額・算定根拠・適用開始日を確認してください。");
+      if (result.code === "COMMUTING_ALLOWANCE_REVISION_DATE_INVALID") throw new Error("通勤手当の改定日は現在の条件の開始日より後を指定してください。");
+      if (result.code === "COMMUTING_ALLOWANCE_PERIOD_OVERLAP" || result.code === "COMMUTING_ALLOWANCE_CURRENT_TERM_AMBIGUOUS") throw new Error("通勤手当の適用期間が重なっています。履歴を確認してください。");
       if (result.code === "PAYROLL_SETTINGS_UNAVAILABLE") throw new Error("給与設定を利用できませんでした。");
       throw new Error("給与設定を保存できませんでした。");
     }
@@ -174,6 +184,7 @@ export default function PayrollSettingsPage() {
       statutoryHolidayDates: result.statutoryHolidayDates ?? [],
       statutoryHolidayConfirmedMonths: result.statutoryHolidayConfirmedMonths ?? [],
       otherEmploymentConfirmations: result.otherEmploymentConfirmations ?? [],
+      commutingAllowanceTerms: result.commutingAllowanceTerms ?? [],
     };
     setData(next);
     setWorkTimeSystem(result.settings?.work_time_system ?? "OTHER_REVIEW_REQUIRED");
@@ -195,6 +206,10 @@ export default function PayrollSettingsPage() {
     setOtherEmploymentDrafts(Object.fromEntries(next.staff.map((staff) => {
       const confirmation = next.otherEmploymentConfirmations.find((item) => item.staff_id === staff.staff_id);
       return [staff.staff_id, confirmation?.status ?? "UNKNOWN"];
+    })));
+    setCommutingDrafts(Object.fromEntries(next.staff.map((staff) => {
+      const current = next.commutingAllowanceTerms.find((term) => term.staff_id === staff.staff_id && term.effective_to === null);
+      return [staff.staff_id, { method: current?.method ?? "MONTHLY_PASS", amount: "", effectiveFrom: todayJst(), basisConfirmed: false }];
     })));
     if (!preserveDrafts) setSavedInitialStaffIds([]);
     setMessage("");
@@ -344,6 +359,23 @@ export default function PayrollSettingsPage() {
     finally { setSavingOtherEmploymentStaffId(null); }
   }
 
+  async function saveCommutingAllowance(staffId: string) {
+    const draft = commutingDrafts[staffId];
+    const amount = Number(draft?.amount);
+    if (!draft || !Number.isInteger(amount) || amount < 0 || !draft.effectiveFrom || !draft.basisConfirmed) {
+      setError("通勤手当の金額・適用開始日を入力し、算定根拠の確認にチェックしてください。"); return;
+    }
+    setSavingCommutingStaffId(staffId); setError(null);
+    try {
+      const result = await api({ action: "saveCommutingAllowance", storeId, staffId, commutingMethod: draft.method, commutingAmountYen: amount, commutingBasisConfirmed: true, effectiveFrom: draft.effectiveFrom });
+      const saved = result.commutingAllowanceTerm as CommutingAllowanceTerm;
+      setData((current) => current ? { ...current, commutingAllowanceTerms: [...current.commutingAllowanceTerms.map((term) => term.staff_id === staffId && term.effective_to === null ? { ...term, effective_to: new Date(new Date(`${saved.effective_from}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) } : term), saved] } : current);
+      setCommutingDrafts((current) => ({ ...current, [staffId]: { ...draft, amount: "", basisConfirmed: false } }));
+      setMessage("通勤手当を適用履歴として保存しました。");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "通勤手当を保存できませんでした。"); }
+    finally { setSavingCommutingStaffId(null); }
+  }
+
   const unregisteredCount = (data?.staff ?? []).filter((staff) => !currentTerms.has(staff.staff_id)).length;
 
   return (
@@ -441,6 +473,15 @@ export default function PayrollSettingsPage() {
           })}
         </div>
         {unregisteredCount > 0 && <button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={savingInitialWages} onClick={() => void saveInitialWages()}>{savingInitialWages ? "登録中…" : "入力した時給をまとめて保存"}</button>}
+      </section>
+      <section className={styles.card}>
+        <h2>4. 通勤手当</h2>
+        <p className={styles.help}>月額の定期代、または通勤距離等に基づく出勤1日あたりのガソリン代を登録します。税務上の非課税判定は行いません。金額変更は上書きせず履歴として残します。</p>
+        <div className={styles.staffList}>{(data?.staff ?? []).map((staff) => {
+          const term = currentCommutingTerms.get(staff.staff_id);
+          const draft = commutingDrafts[staff.staff_id] ?? { method: "MONTHLY_PASS" as const, amount: "", effectiveFrom: todayJst(), basisConfirmed: false };
+          return <article className={styles.staffRow} key={staff.staff_id}><div className={styles.staffIdentity}><strong>{staff.legal_name}</strong>{term && <span className={styles.inactive}>現在 {term.method === "MONTHLY_PASS" ? `定期代 月額 ${Number(term.amount_yen).toLocaleString("ja-JP")}円` : `ガソリン代 1出勤 ${Number(term.amount_yen).toLocaleString("ja-JP")}円`}</span>}</div><div className={styles.inputs}><label>支給方法<select value={draft.method} onChange={(event) => setCommutingDrafts((current) => ({ ...current, [staff.staff_id]: { ...draft, method: event.target.value as CommutingMethod, basisConfirmed: false } }))}><option value="MONTHLY_PASS">1か月の定期代</option><option value="PER_WORKDAY_GAS">出勤日ごとのガソリン代</option></select></label><label>{draft.method === "MONTHLY_PASS" ? "月額" : "1出勤あたり"}<input inputMode="numeric" value={draft.amount} onChange={(event) => setCommutingDrafts((current) => ({ ...current, [staff.staff_id]: { ...draft, amount: event.target.value, basisConfirmed: false } }))} placeholder="例 8000" /></label><label>適用開始日<input type="date" value={draft.effectiveFrom} onChange={(event) => setCommutingDrafts((current) => ({ ...current, [staff.staff_id]: { ...draft, effectiveFrom: event.target.value, basisConfirmed: false } }))} /></label></div><label className={styles.revisionNote}><input type="checkbox" checked={draft.basisConfirmed} onChange={(event) => setCommutingDrafts((current) => ({ ...current, [staff.staff_id]: { ...draft, basisConfirmed: event.target.checked } }))} /> {draft.method === "MONTHLY_PASS" ? "実際の定期代に基づく金額です" : "通勤距離・ガソリン代等に基づく金額です"}</label><button className={styles.secondaryButton} disabled={savingCommutingStaffId === staff.staff_id} onClick={() => void saveCommutingAllowance(staff.staff_id)}>{savingCommutingStaffId === staff.staff_id ? "保存中…" : term ? "通勤手当を改定" : "通勤手当を登録"}</button><p className={styles.revisionNote}>{draft.method === "MONTHLY_PASS" ? "対象期間を通して同じ条件が有効で、出勤実績がある場合に月額を1回加算します。自動日割りはしません。" : "給与期間内の実出勤日数を掛けて計算します。"}</p></article>;
+        })}</div>
       </section>
     </main>
   );

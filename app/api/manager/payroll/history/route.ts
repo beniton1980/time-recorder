@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       if (!runs[0]) return NextResponse.json({ ok: false, code: "PAYROLL_RUN_NOT_FOUND" }, { status: 404 });
       const items = await sql`
         SELECT staff_id, legal_name_snapshot, hourly_rates_used, minutes_snapshot,
-               components_snapshot, gross_pay_yen, calculation_spec_version,
+               components_snapshot, commuting_allowance_snapshot, gross_pay_yen, calculation_spec_version,
                source_attendance_spec_versions
         FROM payroll_run_items
         WHERE store_id = ${body.storeId}::uuid AND payroll_run_id = ${body.runId}::uuid
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
       if (previousRuns[0]) {
         const previousItems = await sql`
           SELECT staff_id, legal_name_snapshot, hourly_rates_used, minutes_snapshot,
-                 components_snapshot, gross_pay_yen, calculation_spec_version,
+                 components_snapshot, commuting_allowance_snapshot, gross_pay_yen, calculation_spec_version,
                  source_attendance_spec_versions
           FROM payroll_run_items
           WHERE store_id = ${body.storeId}::uuid AND payroll_run_id = ${previousRuns[0].id}::uuid

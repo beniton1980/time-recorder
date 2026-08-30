@@ -57,7 +57,7 @@ export function calculateStaffPayrollPreview(input: {
   status: "CONFIRMED" | "NEEDS_REVIEW";
   reviewReasons: string[];
   minutes: { worked: number; statutoryOvertime: number; highOvertime: number; statutoryHoliday: number; lateNight: number };
-  components: { basePay: number; overtimePremium: number; highOvertimePremium: number; statutoryHolidayPremium: number; lateNightPremium: number; adjustments: number };
+  components: { basePay: number; overtimePremium: number; highOvertimePremium: number; statutoryHolidayPremium: number; lateNightPremium: number; adjustments: number; commutingAllowance?: number };
   grossPay: number;
   calculationSpecVersion: string;
   sourceAttendanceSpecVersions: string[];

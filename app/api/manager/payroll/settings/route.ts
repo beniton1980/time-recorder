@@ -14,6 +14,7 @@ const supportedWorkTimeSystems = new Set(["STANDARD_40H", "SPECIAL_44H", "OTHER_
 const supportedOvertimeMonthRules = new Set(["PAY_PERIOD", "CALENDAR_MONTH", "OTHER_REVIEW_REQUIRED"]);
 const supportedStatutoryHolidayRules = new Set(["FIXED_WEEKDAY", "MANUAL_DATES", "OTHER_REVIEW_REQUIRED"]);
 const supportedOtherEmploymentStatuses = new Set(["NONE", "HAS_OTHER_EMPLOYER", "UNKNOWN"]);
+const supportedCommutingMethods = new Set(["MONTHLY_PASS", "PER_WORKDAY_GAS"]);
 
 type RequestBody = {
   idToken?: unknown;
@@ -31,6 +32,9 @@ type RequestBody = {
   effectiveFrom?: unknown;
   initialCompensationTerms?: unknown;
   otherEmploymentStatus?: unknown;
+  commutingMethod?: unknown;
+  commutingAmountYen?: unknown;
+  commutingBasisConfirmed?: unknown;
 };
 
 type ValidCompensationBody = RequestBody & { staffId: string; hourlyRateYen: number; effectiveFrom: string };
@@ -95,10 +99,11 @@ export async function POST(request: Request) {
     const action = typeof body.action === "string" ? body.action : "load";
 
     if (action === "load") {
-      const [settingsRows, staffRows, termRows, holidayRows, holidayConfirmationRows, otherEmploymentRows] = await Promise.all([
+      const [settingsRows, staffRows, termRows, commutingRows, holidayRows, holidayConfirmationRows, otherEmploymentRows] = await Promise.all([
         sql`SELECT store_id, work_time_system, week_starts_on, overtime_month_rule, statutory_holiday_rule, statutory_holiday_weekday, overtime_premium_rate::float8 AS overtime_premium_rate, high_overtime_premium_rate::float8 AS high_overtime_premium_rate, statutory_holiday_premium_rate::float8 AS statutory_holiday_premium_rate, late_night_premium_rate::float8 AS late_night_premium_rate, rounding_mode FROM payroll_store_settings WHERE store_id = ${storeId}::uuid`,
         sql`SELECT id AS staff_id, legal_name, status FROM staff WHERE store_id = ${storeId}::uuid AND status IN ('active', 'inactive') ORDER BY status ASC, created_at ASC`,
         sql`SELECT id, staff_id, hourly_rate_yen, effective_from::text, effective_to::text, created_at FROM payroll_compensation_terms WHERE store_id = ${storeId}::uuid ORDER BY staff_id, effective_from DESC, created_at DESC`,
+        sql`SELECT id, staff_id, method, amount_yen, effective_from::text, effective_to::text, basis_confirmed, created_at FROM payroll_commuting_allowance_terms WHERE store_id = ${storeId}::uuid ORDER BY staff_id, effective_from DESC, created_at DESC`,
         sql`SELECT holiday_date::text AS holiday_date FROM payroll_statutory_holidays WHERE store_id = ${storeId}::uuid ORDER BY holiday_date DESC LIMIT 120`,
         sql`SELECT to_char(holiday_month, 'YYYY-MM') AS holiday_month, confirmed_at FROM payroll_statutory_holiday_month_confirmations WHERE store_id = ${storeId}::uuid ORDER BY holiday_month DESC LIMIT 120`,
         sql`SELECT staff_id, status, confirmed_at, confirmed_by_line_user_id,
@@ -111,10 +116,36 @@ export async function POST(request: Request) {
         settings: settingsRows[0] ?? null,
         staff: staffRows,
         compensationTerms: termRows,
+        commutingAllowanceTerms: commutingRows,
         statutoryHolidayDates: holidayRows.map((row) => row.holiday_date),
         statutoryHolidayConfirmedMonths: holidayConfirmationRows.map((row) => row.holiday_month),
         otherEmploymentConfirmations: otherEmploymentRows,
       });
+    }
+
+    if (action === "saveCommutingAllowance") {
+      if (typeof body.staffId !== "string" || !uuidPattern.test(body.staffId)
+          || typeof body.commutingMethod !== "string" || !supportedCommutingMethods.has(body.commutingMethod)
+          || typeof body.commutingAmountYen !== "number" || !Number.isInteger(body.commutingAmountYen) || body.commutingAmountYen < 0
+          || body.commutingBasisConfirmed !== true || !validDate(body.effectiveFrom)) {
+        return NextResponse.json({ ok: false, code: "INVALID_COMMUTING_ALLOWANCE" }, { status: 400 });
+      }
+      const staffRows = await sql`SELECT id FROM staff WHERE id = ${body.staffId}::uuid AND store_id = ${storeId}::uuid AND status IN ('active', 'inactive') LIMIT 1`;
+      if (staffRows.length !== 1) return NextResponse.json({ ok: false, code: "STAFF_NOT_FOUND" }, { status: 404 });
+      const openRows = await sql`SELECT id, effective_from::text FROM payroll_commuting_allowance_terms WHERE store_id = ${storeId}::uuid AND staff_id = ${body.staffId}::uuid AND effective_to IS NULL ORDER BY effective_from DESC`;
+      if (openRows.length > 1) return NextResponse.json({ ok: false, code: "COMMUTING_ALLOWANCE_CURRENT_TERM_AMBIGUOUS" }, { status: 409 });
+      if (openRows[0] && body.effectiveFrom <= openRows[0].effective_from) return NextResponse.json({ ok: false, code: "COMMUTING_ALLOWANCE_REVISION_DATE_INVALID" }, { status: 409 });
+      try {
+        const results = await sql.transaction((tx) => [
+          ...(openRows[0] ? [tx`UPDATE payroll_commuting_allowance_terms SET effective_to = ${body.effectiveFrom}::date - 1 WHERE id = ${openRows[0].id}::uuid AND store_id = ${storeId}::uuid AND staff_id = ${body.staffId}::uuid AND effective_to IS NULL`] : []),
+          tx`INSERT INTO payroll_commuting_allowance_terms (store_id, staff_id, method, amount_yen, effective_from, basis_confirmed, created_by_line_user_id) VALUES (${storeId}::uuid, ${body.staffId}::uuid, ${body.commutingMethod}, ${body.commutingAmountYen}, ${body.effectiveFrom}::date, true, ${identity.sub}) RETURNING id, staff_id, method, amount_yen, effective_from::text, effective_to::text, basis_confirmed, created_at`,
+        ]);
+        const inserted = results[results.length - 1];
+        return NextResponse.json({ ok: true, commutingAllowanceTerm: inserted[0] });
+      } catch (error) {
+        if (postgresCode(error) === "23P01") return NextResponse.json({ ok: false, code: "COMMUTING_ALLOWANCE_PERIOD_OVERLAP" }, { status: 409 });
+        throw error;
+      }
     }
 
     if (action === "confirmOtherEmployment") {

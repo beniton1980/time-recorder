@@ -17,7 +17,7 @@ type RunDetail = { run: PayrollRun; items: PayrollItem[]; comparison: Comparison
 function savedAt(value: string) { return new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }); }
 function hours(minutes = 0) { return `${Math.floor(minutes / 60)}時間${minutes % 60}分`; }
 function componentLabel(name: string) {
-  return ({ basePay: "基本給", overtimePremium: "時間外割増", highOvertimePremium: "月60時間超割増", statutoryHolidayPremium: "法定休日割増", lateNightPremium: "深夜割増", adjustments: "調整額" } as Record<string, string>)[name] ?? name;
+  return ({ basePay: "基本給", overtimePremium: "時間外割増", highOvertimePremium: "月60時間超割増", statutoryHolidayPremium: "法定休日割増", lateNightPremium: "深夜割増", commutingAllowance: "通勤手当", adjustments: "調整額" } as Record<string, string>)[name] ?? name;
 }
 function minuteLabel(name: string) { return ({ worked: "実働", statutoryOvertime: "法定時間外", highOvertime: "月60時間超", statutoryHoliday: "法定休日", lateNight: "深夜" } as Record<string, string>)[name] ?? name; }
 function yen(value: number | null) { return value == null ? "—" : `${Number(value).toLocaleString("ja-JP")}円`; }
