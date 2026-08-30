@@ -3,6 +3,7 @@ import { enforceRateLimit } from "@/lib/api-security";
 import { getSql } from "@/lib/db";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
 import { logServerError } from "@/lib/safe-log";
+import { comparePayrollSnapshots } from "@/lib/payroll-snapshot-diff.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,34 @@ export async function POST(request: Request) {
         WHERE store_id = ${body.storeId}::uuid AND payroll_run_id = ${body.runId}::uuid
         ORDER BY legal_name_snapshot, staff_id
       `;
-      return NextResponse.json({ ok: true, run: runs[0], items });
+      const previousRuns = await sql`
+        SELECT id, period_start::text, period_end::text, gross_pay_yen,
+               calculation_spec_version, saved_at,
+               (SELECT COUNT(*)::int FROM payroll_runs older
+                WHERE older.store_id = previous.store_id
+                  AND older.period_start = previous.period_start AND older.period_end = previous.period_end
+                  AND (older.saved_at, older.id) <= (previous.saved_at, previous.id)) AS version_number
+        FROM payroll_runs previous
+        WHERE previous.store_id = ${body.storeId}::uuid
+          AND previous.period_start = ${runs[0].period_start}::date
+          AND previous.period_end = ${runs[0].period_end}::date
+          AND (previous.saved_at, previous.id) < (${runs[0].saved_at}::timestamptz, ${body.runId}::uuid)
+        ORDER BY previous.saved_at DESC, previous.id DESC
+        LIMIT 1
+      `;
+      let comparison = null;
+      if (previousRuns[0]) {
+        const previousItems = await sql`
+          SELECT staff_id, legal_name_snapshot, hourly_rates_used, minutes_snapshot,
+                 components_snapshot, gross_pay_yen, calculation_spec_version,
+                 source_attendance_spec_versions
+          FROM payroll_run_items
+          WHERE store_id = ${body.storeId}::uuid AND payroll_run_id = ${previousRuns[0].id}::uuid
+          ORDER BY legal_name_snapshot, staff_id
+        `;
+        comparison = { previousRun: previousRuns[0], ...comparePayrollSnapshots({ previousRun: previousRuns[0], previousItems, currentRun: runs[0], currentItems: items }) };
+      }
+      return NextResponse.json({ ok: true, run: runs[0], items, comparison });
     }
 
     const runs = await sql`
