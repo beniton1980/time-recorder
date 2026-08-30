@@ -31,6 +31,10 @@ test("save API recalculates on server and rejects review-required payroll", asyn
   assert.match(route, /jsonb_array_elements/);
   assert.match(route, /settingsSnapshot/);
   assert.match(route, /sourceAttendanceSpecVersions/);
+  assert.match(route, /saveRequestId/);
+  assert.match(route, /ON CONFLICT \(id\) DO NOTHING/);
+  assert.match(route, /idempotentReplay: true/);
+  assert.match(route, /PAYROLL_SAVE_REQUEST_CONFLICT/);
   assert.doesNotMatch(route, /UPDATE payroll_runs|DELETE FROM payroll_runs/);
 });
 
@@ -41,4 +45,20 @@ test("save UI is disabled until all payroll review items are resolved", async ()
   assert.match(page, /この給与集計結果を保存/);
   assert.match(page, /\/api\/manager\/payroll\/save/);
   assert.match(page, /保存直前の再計算で要確認事項が見つかりました/);
+  assert.match(page, /window\.sessionStorage\.getItem/);
+  assert.match(page, /window\.crypto\.randomUUID/);
+  assert.match(page, /saveRequestId/);
+  assert.match(page, /保存済み（再計算すると再保存できます）/);
+});
+
+test("saved payroll history distinguishes the latest version from earlier saves", async () => {
+  const route = await readFile(new URL("../app/api/manager/payroll/history/route.ts", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/manager/payroll/history/page.tsx", import.meta.url), "utf8");
+  assert.match(route, /version_number/);
+  assert.match(route, /version_count/);
+  assert.match(route, /is_latest/);
+  assert.match(route, /PARTITION BY period_start, period_end/);
+  assert.match(page, /最新版・第/);
+  assert.match(page, /以前の保存・第/);
+  assert.match(page, /最新の保存結果と間違えないようご注意ください/);
 });
