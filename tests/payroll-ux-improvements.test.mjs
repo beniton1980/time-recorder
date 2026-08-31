@@ -8,11 +8,27 @@ test("payroll month maps to store closing period", () => {
   assert.deepEqual(payrollPeriodForMonth("month_end", "2026-02"), { start: "2026-02-01", end: "2026-02-28" });
 });
 
-test("preview UI uses payroll month instead of asking for raw dates", async () => {
+test("preview UI changes payroll months without the native month picker", async () => {
   const page = await readFile(new URL("../app/manager/payroll/preview/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /給与月度/);
-  assert.match(page, /type="month"/);
+  assert.match(page, /前月/);
+  assert.match(page, /次月/);
+  assert.match(page, /shiftMonth/);
+  assert.doesNotMatch(page, /type="month"/);
   assert.doesNotMatch(page, /開始日<input/);
+});
+
+test("preview UI explains unconfirmed statutory-holiday months and links directly to settings", async () => {
+  const page = await readFile(new URL("../app/manager/payroll/preview/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /unconfirmedManualHolidayMonths/);
+  assert.match(page, /法定休日の確認が必要です/);
+  assert.match(page, /今回の給与集計に必要な期間が月をまたいでいるため/);
+  assert.match(page, /給与設定で確認する/);
+  assert.match(page, /href="\/manager\/payroll\/settings"/);
+});
+
+test("statutory holiday review checkbox is visually separated from the calendar", async () => {
+  const css = await readFile(new URL("../app/manager/payroll/payroll.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.calendarGrid \+ \.label\s*\{[\s\S]*?margin-top:\s*16px/);
 });
 
 test("manual holiday dates are saved from the single store-rules save action", async () => {
