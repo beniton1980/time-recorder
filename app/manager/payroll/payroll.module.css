@@ -237,6 +237,30 @@
   margin-top: 14px;
 }
 
+.monthStepper {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.monthStepButton {
+  min-height: 44px;
+  border: 1px solid #d7d7d7;
+  border-radius: 10px;
+  background: #fff;
+  padding: 9px 14px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.monthStepButton:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
 .periodSummary {
   min-height: 44px;
   display: flex;
@@ -251,6 +275,30 @@
 .periodSummary span {
   color: #666;
   font-size: 13px;
+}
+
+.previewActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.reviewGuide {
+  background: #fffaf0;
+  border-color: #ead9a8;
+}
+
+.reviewGuide strong {
+  display: block;
+  line-height: 1.5;
+}
+
+.reviewGuide p {
+  margin: 8px 0 12px;
+  color: #684b00;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .revisionBox {
@@ -345,6 +393,10 @@
 
 .calendarGrid {
   margin-top: 6px;
+}
+
+.calendarGrid + .label {
+  margin-top: 16px;
 }
 
 .calendarBlank {
@@ -454,6 +506,30 @@
   .calendarToolbar,
   .diffSummary {
     grid-template-columns: 1fr;
+  }
+
+  .monthStepper {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .monthStepButton {
+    padding-inline: 10px;
+  }
+
+  .periodSummary {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .previewActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .previewActions .secondaryButton {
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
   }
 
   .secondaryButton {

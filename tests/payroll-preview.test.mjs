@@ -103,5 +103,6 @@ test("preview UI distinguishes reference amounts from saved payroll snapshots", 
   assert.match(page, /保存時にサーバー側でもう一度再計算/);
   assert.match(page, /控除前の総支給額/);
   assert.match(page, /要確認/);
-  assert.match(page, /法定休日を確認していない月がある/);
+  assert.match(page, /法定休日の確認が必要です/);
+  assert.match(page, /unconfirmedManualHolidayMonths/);
 });

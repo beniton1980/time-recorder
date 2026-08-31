@@ -15,7 +15,8 @@ type PreviewStaff = {
   commutingAllowance?: { method: "MONTHLY_PASS" | "PER_WORKDAY_GAS"; unitAmountYen: number | null; payableDayCount: number; termIds: string[] } | null;
 };
 type PreviewRates = { overtimePremiumRate: number; highOvertimePremiumRate: number; statutoryHolidayPremiumRate: number; lateNightPremiumRate: number };
-type Preview = { period: { start: string; end: string }; rates: PreviewRates; staff: PreviewStaff[]; summary: { staffCount: number; confirmedCount: number; needsReviewCount: number; grossPay: number } };
+type PreviewContext = { unconfirmedManualHolidayMonths: string[] };
+type Preview = { period: { start: string; end: string }; rates: PreviewRates; context: PreviewContext; staff: PreviewStaff[]; summary: { staffCount: number; confirmedCount: number; needsReviewCount: number; grossPay: number } };
 type PayrollPeriod = { start: string; end: string };
 type PeriodResponse = { period: PayrollPeriod; payrollMonth: string };
 
@@ -26,6 +27,15 @@ function hours(minutes: number) { return `${Math.floor(minutes / 60)}時間${min
 function monthLabel(value: string) {
   const [year, month] = value.split("-");
   return `${Number(year)}年${Number(month)}月度`;
+}
+function monthName(value: string) {
+  const [year, month] = value.split("-");
+  return `${Number(year)}年${Number(month)}月`;
+}
+function shiftMonth(value: string, delta: number) {
+  const [yearText, monthText] = value.split("-");
+  const date = new Date(Date.UTC(Number(yearText), Number(monthText) - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 function percent(rate: number) { return `${Math.round(rate * 100)}%`; }
 function wageLabel(member: PreviewStaff) {
@@ -42,14 +52,18 @@ function premiumLabel(member: PreviewStaff, rate: number) {
   if (member.hourlyRatesUsed.length > 1) return `+${percent(rate)}・期間内で時給変更あり`;
   return `+${percent(rate)}`;
 }
-function reasonLabel(code: string) {
+function reasonLabel(code: string, unconfirmedHolidayMonths: string[] = []) {
+  if (code === "STATUTORY_HOLIDAY_MONTH_UNCONFIRMED") {
+    return unconfirmedHolidayMonths.length > 0
+      ? `法定休日の確認が必要です（${unconfirmedHolidayMonths.map(monthName).join("・")}）`
+      : "法定休日の確認が必要です";
+  }
   const labels: Record<string, string> = {
     UNSUPPORTED_WORK_TIME_SYSTEM: "勤務制度が未確定",
     WEEK_CONTEXT_INCOMPLETE: "週の判定期間が不足",
     OVERTIME_MONTH_CONTEXT_INCOMPLETE: "月60時間判定の期間が不足",
     PAY_PERIOD_CROSSES_OVERTIME_MONTH_BOUNDARY: "給与期間が残業判定月をまたいでいる",
     STATUTORY_HOLIDAY_RULE_MISSING: "法定休日が未確定",
-    STATUTORY_HOLIDAY_MONTH_UNCONFIRMED: "法定休日を確認していない月がある",
     OVERTIME_MONTH_RULE_MISSING: "月60時間の区切りが未確定",
     WEEK_START_RULE_MISSING: "1週間の区切りが未確定",
     ATTENDANCE_NEEDS_REVIEW: "勤怠に要確認あり",
@@ -173,6 +187,8 @@ export default function PayrollPreviewPage() {
   async function changeStore(nextStoreId: string) { setStoreId(nextStoreId); await loadPayrollMonth(nextStoreId); }
   async function changePayrollMonth(nextMonth: string) { setPayrollMonth(nextMonth); await loadPayrollMonth(storeId, nextMonth); }
 
+  const unconfirmedHolidayMonths = preview?.context?.unconfirmedManualHolidayMonths ?? [];
+
   return <main className={`${styles.page} ${styles.previewPage}`}>
     <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>給与プレビュー</h1><p className={styles.lead}>実際の勤怠と時給設定から控除前の総支給額を計算します。要確認がなければ、この結果を履歴として保存できます。</p></div><div><a className={styles.backLink} href="/manager/payroll/history">保存履歴を見る</a> <a className={styles.backLink} href="/manager/payroll/settings">給与設定を見る</a> <a className={styles.backLink} href="/manager/payroll">給与コンソールへ戻る</a></div></header>
     {savedMessage && <p className={styles.message}>{savedMessage}</p>}
@@ -180,15 +196,26 @@ export default function PayrollPreviewPage() {
     <section className={styles.card}>
       <h2>対象期間</h2>
       {memberships.length > 1 && <><label className={styles.label}>店舗</label><select className={styles.select} value={storeId} onChange={(e) => void changeStore(e.target.value)}>{memberships.map((m) => <option value={m.store_id} key={m.store_id}>{m.store_name}</option>)}</select></>}
-      <div className={styles.monthSelector}><label>給与月度<input type="month" value={payrollMonth} onChange={(e) => void changePayrollMonth(e.target.value)} /></label><div className={styles.periodSummary}><strong>{monthLabel(payrollMonth)}</strong><span>{periodStart && periodEnd ? `${periodStart} 〜 ${periodEnd}` : "締め期間を確認中…"}</span></div></div>
-      <p className={styles.revisionNote}>月度を選ぶだけで、店舗の締め日に合わせた集計期間へ自動変換します。</p>
+      <div className={styles.monthStepper}>
+        <button type="button" className={styles.monthStepButton} disabled={loading} onClick={() => void changePayrollMonth(shiftMonth(payrollMonth, -1))}>前月</button>
+        <div className={styles.periodSummary}><strong>{monthLabel(payrollMonth)}</strong><span>{periodStart && periodEnd ? `${periodStart} 〜 ${periodEnd}` : "締め期間を確認中…"}</span></div>
+        <button type="button" className={styles.monthStepButton} disabled={loading} onClick={() => void changePayrollMonth(shiftMonth(payrollMonth, 1))}>次月</button>
+      </div>
+      <p className={styles.revisionNote}>前月・次月で切り替えると、店舗の締め日に合わせた集計期間へ自動変換します。</p>
+      <div className={styles.previewActions}><a className={styles.secondaryButton} href="/manager/payroll/settings">給与設定を開く</a><a className={styles.secondaryButton} href="/manager/payroll/history">保存履歴を見る</a></div>
     </section>
     {loading && <p className={styles.message}>給与を計算しています…</p>}
     {preview && <>
+      {unconfirmedHolidayMonths.length > 0 && <section className={`${styles.card} ${styles.reviewGuide}`}>
+        <strong>法定休日の確認が必要です（{unconfirmedHolidayMonths.map(monthName).join("・")}）</strong>
+        <p>今回の給与集計に必要な期間が月をまたいでいるため、表示されたすべての月で法定休日の確認が必要です。</p>
+        <a className={styles.secondaryButton} href="/manager/payroll/settings">給与設定で確認する</a>
+      </section>}
       <section className={`${styles.card} ${styles.summaryCard}`}>
         <h2>集計結果</h2>
         <div className={styles.registered}><span>{preview.summary.needsReviewCount === 0 ? `${monthLabel(payrollMonth)} / ${preview.period.start} 〜 ${preview.period.end}` : "控除前の総支給額（合計・参考値・未確定）"}</span><strong>{preview.summary.grossPay.toLocaleString("ja-JP")}円</strong><small>要確認なし {preview.summary.confirmedCount}名 / 要確認 {preview.summary.needsReviewCount}名</small></div>
         <p className={styles.revisionNote}>{preview.summary.needsReviewCount === 0 ? "保存時にサーバー側でもう一度再計算し、その時点の時給・時間内訳・金額内訳を履歴として残します。" : "要確認のスタッフが含まれるため、この合計金額は参考値です。すべて解消して再計算すると、給与集計結果を保存できます。"}</p>
+        {preview.summary.needsReviewCount > 0 && <div className={styles.previewActions}><a className={styles.secondaryButton} href="/manager/payroll/settings">給与設定を確認する</a></div>}
         <button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={saving || savedRunId !== null || preview.summary.needsReviewCount > 0 || preview.summary.staffCount === 0} onClick={() => void savePayroll()}>{saving ? "保存前に再計算中…" : savedRunId ? "保存済み（再計算すると再保存できます）" : preview.summary.needsReviewCount > 0 ? "要確認を解消してから保存" : "この給与集計結果を保存"}</button>
       </section>
       <section className={styles.card}><h2>スタッフ別</h2><div className={styles.staffGrid}>{preview.staff.map((member) => {
@@ -205,7 +232,7 @@ export default function PayrollPreviewPage() {
             <li><div className={styles.payBreakdownTop}><strong>法定休日割増</strong><strong>{member.components.statutoryHolidayPremium.toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>法定休日 {hours(member.minutes.statutoryHoliday)} / {premiumLabel(member, preview.rates.statutoryHolidayPremiumRate)}</small></li>
             {(member.components.commutingAllowance ?? 0) !== 0 && <li><div className={styles.payBreakdownTop}><strong>通勤手当</strong><strong>{Number(member.components.commutingAllowance).toLocaleString("ja-JP")}円</strong></div><small className={styles.payBreakdownMeta}>{member.commutingAllowance?.method === "MONTHLY_PASS" ? "定期代（月額・自動日割りなし）" : `${member.commutingAllowance?.payableDayCount ?? 0}出勤分`}</small></li>}
             {member.components.adjustments !== 0 && <li><div className={styles.payBreakdownTop}><strong>調整額</strong><strong>{member.components.adjustments.toLocaleString("ja-JP")}円</strong></div></li>}
-          </ul><p className={styles.revisionNote}>深夜時間は、通常労働・法定時間外・法定休日労働と重複する場合があります。</p>{member.reviewReasons.length > 0 && <><strong>要確認</strong><ul className={styles.historyList}>{member.reviewReasons.map((reason) => <li key={reason}><span>{reasonLabel(reason)}</span></li>)}</ul></>}</div>
+          </ul><p className={styles.revisionNote}>深夜時間は、通常労働・法定時間外・法定休日労働と重複する場合があります。</p>{member.reviewReasons.length > 0 && <><strong>要確認</strong><ul className={styles.historyList}>{member.reviewReasons.map((reason) => <li key={reason}><span>{reasonLabel(reason, unconfirmedHolidayMonths)}</span></li>)}</ul></>}</div>
         </article>;
       })}</div></section>
     </>}
