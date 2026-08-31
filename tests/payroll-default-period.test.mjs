@@ -30,12 +30,13 @@ test("default-period API starts from the current calendar month, not the next ac
   assert.match(route, /payrollPeriodForMonth/);
 });
 
-test("preview UI auto-loads the current payroll month and lets managers choose another month", async () => {
+test("preview UI auto-loads the current payroll month and lets managers move between months", async () => {
   const page = await readFile(new URL("../app/manager/payroll/preview/page.tsx", import.meta.url), "utf8");
   assert.match(page, /payroll\/default-period/);
   assert.match(page, /loadPayrollMonth\(first\)/);
   assert.match(page, /changeStore/);
   assert.match(page, /changePayrollMonth/);
-  assert.match(page, /給与月度/);
-  assert.match(page, /type="month"/);
+  assert.match(page, /shiftMonth\(payrollMonth, -1\)/);
+  assert.match(page, /shiftMonth\(payrollMonth, 1\)/);
+  assert.doesNotMatch(page, /type="month"/);
 });
