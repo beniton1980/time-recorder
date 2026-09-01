@@ -37,6 +37,11 @@ export default function LiffEntryPage() {
           return;
         }
 
+        if (entry === "test-center") {
+          window.location.replace("/operator/test-center");
+          return;
+        }
+
         window.location.replace(safeRootUrl(params));
       } catch {
         if (!active) return;
