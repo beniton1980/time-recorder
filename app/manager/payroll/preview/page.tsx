@@ -37,6 +37,9 @@ function shiftMonth(value: string, delta: number) {
   const date = new Date(Date.UTC(Number(yearText), Number(monthText) - 1 + delta, 1));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
+function toPayrollMonth(year: number, month: number) {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
 function percent(rate: number) { return `${Math.round(rate * 100)}%`; }
 function wageLabel(member: PreviewStaff) {
   if (member.hourlyRatesUsed.length === 1) return `時給 ${member.hourlyRatesUsed[0].toLocaleString("ja-JP")}円`;
@@ -92,6 +95,9 @@ export default function PayrollPreviewPage() {
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [savedRunId, setSavedRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [monthJumpOpen, setMonthJumpOpen] = useState(false);
+  const [jumpYear, setJumpYear] = useState(Number(currentMonth().slice(0, 4)));
+  const [jumpMonth, setJumpMonth] = useState(Number(currentMonth().slice(5, 7)));
 
   async function previewApi(targetStore: string, period: PayrollPeriod) {
     const idToken = liff.getIDToken();
@@ -186,8 +192,20 @@ export default function PayrollPreviewPage() {
 
   async function changeStore(nextStoreId: string) { setStoreId(nextStoreId); await loadPayrollMonth(nextStoreId); }
   async function changePayrollMonth(nextMonth: string) { setPayrollMonth(nextMonth); await loadPayrollMonth(storeId, nextMonth); }
+  function toggleMonthJump() {
+    const [year, month] = payrollMonth.split("-").map(Number);
+    setJumpYear(year);
+    setJumpMonth(month);
+    setMonthJumpOpen((open) => !open);
+  }
+  async function jumpToPayrollMonth() {
+    await changePayrollMonth(toPayrollMonth(jumpYear, jumpMonth));
+    setMonthJumpOpen(false);
+  }
 
   const unconfirmedHolidayMonths = preview?.context?.unconfirmedManualHolidayMonths ?? [];
+  const currentYearNumber = Number(currentMonth().slice(0, 4));
+  const jumpYears = Array.from({ length: 16 }, (_, index) => currentYearNumber + 1 - index);
 
   return <main className={`${styles.page} ${styles.previewPage}`}>
     <header className={styles.header}><div><p className={styles.eyebrow}>ONOGAMI 給与集計</p><h1>給与プレビュー</h1><p className={styles.lead}>実際の勤怠と時給設定から控除前の総支給額を計算します。要確認がなければ、この結果を履歴として保存できます。</p></div><div><a className={styles.backLink} href="/manager/payroll/history">保存履歴を見る</a> <a className={styles.backLink} href="/manager/payroll/settings">給与設定を見る</a> <a className={styles.backLink} href="/manager/payroll">給与コンソールへ戻る</a></div></header>
@@ -198,10 +216,15 @@ export default function PayrollPreviewPage() {
       {memberships.length > 1 && <><label className={styles.label}>店舗</label><select className={styles.select} value={storeId} onChange={(e) => void changeStore(e.target.value)}>{memberships.map((m) => <option value={m.store_id} key={m.store_id}>{m.store_name}</option>)}</select></>}
       <div className={styles.monthStepper}>
         <button type="button" className={styles.monthStepButton} disabled={loading} onClick={() => void changePayrollMonth(shiftMonth(payrollMonth, -1))}>前月</button>
-        <div className={styles.periodSummary}><strong>{monthLabel(payrollMonth)}</strong><span>{periodStart && periodEnd ? `${periodStart} 〜 ${periodEnd}` : "締め期間を確認中…"}</span></div>
+        <button type="button" className={styles.periodSummary} disabled={loading} onClick={toggleMonthJump} aria-expanded={monthJumpOpen} style={{ border: 0, width: "100%", font: "inherit", textAlign: "left", cursor: loading ? "default" : "pointer" }}><strong>{monthLabel(payrollMonth)}</strong><span>{periodStart && periodEnd ? `${periodStart} 〜 ${periodEnd}` : "締め期間を確認中…"}</span><span>年月を選ぶ</span></button>
         <button type="button" className={styles.monthStepButton} disabled={loading} onClick={() => void changePayrollMonth(shiftMonth(payrollMonth, 1))}>次月</button>
       </div>
-      <p className={styles.revisionNote}>前月・次月で切り替えると、店舗の締め日に合わせた集計期間へ自動変換します。</p>
+      {monthJumpOpen && <div className={styles.monthSelector}>
+        <label>年<select className={styles.select} value={jumpYear} onChange={(e) => setJumpYear(Number(e.target.value))}>{jumpYears.map((year) => <option value={year} key={year}>{year}年</option>)}</select></label>
+        <label>月<select className={styles.select} value={jumpMonth} onChange={(e) => setJumpMonth(Number(e.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option value={month} key={month}>{month}月</option>)}</select></label>
+        <div className={styles.previewActions}><button type="button" className={styles.secondaryButton} disabled={loading} onClick={() => void jumpToPayrollMonth()}>この年月を表示</button></div>
+      </div>}
+      <p className={styles.revisionNote}>普段は前月・次月で切り替え、離れた過去月を見るときは中央の年月をタップして直接選べます。店舗の締め日に合わせた集計期間へ自動変換します。</p>
       <div className={styles.previewActions}><a className={styles.secondaryButton} href="/manager/payroll/settings">給与設定を開く</a><a className={styles.secondaryButton} href="/manager/payroll/history">保存履歴を見る</a></div>
     </section>
     {loading && <p className={styles.message}>給与を計算しています…</p>}

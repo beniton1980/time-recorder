@@ -17,6 +17,16 @@ test("preview UI changes payroll months without the native month picker", async 
   assert.doesNotMatch(page, /開始日<input/);
 });
 
+test("preview UI can jump directly to a distant payroll month", async () => {
+  const page = await readFile(new URL("../app/manager/payroll/preview/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /年月を選ぶ/);
+  assert.match(page, /この年月を表示/);
+  assert.match(page, /jumpToPayrollMonth/);
+  assert.match(page, /toPayrollMonth/);
+  assert.match(page, /普段は前月・次月で切り替え/);
+  assert.doesNotMatch(page, /type="month"/);
+});
+
 test("preview UI explains unconfirmed statutory-holiday months and links directly to settings", async () => {
   const page = await readFile(new URL("../app/manager/payroll/preview/page.tsx", import.meta.url), "utf8");
   assert.match(page, /unconfirmedManualHolidayMonths/);
