@@ -46,7 +46,7 @@ async function resolveManager(idToken: string, storeId: string) {
     LIMIT 1
   `;
 
-  return { sql, store: rows[0] ?? null };
+  return { identity, sql, store: rows[0] ?? null };
 }
 
 export async function POST(request: Request) {
@@ -124,23 +124,32 @@ export async function PATCH(request: Request) {
   if (limited) return limited;
 
   try {
-    const { sql, store } = await resolveManager(body.idToken, body.storeId);
+    const { identity, sql, store } = await resolveManager(body.idToken, body.storeId);
     if (!store) {
       return NextResponse.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
     }
 
     const rows = await sql`
-      UPDATE stores
-      SET closing_rule = ${body.closingRule},
-          business_day_start_minute = ${body.businessDayStartMinute}
-      WHERE id = ${body.storeId}::uuid
-      RETURNING id, name, closing_rule, business_day_start_minute, monthly_report_email
+      SELECT * FROM public.set_manager_store_settings(
+        ${identity.sub},
+        ${body.storeId}::uuid,
+        ${body.closingRule},
+        ${body.businessDayStartMinute}::integer
+      )
     `;
+
+    if (rows.length === 0) {
+      return NextResponse.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
+    }
 
     return NextResponse.json({ ok: true, store: rows[0] });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
+    }
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("MANAGER_ACCESS_REQUIRED")) {
+      return NextResponse.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
     }
     logServerError("manager_store_settings_update_failed");
     return NextResponse.json({ ok: false, code: "STORE_SETTINGS_UPDATE_FAILED" }, { status: 503 });
