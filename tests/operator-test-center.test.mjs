@@ -25,13 +25,18 @@ test("operator test center is allowlist protected and has no production mutation
   }
 });
 
-test("operator test center refreshes an invalid LINE ID token once", async () => {
+test("operator test center re-enters LINE through the canonical LIFF entry", async () => {
   const page = await source("app/operator/test-center/page.tsx");
+  const entry = await source("app/liff-entry/page.tsx");
+  assert.match(page, /TEST_CENTER_LIFF_URL = `https:\/\/liff\.line\.me\/\$\{LIFF_ID\}\?entry=test-center`/);
+  assert.match(page, /window\.location\.replace\(TEST_CENTER_LIFF_URL\)/);
+  assert.doesNotMatch(page, /liff\.login\(\{ redirectUri: window\.location\.href \}\)/);
   assert.match(page, /response\.status === 401/);
   assert.match(page, /data\?\.code === "INVALID_ID_TOKEN"/);
   assert.match(page, /liff\.logout\(\)/);
-  assert.match(page, /liff\.login\(\{ redirectUri: window\.location\.href \}\)/);
   assert.match(page, /sessionStorage\.getItem\(REAUTH_ATTEMPT_KEY\)/);
+  assert.match(entry, /entry === "test-center"/);
+  assert.match(entry, /window\.location\.replace\("\/operator\/test-center"\)/);
 });
 
 test("test center UI names destructive exclusions and manual checks", async () => {
