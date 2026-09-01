@@ -2,7 +2,6 @@
 
 import liff from "@line/liff";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import styles from "./store-settings.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -35,8 +34,7 @@ function timeToMinute(value: string) {
 }
 
 export default function StoreSettingsPage() {
-  const searchParams = useSearchParams();
-  const storeId = searchParams.get("store_id") ?? "";
+  const [storeId, setStoreId] = useState("");
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [closingRule, setClosingRule] = useState<ClosingRule>("month_end");
   const [businessDayStart, setBusinessDayStart] = useState("05:00");
@@ -63,13 +61,15 @@ export default function StoreSettingsPage() {
           liff.login({ redirectUri: window.location.href });
           return;
         }
-        if (!storeId) throw new Error("店舗を特定できませんでした。管理画面から開き直してください。");
+        const resolvedStoreId = new URLSearchParams(window.location.search).get("store_id") ?? "";
+        if (!resolvedStoreId) throw new Error("店舗を特定できませんでした。管理画面から開き直してください。");
+        if (active) setStoreId(resolvedStoreId);
         const idToken = liff.getIDToken();
         if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
         const response = await fetch("/api/manager/store-settings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken, storeId }),
+          body: JSON.stringify({ idToken, storeId: resolvedStoreId }),
         });
         const data = await response.json();
         if (!response.ok || !data.ok) {
@@ -92,10 +92,10 @@ export default function StoreSettingsPage() {
 
     void start();
     return () => { active = false; };
-  }, [storeId]);
+  }, []);
 
   async function save() {
-    if (!settings || saving || !changed) return;
+    if (!settings || !storeId || saving || !changed) return;
 
     const closingChanged = settings.closing_rule !== closingRule;
     const prompt = closingChanged
