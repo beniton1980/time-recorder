@@ -35,6 +35,8 @@ test("operator test center re-enters LINE through the canonical LIFF entry", asy
   assert.match(page, /data\?\.code === "INVALID_ID_TOKEN"/);
   assert.match(page, /liff\.logout\(\)/);
   assert.match(page, /sessionStorage\.getItem\(REAUTH_ATTEMPT_KEY\)/);
+  assert.match(entry, /entry === "test-center" && !liff\.isLoggedIn\(\)/);
+  assert.match(entry, /liff\.login\(\{ redirectUri: window\.location\.href \}\)/);
   assert.match(entry, /entry === "test-center"/);
   assert.match(entry, /window\.location\.replace\("\/operator\/test-center"\)/);
 });
