@@ -27,6 +27,12 @@ export default function LiffEntryPage() {
         const params = new URLSearchParams(window.location.search);
         const entry = params.get("entry");
 
+        if (entry === "test-center" && !liff.isLoggedIn()) {
+          setMessage("LINE認証を確認しています");
+          liff.login({ redirectUri: window.location.href });
+          return;
+        }
+
         if (entry === "manager") {
           window.location.replace("/manager");
           return;
