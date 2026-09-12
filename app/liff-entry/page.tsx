@@ -27,6 +27,27 @@ export default function LiffEntryPage() {
         const params = new URLSearchParams(window.location.search);
         const entry = params.get("entry");
 
+        if (entry === "test-center" && !liff.isLoggedIn()) {
+          setMessage("LINE認証を確認しています");
+          liff.login({ redirectUri: window.location.href });
+          return;
+        }
+
+        if (entry === "store-settings") {
+          const storeId = params.get("store_id") ?? "";
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(storeId)) {
+            setMessage("店舗を特定できませんでした。管理画面から開き直してください。");
+            return;
+          }
+          if (!liff.isLoggedIn()) {
+            setMessage("LINE認証を確認しています");
+            liff.login({ redirectUri: window.location.href });
+            return;
+          }
+          window.location.replace(`/manager/store-settings?store_id=${encodeURIComponent(storeId)}`);
+          return;
+        }
+
         if (entry === "manager") {
           window.location.replace("/manager");
           return;
@@ -34,6 +55,11 @@ export default function LiffEntryPage() {
 
         if (entry === "clock-poster") {
           window.location.replace("/manager/clock-poster");
+          return;
+        }
+
+        if (entry === "test-center") {
+          window.location.replace("/operator/test-center");
           return;
         }
 

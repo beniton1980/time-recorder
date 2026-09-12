@@ -6,11 +6,12 @@ async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-test("store settings API restricts closing rules and business-day start", async () => {
+test("store settings only writes the closing rule and rejects stale settings", async () => {
   const route = await source("app/api/manager/store-settings/route.ts");
   assert.match(route, /\["month_end", "day_15", "day_25"\]/);
-  assert.match(route, /businessDayStartMinute < 0/);
-  assert.match(route, /businessDayStartMinute >= 1440/);
+  assert.doesNotMatch(route, /body\.businessDayStartMinute/);
+  assert.match(route, /STORE_SETTINGS_CHANGED/);
+  assert.match(route, /expectedClosingRule/);
 });
 
 test("store settings writes use a manager-scoped security-definer function", async () => {
@@ -31,7 +32,7 @@ test("store settings API requires manager access before reading or writing", asy
 });
 
 test("manager dashboard exposes store settings entry point", async () => {
-  const link = await source("app/manager/StoreSettingsDashboardLink.tsx");
+  const link = await source("app/manager/page.tsx");
   assert.match(link, /店舗設定/);
   assert.match(link, /\/manager\/store-settings\?store_id=/);
 });
@@ -40,4 +41,15 @@ test("store settings page warns before changing closing rule", async () => {
   const page = await source("app/manager/store-settings/page.tsx");
   assert.match(page, /今後の月次集計期間と自動送信日に影響します/);
   assert.match(page, /window\.confirm/);
+});
+
+
+test("settings login uses the canonical LIFF entry and preserves the store", async () => {
+  const page = await source("app/manager/store-settings/page.tsx");
+  const entry = await source("app/liff-entry/page.tsx");
+  assert.doesNotMatch(page, /liff\.login/);
+  assert.match(page, /entry=store-settings&store_id=/);
+  assert.match(entry, /entry === "store-settings"/);
+  assert.match(page, /managerApiAuthError/);
+  assert.match(page, /isConfirmedMonthlyReportRecipient/);
 });

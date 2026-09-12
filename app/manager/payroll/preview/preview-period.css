@@ -1,0 +1,3 @@
+main button[aria-expanded] > span:last-child {
+  display: none;
+}

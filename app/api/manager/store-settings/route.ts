@@ -19,7 +19,7 @@ type SettingsRequest = {
   idToken?: unknown;
   storeId?: unknown;
   closingRule?: unknown;
-  businessDayStartMinute?: unknown;
+  expectedClosingRule?: unknown;
 };
 
 async function resolveManager(idToken: string, storeId: string) {
@@ -32,7 +32,9 @@ async function resolveManager(idToken: string, storeId: string) {
 
   const rows = await sql`
     SELECT s.id, s.name, s.closing_rule, s.business_day_start_minute,
-      s.monthly_report_email
+      s.monthly_report_email, s.monthly_report_email_verified_at,
+      s.monthly_report_email_consented_at, s.monthly_report_email_consent_version,
+      s.monthly_report_email_verification_sent_at
     FROM staff st
     JOIN stores s ON s.id = st.store_id
     LEFT JOIN staff_manager_access access
@@ -57,6 +59,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, code: "INVALID_JSON" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ ok: false, code: "INVALID_JSON" }, { status: 400 });
+  }
   if (typeof body.idToken !== "string" || body.idToken.length === 0) {
     return NextResponse.json({ ok: false, code: "ID_TOKEN_REQUIRED" }, { status: 400 });
   }
@@ -95,6 +100,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: false, code: "INVALID_JSON" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ ok: false, code: "INVALID_JSON" }, { status: 400 });
+  }
   if (typeof body.idToken !== "string" || body.idToken.length === 0) {
     return NextResponse.json({ ok: false, code: "ID_TOKEN_REQUIRED" }, { status: 400 });
   }
@@ -107,13 +115,8 @@ export async function PATCH(request: Request) {
   ) {
     return NextResponse.json({ ok: false, code: "INVALID_CLOSING_RULE" }, { status: 400 });
   }
-  if (
-    typeof body.businessDayStartMinute !== "number" ||
-    !Number.isInteger(body.businessDayStartMinute) ||
-    body.businessDayStartMinute < 0 ||
-    body.businessDayStartMinute >= 1440
-  ) {
-    return NextResponse.json({ ok: false, code: "INVALID_BUSINESS_DAY_START" }, { status: 400 });
+  if (typeof body.expectedClosingRule !== "string" || !closingRules.includes(body.expectedClosingRule as ClosingRule)) {
+    return NextResponse.json({ ok: false, code: "INVALID_CLOSING_RULE" }, { status: 400 });
   }
 
   const limited = await enforceRateLimit(
@@ -134,20 +137,23 @@ export async function PATCH(request: Request) {
         ${identity.sub},
         ${body.storeId}::uuid,
         ${body.closingRule},
-        ${body.businessDayStartMinute}::integer
+        ${body.expectedClosingRule}
       )
     `;
 
     if (rows.length === 0) {
-      return NextResponse.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
+      return NextResponse.json({ ok: false, code: "STORE_SETTINGS_CHANGED" }, { status: 409 });
     }
 
-    return NextResponse.json({ ok: true, store: rows[0] });
+    return NextResponse.json({ ok: true, store: { ...store, ...rows[0] } });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }
     const message = error instanceof Error ? error.message : "";
+    if (message.includes("STORE_SETTINGS_CHANGED")) {
+      return NextResponse.json({ ok: false, code: "STORE_SETTINGS_CHANGED" }, { status: 409 });
+    }
     if (message.includes("MANAGER_ACCESS_REQUIRED")) {
       return NextResponse.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
     }

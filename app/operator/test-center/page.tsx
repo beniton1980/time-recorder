@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./test-center.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
+const TEST_CENTER_LIFF_URL = `https://liff.line.me/${LIFF_ID}?entry=test-center`;
 const REAUTH_ATTEMPT_KEY = "onogami-test-center-reauth-attempted";
 type Result = { id: string; category: string; label: string; status: "PASS" | "REVIEW" | "MANUAL"; detail: string };
 type Run = { generatedAt: string; environment: string; results: Result[]; summary: { pass: number; review: number; manual: number } };
@@ -20,10 +21,14 @@ export default function TestCenterPage() {
   const [email, setEmail] = useState<{ subject: string; html: string; attachments?: string[] } | null>(null);
   const categories = useMemo(() => [...new Set(run?.results.map((item) => item.category) ?? [])], [run]);
 
+  function openViaLiff() {
+    window.location.replace(TEST_CENTER_LIFF_URL);
+  }
+
   useEffect(() => {
     let active = true;
     void liff.init({ liffId: LIFF_ID }).then(() => {
-      if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
+      if (!liff.isLoggedIn()) { openViaLiff(); return; }
       if (active) setReady(true);
     }).catch(() => active && setError("運営者認証を開始できませんでした。LINEから開き直してください。"));
     return () => { active = false; };
@@ -41,7 +46,7 @@ export default function TestCenterPage() {
     }
     window.sessionStorage.setItem(REAUTH_ATTEMPT_KEY, "1");
     if (liff.isLoggedIn()) liff.logout();
-    liff.login({ redirectUri: window.location.href });
+    openViaLiff();
     throw new Error("LINE認証を更新しています…");
   }
 
