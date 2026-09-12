@@ -20,7 +20,7 @@ type IssuedQr = {
 };
 
 async function requestStoreQr(
-  action: "STATUS" | "ROTATE" | "REVOKE",
+  action: "STATUS" | "DISPLAY" | "ROTATE" | "REVOKE",
   selectedStoreId: string,
 ) {
   const idToken = liff.getIDToken();
@@ -125,6 +125,7 @@ export default function StoreQrPage() {
   }, []);
 
   async function changeStore(nextStoreId: string) {
+    setWorking(true);
     setStoreId(nextStoreId);
     setIssued(null);
     setA4PngDataUrl(null);
@@ -136,6 +137,26 @@ export default function StoreQrPage() {
       setIssuedAt(status.token.issuedAt ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "状態を確認できませんでした。");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function displayCurrentQr() {
+    setWorking(true);
+    setError(null);
+    try {
+      const data = await requestStoreQr("DISPLAY", storeId);
+      setIssued({
+        storeName: data.store.store_name,
+        entryUrl: data.entryUrl,
+        qrSvg: data.qrSvg,
+        qrPngDataUrl: data.qrPngDataUrl,
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "QRを表示できませんでした。");
+    } finally {
+      setWorking(false);
     }
   }
 
@@ -244,11 +265,18 @@ export default function StoreQrPage() {
       context.drawImage(qrImage, 260, 310, 720, 720);
       context.textAlign = "left";
       context.font = "34px sans-serif";
-      ["1. LINEでQRコードを読み取る", "2. 店舗名を確認する", "3. 出勤・休憩・退勤を打刻する"]
-        .forEach((line, index) => context.fillText(line, 245, 1130 + index * 72));
+      [
+        "1. LINEの「トーク」上部の「＋」を押す",
+        "2. 「QRコードスキャン」を選ぶ",
+        "    見当たらないときは「友だち追加」→「QRコード」",
+        "3. このQRを読み取り、表示されたリンクを押す",
+        "4. 店舗名・名前を確認し、出勤・休憩・退勤を選ぶ",
+        "5. 「記録しました」が出たら完了",
+      ].forEach((line, index) => context.fillText(line, 110, 1110 + index * 66, 1020));
       context.fillStyle = "#526057";
       context.font = "28px sans-serif";
-      context.fillText("QRが読み取れない場合は管理者へお知らせください。", 245, 1390);
+      context.fillText("初回だけ氏名を入力します。打刻にはLINEアカウントが必要です。", 110, 1560, 1020);
+      context.fillText("打刻を間違えた・忘れたときは、打刻画面の「打刻修正」へ。", 110, 1615, 1020);
       const guideDataUrl = canvas.toDataURL("image/png");
       setA4PngDataUrl(guideDataUrl);
       const guideBlob = await (await fetch(guideDataUrl)).blob();
@@ -275,7 +303,7 @@ export default function StoreQrPage() {
           <>
             <label className={styles.field}>
               店舗
-              <select value={storeId} onChange={(event) => void changeStore(event.target.value)}>
+              <select value={storeId} disabled={working} onChange={(event) => void changeStore(event.target.value)}>
                 {memberships.map((item) => <option key={item.store_id} value={item.store_id}>{item.store_name}</option>)}
               </select>
             </label>
@@ -294,6 +322,11 @@ export default function StoreQrPage() {
             {hasActiveQr && displayReady && <a className={styles.posterLink} href={posterUrl}>
               打刻用掲示を表示
             </a>}
+            {hasActiveQr && displayReady && !issued && (
+              <button type="button" disabled={working} onClick={() => void displayCurrentQr()}>
+                {working ? "表示を準備しています…" : "現在のQR・案内画像を表示"}
+              </button>
+            )}
             {issued && (
               <section ref={qrResultRef} className={styles.result}>
                 <h2>現在のQR</h2>

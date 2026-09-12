@@ -1,6 +1,38 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
+import ts from "typescript";
+import * as jsxRuntime from "react/jsx-runtime";
+
+test("existing QR and updated guide are retrieved with DISPLAY, without rotation", async () => {
+  const states = [[{ store_id: "fixture-store", store_name: "検証店舗" }], "fixture-store", true, true, null, null, "", null, false, null];
+  let index = 0; const calls = []; const exports = {};
+  const modules = {
+    "react/jsx-runtime": jsxRuntime,
+    react: { useState: (initial) => { const i = index++; return [i in states ? states[i] : initial, (value) => { states[i] = value; }]; }, useEffect() {}, useMemo: (fn) => fn(), useRef: () => ({ current: null }) },
+    "@line/liff": { default: { getIDToken: () => "fixture-token" } },
+    "./qr.module.css": { default: new Proxy({}, { get: (_target, key) => key }) },
+  };
+  const compiled = ts.transpileModule(await source("app/manager/qr/page.tsx"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  vm.runInNewContext(compiled, { exports, require: (name) => modules[name], fetch: async (_url, options) => {
+    calls.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ ok: true, store: { store_name: "検証店舗" }, qrPngDataUrl: "fixture-png", entryUrl: "fixture-url", qrSvg: "fixture-svg" }) };
+  } });
+  function buttons(tree) {
+    if (!tree || typeof tree !== "object") return [];
+    if (Array.isArray(tree)) return tree.flatMap(buttons);
+    return [...(tree.type === "button" ? [tree] : []), ...buttons(tree.props?.children)];
+  }
+  const tree = exports.default();
+  const display = buttons(tree).find((item) => item.props.children === "現在のQR・案内画像を表示");
+  assert.ok(display); display.props.onClick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, [{ idToken: "fixture-token", storeId: "fixture-store", action: "DISPLAY" }]);
+  assert.equal(states[5].qrPngDataUrl, "fixture-png");
+  index = 0;
+  assert.ok(buttons(exports.default()).some((item) => item.props.children === "A4案内画像を保存・共有"));
+});
 
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
