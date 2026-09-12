@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     ];
     const manual = [
       { id: "punch-wait", category: "打刻の使いやすさ", label: "位置取得の先行・送信表示・待ち時間", status: "MANUAL", detail: "検証用店舗で許可済み・未許可・拒否の端末を比較。QRを開く→画面表示→ボタン→記録完了の時間を記録。位置確認中から送信中へ表示が切り替わり、連打で増えないことを確認。判定条件・10秒の取得待ち上限は維持" },
-      { id: "qr-guide", category: "打刻の使いやすさ", label: "掲示だけでQRを読み取れるか", status: "MANUAL", detail: "更新した掲示を見て、LINEのトーク→＋→QRコードスキャン（または友だち追加→QRコード）→リンク→打刻完了まで説明なしで進めるか確認。読むのが難しい場合は止まった箇所だけ記録" },
+      { id: "qr-guide", category: "打刻の使いやすさ", label: "掲示だけでQRを読み取れるか", status: "MANUAL", detail: "更新した掲示を見て、スマホのカメラ→QR→表示されたリンク→打刻完了まで説明なしで進めるか確認。カメラを開く・QRを画面に入れる・リンクを押す、のどこで止まったかを記録。開けない場合だけ補足のLINE読み取り案内を確認" },
       { id: "store-settings", category: "店舗設定", label: "店舗設定の表示・店舗切替・LINE再ログイン", status: "MANUAL", detail: "対象店舗名・締め日・送信先確認状況と戻る導線を確認。設定変更は検証用店舗で行う" },
       { id: "line", category: "LINE・QR実機", label: "LINEアプリからQRを開いて打刻", status: "MANUAL", detail: "実LINE・実端末で確認" },
       { id: "qr-expiry", category: "LINE・QR実機", label: "QR再発行後の旧QR失効", status: "MANUAL", detail: "破壊的操作のため一括実行しない" },

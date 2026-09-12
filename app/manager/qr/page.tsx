@@ -254,27 +254,28 @@ export default function StoreQrPage() {
       context.fillStyle = "#17221b";
       context.font = "700 52px sans-serif";
       context.fillText(issued.storeName, 620, 195, 1080);
-      context.font = "32px sans-serif";
-      context.fillText("スタッフ打刻用QRコード", 620, 255);
+      context.font = "700 44px sans-serif";
+      context.fillText("出勤・休憩・退勤", 620, 275);
+      context.font = "36px sans-serif";
+      context.fillText("スマホのカメラをこのQRに向けてください", 620, 350);
       const qrImage = new Image();
       qrImage.src = issued.qrPngDataUrl;
       await new Promise<void>((resolve, reject) => {
         qrImage.onload = () => resolve();
         qrImage.onerror = () => reject(new Error("QR_IMAGE_UNAVAILABLE"));
       });
-      context.drawImage(qrImage, 260, 310, 720, 720);
+      context.drawImage(qrImage, 260, 390, 720, 720);
       context.textAlign = "left";
       context.font = "34px sans-serif";
       [
-        "1. LINEの「トーク」上部の「＋」を押す",
-        "2. 「QRコードスキャン」を選ぶ",
-        "    見当たらないときは「友だち追加」→「QRコード」",
-        "3. このQRを読み取り、表示されたリンクを押す",
-        "4. 店舗名・名前を確認し、出勤・休憩・退勤を選ぶ",
-        "5. 「記録しました」が出たら完了",
-      ].forEach((line, index) => context.fillText(line, 110, 1110 + index * 66, 1020));
+        "1. 表示されたリンクを押す",
+        "2. 店舗名・名前を確認し、出勤・休憩・退勤を選ぶ",
+        "「記録しました」が出たら完了です",
+      ].forEach((line, index) => context.fillText(line, 110, 1180 + index * 66, 1020));
       context.fillStyle = "#526057";
       context.font = "28px sans-serif";
+      context.fillText("読み取れないとき：カメラを少し離し、QR全体を画面に入れます。", 110, 1420, 1020);
+      context.fillText("開けない場合は、LINEのQRコードリーダーも使えます。", 110, 1470, 1020);
       context.fillText("初回だけ氏名を入力します。打刻にはLINEアカウントが必要です。", 110, 1560, 1020);
       context.fillText("打刻を間違えた・忘れたときは、打刻画面の「打刻修正」へ。", 110, 1615, 1020);
       const guideDataUrl = canvas.toDataURL("image/png");

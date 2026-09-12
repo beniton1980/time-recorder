@@ -218,16 +218,9 @@ export default function ClockPosterPage() {
               <p className={styles.storeName}>{qr.storeName}</p>
             </div>
             <div className={styles.headingBlock}>
-              <p className={styles.eyebrow}>スタッフのみなさま</p>
-              <h1><span>出勤・退勤は</span><span>こちら</span></h1>
-              <p className={styles.lead}>LINEの「トーク」を開いて始めます。</p>
+              <h1>出勤・休憩・退勤</h1>
+              <p className={styles.lead}>スマホのカメラを<br />このQRに向けてください</p>
             </div>
-            <ol className={styles.steps}>
-              <li><span>1</span><div>トーク上部の「＋」を押す<small>「QRコードスキャン」を選びます。<br />見当たらないときは「友だち追加」→「QRコード」。</small></div></li>
-              <li><span>2</span><div>このQRにカメラを向ける<small>表示されたリンクを押します。</small></div></li>
-              <li><span>3</span><div>店舗名・名前を確認して打刻<small>初回だけ氏名を入力します。</small></div></li>
-              <li><span>4</span><div>「記録しました」が出たら完了</div></li>
-            </ol>
           </section>
 
           <section className={styles.qrPanel}>
@@ -236,8 +229,22 @@ export default function ClockPosterPage() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qr.qrPngDataUrl} alt={`${qr.storeName}の打刻QRコード`} />
             </div>
-            <p>カメラを近づけすぎず、QR全体が画面に入る距離で読み取ってください。</p>
           </section>
+
+          <section className={styles.afterScan} aria-label="読み取ったあとの操作">
+            <ol className={styles.steps}>
+              <li><span>1</span><div>表示されたリンクを押す</div></li>
+              <li><span>2</span><div>店舗名・名前を確認して打刻</div></li>
+            </ol>
+            <p className={styles.completion}>「記録しました」が出たら完了です</p>
+          </section>
+
+          <details className={styles.help}>
+            <summary>読み取れないとき・初めて使うとき</summary>
+            <p>写真を撮るときのカメラを開き、少し離してQR全体を画面に入れてください。表示されたリンクを押すと先に進めます。</p>
+            <p>開けない場合は、普段お使いのQRリーダーやLINEのQRコードリーダーも使えます。</p>
+            <p>打刻にはLINEアカウントが必要です。初回はLINEの確認画面が出ることがあります。氏名の入力は初回だけです。</p>
+          </details>
         </article>
       )}
     </main>
