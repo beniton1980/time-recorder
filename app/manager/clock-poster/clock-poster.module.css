@@ -156,6 +156,15 @@
   gap: 12px;
 }
 
+.steps small {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.82em;
+  font-weight: 400;
+  line-height: 1.6;
+  color: #526057;
+}
+
 .steps span {
   width: 30px;
   height: 30px;

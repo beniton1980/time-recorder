@@ -37,12 +37,13 @@ test("store poster PDF contains a printable A4 flyer", async () => {
   assert.ok(Buffer.isBuffer(pdf));
   assert.equal(pdf.subarray(0, 4).toString("ascii"), "%PDF");
   assert.ok(pdf.length > 10_000);
+  assert.equal((pdf.toString("latin1").match(/\/Type \/Page\b/g) ?? []).length, 1, "the flyer and footer must fit on one A4 sheet");
 });
 
 const posterSource = fs.readFileSync("lib/onboarding/store-poster.mjs", "utf8");
 test("poster directs staff to self-service correction before manager help", () => {
   assert.match(posterSource, /打刻を間違えたとき・忘れたとき/);
-  assert.match(posterSource, /「打刻を修正する」から修正できます/);
+  assert.match(posterSource, /「打刻修正」から修正できます/);
   assert.match(posterSource, /分からない場合は、店舗の管理者に確認してください/);
 });
 
