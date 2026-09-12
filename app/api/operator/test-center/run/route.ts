@@ -31,6 +31,7 @@ export async function POST(request: Request) {
       check("gps", "セキュリティ・店舗境界", "Soft GPS判定", scenario.gpsIssues.length === 1, "GPS警告でも勤怠を成立"),
     ];
     const manual = [
+      { id: "store-settings", category: "店舗設定", label: "店舗設定の表示・店舗切替・LINE再ログイン", status: "MANUAL", detail: "対象店舗名・締め日・送信先確認状況と戻る導線を確認。設定変更は検証用店舗で行う" },
       { id: "line", category: "LINE・QR実機", label: "LINEアプリからQRを開いて打刻", status: "MANUAL", detail: "実LINE・実端末で確認" },
       { id: "qr-expiry", category: "LINE・QR実機", label: "QR再発行後の旧QR失効", status: "MANUAL", detail: "破壊的操作のため一括実行しない" },
       { id: "mail-client", category: "LINE・QR実機", label: "実メールクライアントの表示", status: "MANUAL", detail: "実送信せずプレビューで事前確認" },

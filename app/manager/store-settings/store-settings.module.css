@@ -1,0 +1,140 @@
+.page {
+  min-height: 100vh;
+  background: #f6f4ef;
+  padding: 20px 14px 40px;
+  color: #1f2933;
+}
+
+.shell {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 8px 30px rgba(31, 41, 51, 0.08);
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 18px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.brand {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+}
+
+.shell h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.lead {
+  margin: 10px 0 22px;
+  line-height: 1.7;
+  color: #58636f;
+}
+
+.summary,
+.readOnly {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #f8fafb;
+  margin-bottom: 14px;
+}
+
+.summary span,
+.readOnly span,
+.label {
+  font-size: 13px;
+  color: #66717d;
+}
+
+.card {
+  padding: 16px;
+  border: 1px solid #e4e7eb;
+  border-radius: 14px;
+  margin-bottom: 14px;
+}
+
+.card label {
+  display: grid;
+  gap: 8px;
+}
+
+.card select,
+.card input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  font: inherit;
+  border: 1px solid #cfd5dc;
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+}
+
+.help,
+.readOnly small {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #66717d;
+}
+
+.notice,
+.warning,
+.success,
+.error {
+  padding: 13px 14px;
+  border-radius: 12px;
+  line-height: 1.6;
+}
+
+.notice {
+  background: #f1f5f9;
+}
+
+.warning {
+  background: #fff7e6;
+  border: 1px solid #f2d29b;
+}
+
+.success {
+  background: #edf8ef;
+  border: 1px solid #b9dfbf;
+}
+
+.error {
+  background: #fff0f0;
+  border: 1px solid #efb8b8;
+}
+
+.primary {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 700;
+  background: #1f2933;
+  color: #fff;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (max-width: 540px) {
+  .page { padding: 0; background: #fff; }
+  .shell { border-radius: 0; box-shadow: none; padding: 18px 16px 32px; }
+}

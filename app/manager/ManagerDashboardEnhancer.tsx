@@ -14,6 +14,7 @@ const LIFF_ID = "2010761826-6FNSE1PD";
 const PAYROLL_LIFF_URL = `https://liff.line.me/${LIFF_ID}/manager/payroll`;
 
 const SECTION_CONFIG: Record<string, SectionConfig> = {
+  "店舗設定": { key: "store-settings", order: 9, collapsible: true },
   "未処理の訂正申請": { key: "review", order: 1, collapsible: true, collapseWhenEmpty: true },
   "勤務状況": { key: "attendance", order: 2, collapsible: false },
   "勤怠確認": { key: "attendance", order: 2, collapsible: false },
@@ -205,7 +206,7 @@ function enhanceDashboard() {
     }
     if (!section.dataset.dashboardInitialized) {
       section.dataset.dashboardInitialized = "true";
-      if (!config.collapseWhenEmpty) setCollapsed(section, headingRow, true);
+      if (!config.collapseWhenEmpty) setCollapsed(section, headingRow, !(section.id && window.location.hash === `#${section.id}`));
       headingRow.setAttribute("role", "button");
       headingRow.setAttribute("tabindex", "0");
       headingRow.setAttribute("aria-label", `${refreshedHeading?.textContent?.trim()}を開閉`);

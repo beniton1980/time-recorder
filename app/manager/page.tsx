@@ -810,6 +810,12 @@ export default function ManagerPage() {
         {dashboard && (
           <>
             <section className={styles.section}>
+              <div className={styles.sectionHeading}><h2>店舗設定</h2><span>登録情報</span></div>
+              <p className={styles.sectionNote}>締め日と月次メールの確認状況を確認できます。</p>
+              <a href={`/manager/store-settings?store_id=${encodeURIComponent(dashboard.manager.store_id)}`}>店舗設定を確認・変更</a>
+            </section>
+
+            <section className={styles.section}>
               <div className={styles.sectionHeading}><h2>共同管理者</h2><span>{dashboard.coManagers.filter((item) => item.status === "active").length}名</span></div>
               <p className={styles.sectionNote}>この店舗に登録済みのスタッフへ、管理権限を追加します。管理権限を停止しても本人の打刻は継続できます。</p>
               <div className={styles.coManagerInvite}>
@@ -841,7 +847,7 @@ export default function ManagerPage() {
               </button>
             </section>
 
-            <section className={styles.section}>
+            <section id="monthly-report" className={styles.section}>
               <div className={styles.sectionHeading}>
                 <h2>月次勤怠表</h2>
                 <span>{monthlyReports.length}件</span>
