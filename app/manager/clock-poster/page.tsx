@@ -220,12 +220,13 @@ export default function ClockPosterPage() {
             <div className={styles.headingBlock}>
               <p className={styles.eyebrow}>スタッフのみなさま</p>
               <h1><span>出勤・退勤は</span><span>こちら</span></h1>
-              <p className={styles.lead}>LINEでQRコードを読み取ってください。</p>
+              <p className={styles.lead}>LINEの「トーク」を開いて始めます。</p>
             </div>
             <ol className={styles.steps}>
-              <li><span>1</span>LINEでQRコードを読み取る</li>
-              <li><span>2</span>店舗名を確認する</li>
-              <li><span>3</span>出勤・休憩・退勤を打刻する</li>
+              <li><span>1</span><div>トーク上部の「＋」を押す<small>「QRコードスキャン」を選びます。<br />見当たらないときは「友だち追加」→「QRコード」。</small></div></li>
+              <li><span>2</span><div>このQRにカメラを向ける<small>表示されたリンクを押します。</small></div></li>
+              <li><span>3</span><div>店舗名・名前を確認して打刻<small>初回だけ氏名を入力します。</small></div></li>
+              <li><span>4</span><div>「記録しました」が出たら完了</div></li>
             </ol>
           </section>
 

@@ -3,17 +3,14 @@
 import liff from "@line/liff";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { createPunchLocationReader } from "@/lib/punch-location.mjs";
+import type { PunchLocationReader } from "@/lib/punch-location.mjs";
+import { measurePunchStage } from "@/lib/punch-performance.mjs";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
 type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
-
-type PunchLocation = {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-};
 
 type PunchHistoryItem = {
   effective_id: string;
@@ -91,33 +88,10 @@ function formatTime(value: Date | string) {
   }).format(new Date(value));
 }
 
-function getCurrentLocation(): Promise<PunchLocation | null> {
-  if (!("geolocation" in navigator)) {
-    return Promise.resolve(null);
-  }
-
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        });
-      },
-      () => resolve(null),
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 30000,
-      },
-    );
-  });
-}
-
 export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
   const [submitting, setSubmitting] = useState<EventType | null>(null);
+  const [punchPhase, setPunchPhase] = useState<"location" | "sending">("location");
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [showCorrection, setShowCorrection] = useState(false);
@@ -135,6 +109,28 @@ export default function Home() {
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const storeTokenRef = useRef<string | null>(null);
+  const locationReaderRef = useRef<PunchLocationReader | null>(null);
+  const punchInFlightRef = useRef(false);
+  const readyForPunch = view.kind === "ready";
+
+  useEffect(() => {
+    if (!readyForPunch) return;
+    const reader = createPunchLocationReader({
+      geolocation: navigator.geolocation,
+      permissions: navigator.permissions,
+    });
+    locationReaderRef.current = reader;
+    if (document.visibilityState === "visible") void reader.prepare();
+    const clearWhenHidden = () => {
+      if (document.visibilityState !== "visible") reader.clear();
+    };
+    document.addEventListener("visibilitychange", clearWhenHidden);
+    return () => {
+      reader.clear();
+      locationReaderRef.current = null;
+      document.removeEventListener("visibilitychange", clearWhenHidden);
+    };
+  }, [readyForPunch]);
 
   useEffect(() => {
     const updateClock = () => setNow(new Date());
@@ -152,7 +148,7 @@ export default function Home() {
 
     async function bootstrap() {
       try {
-        await liff.init({ liffId: LIFF_ID });
+        await measurePunchStage("line", () => liff.init({ liffId: LIFF_ID }));
 
         const storeToken = new URLSearchParams(window.location.search).get(
           "store_token",
@@ -179,11 +175,11 @@ export default function Home() {
           throw new Error("LINEの認証情報を取得できませんでした。");
         }
 
-        const response = await fetch("/api/session/bootstrap", {
+        const response = await measurePunchStage("session", () => fetch("/api/session/bootstrap", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ idToken, storeToken }),
-        });
+        }));
 
         const data = await response.json();
 
@@ -449,8 +445,10 @@ export default function Home() {
   }
 
   async function submitPunch(eventType: EventType) {
-    if (view.kind !== "ready" || submitting) return;
+    if (view.kind !== "ready" || punchInFlightRef.current) return;
 
+    punchInFlightRef.current = true;
+    setPunchPhase("location");
     setSubmitting(eventType);
     setNotice(null);
 
@@ -461,20 +459,26 @@ export default function Home() {
         throw new Error("LINEの認証情報を取得できませんでした。");
       }
 
-      const location = await getCurrentLocation();
-
-      const response = await fetch("/api/punch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idToken,
-          eventType,
-          clientRequestId: crypto.randomUUID(),
-          storeToken: storeTokenRef.current,
-          location,
-        }),
+      const { response, data } = await measurePunchStage("total", async () => {
+        const reader = locationReaderRef.current ?? createPunchLocationReader({ geolocation: navigator.geolocation });
+        const location = await measurePunchStage("location", () => reader.read());
+        reader.clear();
+        setPunchPhase("sending");
+        return measurePunchStage("send", async () => {
+          const response = await fetch("/api/punch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              idToken,
+              eventType,
+              clientRequestId: crypto.randomUUID(),
+              storeToken: storeTokenRef.current,
+              location,
+            }),
+          });
+          return { response, data: await response.json() };
+        });
       });
-      const data = await response.json();
 
       if (!response.ok || !data.ok) {
         if (
@@ -548,6 +552,7 @@ export default function Home() {
         error instanceof Error ? error.message : "打刻を完了できませんでした。",
       );
     } finally {
+      punchInFlightRef.current = false;
       setSubmitting(null);
     }
   }
@@ -654,7 +659,7 @@ export default function Home() {
                   onClick={() => void submitPunch(eventType)}
                 >
                   {submitting === eventType
-                    ? "位置情報を確認しています…"
+                    ? punchPhase === "location" ? "位置情報を確認しています…" : "打刻を送信しています…"
                     : eventLabels[eventType]}
                 </button>
               ))}
@@ -670,6 +675,10 @@ export default function Home() {
                 </p>
                 <p>
                   管理者には不正の断定ではなく、確認の目安として表示されます。
+                </p>
+                <p>
+                  位置情報を許可済みの場合は、この画面を開いた後に確認を始めます。
+                  正確な位置情報は保存せず、確認結果だけを記録します。
                 </p>
               </div>
             </details>
