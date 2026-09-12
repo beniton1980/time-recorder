@@ -103,6 +103,30 @@ test("missing geolocation keeps Soft GPS's unavailable result", async () => {
   await reader.prepare(); assert.equal(await reader.read(), null); reader.clear();
 });
 
+test("revoking permission clears a prepared coordinate and prevents late reuse", async () => {
+  let change; let success; let calls = 0;
+  const permission = {
+    state: "granted",
+    addEventListener: (_name, listener) => { change = listener; },
+    removeEventListener: () => {},
+  };
+  const reader = createPunchLocationReader({
+    permissions: { query: async () => permission },
+    geolocation: { getCurrentPosition: (resolve, error) => {
+      calls++;
+      if (permission.state === "denied") error({ code: 1 });
+      else success = resolve;
+    } },
+  });
+  const preparation = reader.prepare(); await Promise.resolve();
+  const read = reader.read();
+  permission.state = "denied"; change();
+  success({ timestamp: Date.now(), coords: { latitude: 35, longitude: 139, accuracy: 10 } });
+  await preparation; assert.equal(await read, null);
+  assert.equal(await reader.read(), null); assert.equal(calls, 2);
+  reader.clear();
+});
+
 test("performance entries are bounded and preserve success or failure", async () => {
   const name = "onogami:punch:send";
   for (let i = 0; i < 4; i++) assert.equal(await measurePunchStage("send", async () => 7), 7);
