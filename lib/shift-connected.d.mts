@@ -1,0 +1,12 @@
+import type { Baseline, Day } from './shift-trial.mjs';
+export type Payload={baseline:Baseline;days:Record<string,Day>};
+export type Period={id:string;unit:'month'|'week';starts_on:string;ends_on:string;deadline:string;timezone:string;state:'collecting'|'closed';version:number};
+export type Submission={payload:Payload;version:number;proxy:boolean};
+export type Snapshot={period:Period;draft:{payload:Payload;version:number}|null;submitted:Submission|null};
+export type Member={storeId:string;storeName:string;staffId:string;name:string;manager:boolean};
+export type RosterPerson={id:string;name:string;submitted:Submission|null};
+export const EMPTY_SHIFT_PAYLOAD:Payload;
+export function periodDates(period:Period):string[];
+export function editorPayload(snapshot:Snapshot):Payload;
+export function payloadEquals(a:unknown,b:unknown):boolean;
+export function newPeriodInput(unit:'month'|'week',start:string,deadline:string):{unit:'month'|'week';startsOn:string;endsOn:string;deadline:string};
