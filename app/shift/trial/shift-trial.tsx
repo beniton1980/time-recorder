@@ -141,7 +141,7 @@ export default function ShiftTrial() {
         <section className={styles.card}><h2>期間全体の出勤予定</h2><p className={styles.help}>配置した日と時間をまとめて確認できます。</p>{assignedTotal ? <ul className={styles.planOverview}>{dates.filter(date => Object.keys(trial.assignments[date] || {}).length).map(date => <li key={date}><button className={styles.textButton} onClick={() => { setSelectedDate(date); setFeedback(`${dateLabel(date)}を選びました。上の日別欄で確認できます。`); }}>{dateLabel(date)}</button><div>{Object.entries(trial.assignments[date]).map(([id, slot]) => <p key={id}>{trial.people.find(p => p.id === id)?.name}<span>{timeLabel(slot)}</span></p>)}</div></li>)}</ul> : <p className={styles.help}>まだ出勤予定を配置していません。</p>}</section>
       </>}
 
-      {screen === 'notices' && <><div className={styles.heading}><div><p className={styles.eyebrow}>テスト食堂</p><h1>通知を確認する</h1><p className={styles.periodTitle}>{period.label}</p></div></div><p className={styles.help}>LINEへ届く内容を再現しています。実際の送信・到着・既読は検証していません。</p><div className={styles.noticeList}>{visibleNotices.map(n => <article key={n.id}><div className={styles.noticeMeta}><span>宛先：{n.to === 'manager' ? '管理者' : trial.people.find(p => p.id === n.to)?.name}</span><span>模擬通知</span></div><strong>{n.kind}</strong><p>{n.text}</p><button className={styles.textButton} onClick={() => { if (n.to === 'manager') navigate('manager'); else { setPersonId(n.to); navigate('staff'); } }}>この人の画面を開く →</button></article>)}</div></>}
+      {screen === 'notices' && <><div className={styles.heading}><div><p className={styles.eyebrow}>テスト食堂</p><h1>通知を確認する</h1><p className={styles.periodTitle}>{period.label}</p></div></div><p className={styles.help}>LINEへ届く内容を再現しています。実際の送信・到着・既読は検証していません。</p><NoticePanel key={mode} trial={trial} onOpen={id => { if (id === 'manager') navigate('manager'); else { setPersonId(id); navigate('staff'); } }} /></>}
 
       <details className={styles.testControls}><summary>時間を進めて試す・最初からやり直す</summary><p>テスト用に時間の経過を再現します。月単位と週単位のデータは別々です。</p><div className={styles.actions}><button disabled={trial.stage !== 'collecting'} onClick={() => dispatch({ type: 'remind' }, '未提出者への催促を再現しました。各スタッフ・各募集期間で1回だけ作成します。')}>締切前日に進む（催促）</button><button disabled={trial.stage !== 'collecting'} onClick={() => dispatch({ type: 'close' }, '受付を締め切りました。管理者画面で配置を確認・公開できます。')}>締切後に進む</button><button onClick={() => { if (window.confirm('この期間のテスト入力を消して、最初からやり直しますか？')) { setWorkspaces(prev => ({ ...prev, [mode]: createTrial(mode) })); navigate('staff'); setPersonId('a'); } }}>この期間をリセット</button></div><small>催促予定：{period.reminder} ／ 締切：{period.deadline}</small></details>
       <footer className={styles.footer}>ONOGAMI シフト · 希望収集テスト v0.1</footer>
@@ -165,4 +165,51 @@ export default function ShiftTrial() {
       {error && <p className={styles.error} role="alert">{error}</p>}<button className={styles.primary}>この条件で希望を確認する</button>
     </>}</form></dialog>
   </main>;
+}
+
+function NoticePanel({ trial, onOpen }: { trial: Trial; onOpen: (id: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [kind, setKind] = useState('');
+  const [page, setPage] = useState(0);
+  const pageSize = 10;
+  const names = new Map(trial.people.map(person => [person.id, person.name]));
+  names.set('manager', '管理者');
+  const normalize = (value: string) => value.normalize('NFKC').replace(/\s/g, '').toLocaleLowerCase('ja');
+  const search = normalize(query);
+  const filtered = trial.notices.filter(notice => (!kind || notice.kind === kind) &&
+    (!search || normalize(`${names.get(notice.to) || ''} ${notice.kind} ${notice.text}`).includes(search)));
+  const groups = new Map<string, { key: string; kind: string; text: string; notices: Trial['notices'] }>();
+  for (const notice of filtered) {
+    const key = JSON.stringify([notice.kind, notice.text]);
+    const group = groups.get(key);
+    if (group) group.notices.push(notice);
+    else groups.set(key, { key, kind: notice.kind, text: notice.text, notices: [notice] });
+  }
+  const grouped = [...groups.values()];
+  const pageCount = Math.max(1, Math.ceil(grouped.length / pageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const shown = grouped.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const hasFilters = !!query || !!kind;
+
+  return <section className={`${styles.card} ${styles.noticePanel}`} aria-label="通知一覧">
+    <div className={styles.sectionTitle}><h2>通知一覧</h2><span className={styles.muted}>模擬通知</span></div>
+    <p className={styles.help}>同じ内容をまとめています。行を開くと本文と宛先を確認できます。</p>
+    <div className={styles.noticeFilters}>
+      <label>名前・本文で検索<input type="search" value={query} placeholder="例：田中、締切" onChange={event => { setQuery(event.target.value); setPage(0); }} /></label>
+      <label>通知の種類<select value={kind} onChange={event => { setKind(event.target.value); setPage(0); }}><option value="">すべての種類</option>{[...new Set(trial.notices.map(notice => notice.kind))].map(value => <option value={value} key={value}>{value}</option>)}</select></label>
+    </div>
+    <div className={styles.noticeResults}><p role="status">{grouped.length}種類の内容 · 通知{filtered.length}件{hasFilters ? ` / 全${trial.notices.length}件` : ''}</p>{hasFilters && <button className={styles.textButton} onClick={() => { setQuery(''); setKind(''); setPage(0); }}>絞り込みを解除</button>}</div>
+    {shown.length ? <div className={styles.noticeRows}>{shown.map(group => {
+      const recipients = [...new Set(group.notices.map(notice => notice.to))];
+      return <details className={styles.noticeGroup} key={group.key}>
+        <summary><span className={styles.noticeSummary}><strong>{group.kind}</strong><span className={styles.noticeExcerpt}>{group.text}</span></span><span className={styles.noticeRecipientCount}>{recipients.length}宛先</span><span className={styles.noticeChevron} aria-hidden="true">⌄</span></summary>
+        <div className={styles.noticeDetail}>
+          <p>{group.text}</p>
+          <div className={styles.noticeRecipientsHeading}><h3>宛先</h3><span>{recipients.length}宛先 · 通知{group.notices.length}件</span></div>
+          <ul className={styles.noticeRecipients}>{recipients.map(id => <li key={id}><button onClick={() => onOpen(id)} aria-label={`${names.get(id) || '不明な宛先'}の画面を開く`}><span>{names.get(id) || '不明な宛先'}</span><span aria-hidden="true">画面を開く →</span></button></li>)}</ul>
+        </div>
+      </details>;
+    })}</div> : <div className={styles.noticeEmpty}><strong>{hasFilters ? '条件に合う通知はありません' : 'この期間の通知はまだありません'}</strong><p>{hasFilters ? '名前や通知の種類を変えて検索してください。' : '希望提出や催促を試すと、ここで通知を確認できます。'}</p></div>}
+    {pageCount > 1 && <nav className={styles.noticePagination} aria-label="通知一覧のページ"><button className={styles.secondary} disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>前の10件</button><span>{currentPage + 1} / {pageCount}ページ</span><button className={styles.secondary} disabled={currentPage === pageCount - 1} onClick={() => setPage(currentPage + 1)}>次の10件</button></nav>}
+  </section>;
 }

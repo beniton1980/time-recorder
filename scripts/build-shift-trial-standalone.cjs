@@ -7,6 +7,7 @@ const scratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'onogami-s
 const output = path.join(root, 'artifacts');
 fs.mkdirSync(scratch, { recursive: true }); fs.mkdirSync(output, { recursive: true });
 let css = fs.readFileSync(path.join(root, 'app/shift/trial/shift-trial.module.css'), 'utf8');
+css = css.replace(/:global\(([^)]+)\)/g, '$1');
 const styles = {};
 css = css.replace(/\.([a-zA-Z_][\w-]*)/g, (match, name) => { styles[name] = 'shift_' + name; return '.' + styles[name]; });
 let source = fs.readFileSync(path.join(root, 'app/shift/trial/shift-trial.tsx'), 'utf8');
