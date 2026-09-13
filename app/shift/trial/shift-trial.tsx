@@ -168,16 +168,14 @@ export default function ShiftTrial() {
 }
 
 function NoticePanel({ trial, onOpen }: { trial: Trial; onOpen: (id: string) => void }) {
-  const [query, setQuery] = useState('');
+  const [recipientId, setRecipientId] = useState('');
   const [kind, setKind] = useState('');
   const [page, setPage] = useState(0);
   const pageSize = 10;
   const names = new Map(trial.people.map(person => [person.id, person.name]));
   names.set('manager', '管理者');
-  const normalize = (value: string) => value.normalize('NFKC').replace(/\s/g, '').toLocaleLowerCase('ja');
-  const search = normalize(query);
   const filtered = trial.notices.filter(notice => (!kind || notice.kind === kind) &&
-    (!search || normalize(`${names.get(notice.to) || ''} ${notice.kind} ${notice.text}`).includes(search)));
+    (!recipientId || notice.to === recipientId));
   const groups = new Map<string, { key: string; kind: string; text: string; notices: Trial['notices'] }>();
   for (const notice of filtered) {
     const key = JSON.stringify([notice.kind, notice.text]);
@@ -189,16 +187,16 @@ function NoticePanel({ trial, onOpen }: { trial: Trial; onOpen: (id: string) => 
   const pageCount = Math.max(1, Math.ceil(grouped.length / pageSize));
   const currentPage = Math.min(page, pageCount - 1);
   const shown = grouped.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const hasFilters = !!query || !!kind;
+  const hasFilters = !!recipientId || !!kind;
 
   return <section className={`${styles.card} ${styles.noticePanel}`} aria-label="通知一覧">
     <div className={styles.sectionTitle}><h2>通知一覧</h2><span className={styles.muted}>模擬通知</span></div>
     <p className={styles.help}>同じ内容をまとめています。行を開くと本文と宛先を確認できます。</p>
     <div className={styles.noticeFilters}>
-      <label>名前・本文で検索<input type="search" value={query} placeholder="例：田中、締切" onChange={event => { setQuery(event.target.value); setPage(0); }} /></label>
+      <label>名前<select value={recipientId} onChange={event => { setRecipientId(event.target.value); setPage(0); }}><option value="">全員</option>{[...names].map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label>
       <label>通知の種類<select value={kind} onChange={event => { setKind(event.target.value); setPage(0); }}><option value="">すべての種類</option>{[...new Set(trial.notices.map(notice => notice.kind))].map(value => <option value={value} key={value}>{value}</option>)}</select></label>
     </div>
-    <div className={styles.noticeResults}><p role="status">{grouped.length}種類の内容 · 通知{filtered.length}件{hasFilters ? ` / 全${trial.notices.length}件` : ''}</p>{hasFilters && <button className={styles.textButton} onClick={() => { setQuery(''); setKind(''); setPage(0); }}>絞り込みを解除</button>}</div>
+    <div className={styles.noticeResults}><p role="status">{grouped.length}種類の内容 · 通知{filtered.length}件{hasFilters ? ` / 全${trial.notices.length}件` : ''}</p>{hasFilters && <button className={styles.textButton} onClick={() => { setRecipientId(''); setKind(''); setPage(0); }}>絞り込みを解除</button>}</div>
     {shown.length ? <div className={styles.noticeRows}>{shown.map(group => {
       const recipients = [...new Set(group.notices.map(notice => notice.to))];
       return <details className={styles.noticeGroup} key={group.key}>
@@ -209,7 +207,7 @@ function NoticePanel({ trial, onOpen }: { trial: Trial; onOpen: (id: string) => 
           <ul className={styles.noticeRecipients}>{recipients.map(id => <li key={id}><button onClick={() => onOpen(id)} aria-label={`${names.get(id) || '不明な宛先'}の画面を開く`}><span>{names.get(id) || '不明な宛先'}</span><span aria-hidden="true">画面を開く →</span></button></li>)}</ul>
         </div>
       </details>;
-    })}</div> : <div className={styles.noticeEmpty}><strong>{hasFilters ? '条件に合う通知はありません' : 'この期間の通知はまだありません'}</strong><p>{hasFilters ? '名前や通知の種類を変えて検索してください。' : '希望提出や催促を試すと、ここで通知を確認できます。'}</p></div>}
+    })}</div> : <div className={styles.noticeEmpty}><strong>{hasFilters ? '条件に合う通知はありません' : 'この期間の通知はまだありません'}</strong><p>{hasFilters ? '名前や通知の種類を選び直してください。' : '希望提出や催促を試すと、ここで通知を確認できます。'}</p></div>}
     {pageCount > 1 && <nav className={styles.noticePagination} aria-label="通知一覧のページ"><button className={styles.secondary} disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>前の10件</button><span>{currentPage + 1} / {pageCount}ページ</span><button className={styles.secondary} disabled={currentPage === pageCount - 1} onClick={() => setPage(currentPage + 1)}>次の10件</button></nav>}
   </section>;
 }
