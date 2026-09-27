@@ -57,7 +57,7 @@
 ## このリポジトリ（ONOGAMI 勤怠）
 
 - 入口：Notion「ONOGAMI Project Hub」→「00｜現在地・正本一覧」「06｜ロードマップ・未完了事項」。技術の正本は「03｜開発AI向け 技術引継ぎ」、安全の正本は「07｜セキュリティ・個人情報・運用基準」。共通ルールの正本は「21｜AI共同開発 共通ルール v1.0」。
-- `.claude/settings.json` の SessionStart フックが、変更前に Hub・01・03・07 を読むことを求める。フックと 07 の条件を、この共通ルールより優先する。
+- `.claude/settings.json` の SessionStart フックが、変更前に 07 を毎回読むことを求める（読めなければ変更しない）。03 は認証・LINE・QR・DB・月次・公開に触れるとき、01 は機能や事業の判断に触れるとき、Hub は現在地や他の正本を探すときに読む。07 の条件は、この共通ルールより優先する。
 - 基準ブランチは `main`（保護あり。PR 経由・CI の `test` 成功・会話の解決・直線履歴が必須）。最新の `main` から feature branch を作り、変更単位ごとに独立した PR にする。
 - CI（`.github/workflows/attendance-regression.yml`）は PR と `main` への push で回帰テストとビルドを流し、件数と失敗を Summary に、JUnit を Artifacts（test-results）に30日残す。
 - 検証コマンド：
