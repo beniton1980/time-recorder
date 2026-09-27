@@ -23,19 +23,20 @@ test("Claude settings registers SessionStart for every session source", () => {
   assert.equal(entry.hooks[0].command, `node \"\${CLAUDE_PROJECT_DIR}/${hookPath}\"`);
 });
 
-test("SessionStart injects all mandatory Notion sources and safety rules", () => {
+test("SessionStart always requires 07 and lists Hub, 01, and 03 with their conditions", () => {
   const output = runHook({ hook_event_name: "SessionStart", source: "startup" });
   assert.equal(output.hookEventName, "SessionStart");
+  const [mandatory, conditional] = output.additionalContext.split(/Also fetch and read each page below/i);
+  assert.ok(conditional, "conditional section is present");
 
-  for (const pageId of [
-    "3b7f4b5e813281468d31f6dc0d421ccb",
-    "3b7f4b5e81328163a85df45df342153f",
-    "3b7f4b5e813281a883f3e79af1ddd15d",
-    "3bbf4b5e813281e783a1eff8e46466b2",
-  ]) {
-    assert.match(output.additionalContext, new RegExp(pageId));
+  // 07 (security) is read every session before any change.
+  assert.match(mandatory, /fetch and read this mandatory source-of-truth page/i);
+  assert.match(mandatory, /3bbf4b5e813281e783a1eff8e46466b2/);
+  for (const pageId of ["3b7f4b5e813281468d31f6dc0d421ccb", "3b7f4b5e81328163a85df45df342153f", "3b7f4b5e813281a883f3e79af1ddd15d"]) {
+    assert.doesNotMatch(mandatory, new RegExp(pageId));
+    assert.match(conditional, new RegExp(`${pageId}[^\\n]*\\(when `));
   }
-  assert.match(output.additionalContext, /use the connected Notion tools to fetch and read every source-of-truth page/i);
+  assert.match(conditional, /Do not read pages the task does not need/i);
   assert.match(output.additionalContext, /do not make changes or trigger external side effects/i);
   assert.match(output.additionalContext, /Never copy secret values/i);
 });
@@ -46,5 +47,6 @@ test("SessionStart fails closed when its event input is invalid", () => {
     assert.equal(output.hookEventName, "SessionStart");
     assert.match(output.additionalContext, /validation failed/i);
     assert.match(output.additionalContext, /Do not change code, configuration, data, deployments, or external systems/i);
+    assert.match(output.additionalContext, /mandatory 07 security context/i);
   }
 });
