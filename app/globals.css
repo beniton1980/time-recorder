@@ -464,6 +464,7 @@ h1 {
 /* Keep the daily staff screen compact without clipping expanded content or zoom. */
 .attendance-screen {
   min-height: 100svh;
+  align-items: start;
   padding: 12px;
 }
 
