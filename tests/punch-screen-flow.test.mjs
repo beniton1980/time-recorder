@@ -8,8 +8,8 @@ const operations=loadTs("lib/attendance-operation.ts");
 const staff=randomUUID(),store=randomUUID();
 const member={staff_id:staff,store_id:store,legal_name:"Fixture",store_name:"Fixture",state:"OFF_DUTY",state_version:"1791619200.123456",last_event_id:null,last_event_revision_id:null,last_event_at:null,last_event_type:null,recent_punches:[]};
 function memory(){const map=new Map();return{map,getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)};}
-function screen(initial={kind:"ready",membership:member},storage=memory()){
- const states=[],refs=[],calls=[],requests=[],effects=[];let si=0,ri=0,resolveLocation;
+function screen(initial={kind:"ready",membership:member},storage=memory(),env={}){
+ const states=[],refs=[],calls=[],requests=[],effects=[],liffInits=[];let si=0,ri=0,resolveLocation;
  const reader={read:()=>new Promise(resolve=>{resolveLocation=resolve;}),clear(){}};
  const timers=new Map();let timerId=0;
  const deadlines=loadTs("lib/attendance-request.ts",{}, {AbortController,
@@ -18,11 +18,11 @@ function screen(initial={kind:"ready",membership:member},storage=memory()){
   useEffect(fn,deps){if(deps.length===0)effects.push(fn);},
   useState(value){const i=si++;if(!(i in states))states[i]=i===0?initial:value;return[states[i],v=>{states[i]=typeof v==="function"?v(states[i]):v;}];},
   useRef(value){const i=ri++;refs[i]??={current:i===0?"fixture-token":i===1?reader:value};return refs[i];}
- },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async()=>{},isLoggedIn:()=>true}},
+ },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async options=>{liffInits.push(options);},isLoggedIn:()=>true}},
  "@/lib/attendance-request":deadlines,"@/lib/attendance-operation":{...operations,tabOperationStorage:()=>storage},"@/lib/punch-location.mjs":{},"@/lib/punch-performance.mjs":{measurePunchStage:(_stage,task)=>task()}};
- const component=loadTs("app/page.tsx",modules,{crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0},
+ const component=loadTs("app/page.tsx",modules,{process:{env},crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0},
  fetch:(url,options)=>{calls.push({url,body:JSON.parse(options.body),signal:options.signal});return new Promise((resolve,reject)=>requests.push({resolve,reject}));}});
- return{states,calls,storage,render(){si=ri=0;return component.default();},locate(value=null){resolveLocation(value);},
+ return{states,calls,storage,liffInits,render(){si=ri=0;return component.default();},locate(value=null){resolveLocation(value);},
  expire(){const active=[...timers.values()];assert.equal(active.length,1,"one bounded request must be active");assert.equal(active[0].ms,15000);active[0].fn();},
  discardHung(){requests.shift();},
  hangBody(){requests.shift().resolve({status:200,ok:true,json:()=>new Promise(()=>{})});},
@@ -33,6 +33,26 @@ const text=t=>typeof t==="string"?t:Array.isArray(t)?t.map(text).join(""):t?.pro
 const button=(s,label)=>nodes(s.render(),"button").find(b=>text(b)===label);
 const punch=s=>nodes(s.render(),"button").find(b=>b.props.className==="punch-button");
 const response=(membership=member,operationResult=null)=>({ok:true,registered:true,memberships:[membership],operationResult});
+
+for(const [name,env,expected] of [
+ ["default",{},"2010761826-6FNSE1PD"],
+ ["isolated Preview",{NEXT_PUBLIC_ATTENDANCE_LIFF_ID:"2010761826-fixture"},"2010761826-fixture"],
+]){
+ test(`staff screen and entry initialize the ${name} LIFF`,async()=>{
+  const s=screen({kind:"loading"},memory(),env);s.render();s.boot();await settle();
+  assert.deepEqual(s.liffInits.map(options=>options.liffId),[expected]);
+  s.respond(response());await settle();
+  const effects=[],inits=[],redirects=[];
+  const entry=loadTs("app/liff-entry/page.tsx",{
+   "react/jsx-runtime":jsxRuntime,
+   react:{useState:()=>["",()=>{}],useEffect:fn=>effects.push(fn)},
+   "@line/liff":{default:{init:async options=>{inits.push(options);},isLoggedIn:()=>true}},
+  },{process:{env},URLSearchParams,window:{location:{search:"?store_token=fixture-token&untrusted=drop",replace:url=>redirects.push(url)}}});
+  entry.default();effects.forEach(fn=>fn());await settle();
+  assert.deepEqual(inits.map(options=>options.liffId),[expected]);
+  assert.deepEqual(redirects,["/?store_token=fixture-token"]);
+ });
+}
 
 test("double tap locks; lost response recovers state, history and result together",async()=>{
  const s=screen(),b=punch(s);b.props.onClick();b.props.onClick();assert.equal(punch(s).props.disabled,true);assert.equal(s.calls.length,0);

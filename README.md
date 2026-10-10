@@ -36,6 +36,8 @@ Vercel PreviewのDBアクセスは、専用Neon branchを割り当てた後にPr
 
 Previewのメール送信は既定で停止し、安全なテスト送信先を準備した場合だけ`ONOGAMI_PREVIEW_EMAIL_ENABLED=true`で許可します。
 
+スタッフのLINE実機確認では、同じLINE Loginチャネルに検証専用LIFFを作り、そのIDを対象ブランチのPreview限定で`NEXT_PUBLIC_ATTENDANCE_LIFF_ID`へ設定します。Endpointは対象PreviewのルートURL（末尾`/`）、Full、scopeは`openid`だけとし、検証専用店舗のQRを使います。打刻画面と`/liff-entry`がこのIDを使い、未設定時は既存の本番IDを維持します。認証チャネル自体は変わりません。管理画面・オンボーディングの入口はこの設定の対象外です。本番LIFFのEndpointを検証先へ変更しません。
+
 ## 本番DBの権限分離
 
 `db/migrations/0017_least_privilege_app_role.sql` は、所有者権限を持たない`onogami_app`権限グループを作成し、ONOGAMI固有関数の`PUBLIC`実行権限を取り消します。アプリ接続の切り替え時は、リポジトリへパスワードを保存せず、Neonで専用LOGINロールを別途作成して`onogami_app`へ所属させ、その接続URLをVercel Productionの`DATABASE_URL`へ設定します。`neondb_owner`はマイグレーション専用としてアプリから分離します。

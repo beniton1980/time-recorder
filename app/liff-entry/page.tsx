@@ -3,7 +3,7 @@
 import liff from "@line/liff";
 import { useEffect, useState } from "react";
 
-const LIFF_ID = "2010761826-6FNSE1PD";
+const LIFF_ID = process.env.NEXT_PUBLIC_ATTENDANCE_LIFF_ID || "2010761826-6FNSE1PD";
 
 function safeRootUrl(params: URLSearchParams) {
   const allowed = new URLSearchParams();

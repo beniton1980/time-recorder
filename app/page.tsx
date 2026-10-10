@@ -10,7 +10,7 @@ import { readPendingOperation, savePendingOperation, clearPendingOperation, tabO
 import type { EventType, CorrectionIntent, PendingOperation, OperationResult } from "@/lib/attendance-operation";
 import { withAttendanceDeadline } from "@/lib/attendance-request";
 
-const LIFF_ID = "2010761826-6FNSE1PD";
+const LIFF_ID = process.env.NEXT_PUBLIC_ATTENDANCE_LIFF_ID || "2010761826-6FNSE1PD";
 
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
 
