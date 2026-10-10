@@ -6,7 +6,7 @@ export type CorrectionIntent =
 
 type OperationIdentity = { clientRequestId: string; staffId: string; storeId: string };
 export type PendingOperation = OperationIdentity & (
-  | { kind: "punch"; eventType: EventType }
+  | { kind: "punch"; eventType: EventType; expectedStateVersion?: string }
   | { kind: "correction"; intent: CorrectionIntent }
 );
 export type OperationResult = {
@@ -33,7 +33,11 @@ function parseOperation(raw: string): PendingOperation | null {
   if (!value || !isUuid(value.clientRequestId) || !isUuid(value.staffId) || !isUuid(value.storeId)) return null;
   const identity = { clientRequestId: value.clientRequestId, staffId: value.staffId, storeId: value.storeId };
   if (value.kind === "punch" && isEvent(value.eventType)) {
-    return { ...identity, kind: "punch", eventType: value.eventType };
+    if (value.expectedStateVersion !== undefined &&
+      (typeof value.expectedStateVersion !== "string" || !/^\d{1,12}(?:\.\d{1,6})?$/.test(value.expectedStateVersion))) return null;
+    // Keep old journals readable for result lookup. The API rejects a new write
+    // without a version; it never silently assigns the current state to a retry.
+    return { ...identity, kind: "punch", eventType: value.eventType, expectedStateVersion: value.expectedStateVersion };
   }
   if (value.kind !== "correction" || !value.intent) return null;
   const intent = value.intent;

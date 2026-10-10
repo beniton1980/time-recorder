@@ -6,20 +6,26 @@ import {loadTs} from "./helpers/load-ts.mjs";
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const operations=loadTs("lib/attendance-operation.ts");
 const staff=randomUUID(),store=randomUUID();
-const member={staff_id:staff,store_id:store,legal_name:"Fixture",store_name:"Fixture",state:"OFF_DUTY",last_event_id:null,last_event_revision_id:null,last_event_at:null,last_event_type:null,recent_punches:[]};
+const member={staff_id:staff,store_id:store,legal_name:"Fixture",store_name:"Fixture",state:"OFF_DUTY",state_version:"1791619200.123456",last_event_id:null,last_event_revision_id:null,last_event_at:null,last_event_type:null,recent_punches:[]};
 function memory(){const map=new Map();return{map,getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)};}
 function screen(initial={kind:"ready",membership:member},storage=memory()){
  const states=[],refs=[],calls=[],requests=[],effects=[];let si=0,ri=0,resolveLocation;
  const reader={read:()=>new Promise(resolve=>{resolveLocation=resolve;}),clear(){}};
+ const timers=new Map();let timerId=0;
+ const deadlines=loadTs("lib/attendance-request.ts",{}, {AbortController,
+  setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);}});
  const modules={"react/jsx-runtime":jsxRuntime,react:{
   useEffect(fn,deps){if(deps.length===0)effects.push(fn);},
   useState(value){const i=si++;if(!(i in states))states[i]=i===0?initial:value;return[states[i],v=>{states[i]=typeof v==="function"?v(states[i]):v;}];},
   useRef(value){const i=ri++;refs[i]??={current:i===0?"fixture-token":i===1?reader:value};return refs[i];}
  },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async()=>{},isLoggedIn:()=>true}},
- "@/lib/attendance-operation":{...operations,tabOperationStorage:()=>storage},"@/lib/punch-location.mjs":{},"@/lib/punch-performance.mjs":{measurePunchStage:(_stage,task)=>task()}};
+ "@/lib/attendance-request":deadlines,"@/lib/attendance-operation":{...operations,tabOperationStorage:()=>storage},"@/lib/punch-location.mjs":{},"@/lib/punch-performance.mjs":{measurePunchStage:(_stage,task)=>task()}};
  const component=loadTs("app/page.tsx",modules,{crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0},
- fetch:(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return new Promise((resolve,reject)=>requests.push({resolve,reject}));}});
+ fetch:(url,options)=>{calls.push({url,body:JSON.parse(options.body),signal:options.signal});return new Promise((resolve,reject)=>requests.push({resolve,reject}));}});
  return{states,calls,storage,render(){si=ri=0;return component.default();},locate(value=null){resolveLocation(value);},
+ expire(){const active=[...timers.values()];assert.equal(active.length,1,"one bounded request must be active");assert.equal(active[0].ms,15000);active[0].fn();},
+ discardHung(){requests.shift();},
+ hangBody(){requests.shift().resolve({status:200,ok:true,json:()=>new Promise(()=>{})});},
  respond(value,status=200){requests.shift().resolve({status,ok:status<400,json:async()=>value});},lose(){requests.shift().reject(new Error("fixture network"));},boot(){effects.forEach(fn=>fn());}};
 }
 function nodes(t,type){if(!t||typeof t!=="object")return[];if(Array.isArray(t))return t.flatMap(x=>nodes(x,type));return[...(t.type===type?[t]:[]),...nodes(t.props?.children,type)];}
@@ -39,11 +45,26 @@ test("double tap locks; lost response recovers state, history and result togethe
  assert.equal(punch(s).props.disabled,false);assert.equal(s.storage.map.size,0);assert.ok(s.states.some(x=>typeof x==="string"&&x.includes("出勤を記録しました")));
 });
 test("failure before saving retries identical intent and blocks unrelated actions",async()=>{
- const s=screen();punch(s).props.onClick();s.locate();await settle();s.lose();await settle();s.respond(response());await settle();
+ const s=screen();punch(s).props.onClick();s.locate();await settle();s.lose();await settle();s.respond(response({...member,state_version:"1791619300.654321"}));await settle();
  assert.equal(punch(s).props.disabled,true);assert.equal(button(s,"打刻修正").props.disabled,true);
  const first=s.calls[0].body;button(s,"同じ内容で再試行").props.onClick();s.locate();await settle();
  assert.equal(s.calls[2].body.clientRequestId,first.clientRequestId);assert.equal(s.calls[2].body.eventType,first.eventType);
+ assert.equal(first.expectedStateVersion,member.state_version);assert.equal(s.calls[2].body.expectedStateVersion,first.expectedStateVersion);
  s.respond({ok:true});await settle();s.respond(response({...member,state:"WORKING"},{id:randomUUID(),event_type:"CHECK_IN"}));await settle();assert.equal(s.storage.map.size,0);
+});
+test("hung write and result lookup release recovery buttons and preserve the same operation",async()=>{
+ const s=screen();punch(s).props.onClick();s.locate();await settle();
+ const first=s.calls[0].body;
+ s.expire();await settle();assert.equal(s.calls[0].signal.aborted,true);s.discardHung();
+ assert.equal(s.calls[1].url,"/api/session/bootstrap");
+ s.expire();await settle();s.discardHung();
+ assert.equal(s.calls.length,2);assert.equal(button(s,"結果を確認").props.disabled,false);
+ assert.equal(button(s,"同じ内容で再試行").props.disabled,false);assert.equal(punch(s).props.disabled,true);
+ button(s,"同じ内容で再試行").props.onClick();s.locate();await settle();
+ assert.equal(s.calls[2].body.clientRequestId,first.clientRequestId);
+ assert.equal(s.calls[2].body.expectedStateVersion,first.expectedStateVersion);
+ s.respond({ok:true});await settle();s.respond(response({...member,state:"WORKING"},{id:randomUUID(),event_type:"CHECK_IN"}));await settle();
+ assert.equal(s.storage.map.size,0);assert.equal(punch(s).props.disabled,false);
 });
 test("reload reads pending result without creating any new punch",async()=>{
  const storage=memory(),pending={kind:"punch",eventType:"CHECK_IN",clientRequestId:randomUUID(),staffId:staff,storeId:store};
@@ -51,6 +72,18 @@ test("reload reads pending result without creating any new punch",async()=>{
  s.respond(response());await settle();assert.equal(s.calls[1].body.pendingOperation.clientRequestId,pending.clientRequestId);
  s.respond(response({...member,state:"WORKING"},{id:randomUUID(),event_type:"CHECK_IN"}));await settle();
  assert.ok(s.calls.every(c=>c.url==="/api/session/bootstrap"));assert.equal(storage.map.size,0);assert.equal(s.states[0].membership.state,"WORKING");
+});
+test("a stalled bootstrap response body also returns to retry controls",async()=>{
+ const s=screen();punch(s).props.onClick();s.locate();await settle();s.respond({ok:true});await settle();
+ s.hangBody();await settle();s.expire();await settle();
+ assert.equal(button(s,"結果を確認").props.disabled,false);assert.equal(s.storage.map.size,1);
+});
+test("registration timeout still checks membership and enables a retry when offline",async()=>{
+ const s=screen({kind:"unregistered",storeName:"Fixture"});nodes(s.render(),"input")[0].props.onChange({target:{value:"Fixture Name"}});
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ s.expire();await settle();s.discardHung();assert.equal(s.calls[1].url,"/api/session/bootstrap");
+ s.expire();await settle();s.discardHung();
+ assert.equal(nodes(s.render(),"button").find(b=>b.props.type==="submit").props.disabled,false);
 });
 test("registration double-submit and lost response resolve active membership",async()=>{
  const s=screen({kind:"unregistered",storeName:"Fixture"});nodes(s.render(),"input")[0].props.onChange({target:{value:"Fixture Name"}});

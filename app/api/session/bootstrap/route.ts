@@ -79,6 +79,7 @@ export async function POST(request: Request) {
         s.id AS store_id,
         s.name AS store_name,
         COALESCE(ss.state, 'OFF_DUTY') AS state,
+        EXTRACT(EPOCH FROM ss.updated_at)::text AS state_version,
         ss.last_event_id,
         COALESCE(epe.correction_request_id, epe.original_event_id) AS last_event_revision_id,
         COALESCE(epe.occurred_at, ss.last_event_at) AS last_event_at,

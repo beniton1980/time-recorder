@@ -11,9 +11,12 @@ const count=async()=>Number((await f.db.query("SELECT count(*) AS n FROM correct
 test("four punches remain valid and replay refreshes saved result without another event",async()=>{
  const before=Number((await f.db.query("SELECT count(*) n FROM punch_events")).rows[0].n);
  for(const [eventType,state] of [["CHECK_IN","WORKING"],["BREAK_START","ON_BREAK"],["BREAK_END","WORKING"],["CHECK_OUT","OFF_DUTY"]]){
-  const body={eventType,clientRequestId:randomUUID(),location:null};
+  const current=await f.call(f.bootstrap,{});
+  const body={eventType,clientRequestId:randomUUID(),location:null,expectedStateVersion:current.memberships[0].state_version};
+  assert.match(body.expectedStateVersion,/^\d+\.\d{6}$/);
   assert.equal((await f.call(f.punch,body)).ok,true);
   assert.equal((await f.call(f.punch,body)).status,"already_applied");
+  assert.equal((await f.call(f.punch,{...body,expectedStateVersion:undefined})).status,"already_applied");
   const session=await f.call(f.bootstrap,{pendingOperation:{kind:"punch",clientRequestId:body.clientRequestId}});
   assert.equal(session.memberships[0].state,state);assert.equal(session.operationResult.event_type,eventType);
   assert.equal(session.memberships[0].last_event_id,session.operationResult.id);
@@ -44,6 +47,28 @@ test("saved mistake retries return one correction and never reverse it",async()=
  assert.equal(reverse.status,"applied");
  assert.equal((await f.call(f.correction,body)).status,"already_received");
  assert.equal((await f.call(f.bootstrap,{})).memberships[0].state,"OFF_DUTY");
+});
+
+test("an unsaved punch from an older shift cannot reopen work after another screen completed it",async()=>{
+ const initial=await f.call(f.bootstrap,{});
+ assert.equal(typeof initial.memberships[0].state_version,"string");
+ const stale={eventType:"CHECK_IN",clientRequestId:randomUUID(),expectedStateVersion:initial.memberships[0].state_version};
+ for(const eventType of ["CHECK_IN","CHECK_OUT"]){
+  const current=await f.call(f.bootstrap,{});
+  assert.equal((await f.call(f.punch,{eventType,clientRequestId:randomUUID(),expectedStateVersion:current.memberships[0].state_version})).ok,true);
+ }
+ const before=Number((await f.db.query("SELECT count(*) n FROM punch_events")).rows[0].n);
+ assert.equal((await f.call(f.punch,stale)).status,409);
+ assert.equal(Number((await f.db.query("SELECT count(*) n FROM punch_events")).rows[0].n),before);
+ assert.equal((await f.call(f.bootstrap,{})).memberships[0].state,"OFF_DUTY");
+});
+
+test("unsaved legacy and malformed punch versions cannot create an event",async()=>{
+ const before=Number((await f.db.query("SELECT count(*) n FROM punch_events")).rows[0].n);
+ for(const expectedStateVersion of [undefined,null,123,"invalid"]){
+  assert.equal((await f.call(f.punch,{eventType:"CHECK_IN",clientRequestId:randomUUID(),expectedStateVersion})).status,400);
+ }
+ assert.equal(Number((await f.db.query("SELECT count(*) n FROM punch_events")).rows[0].n),before);
 });
 
 test("migration preserves legacy correction history without inventing operation IDs",async()=>{

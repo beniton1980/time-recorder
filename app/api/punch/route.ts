@@ -27,6 +27,7 @@ type PunchRequest = {
   idToken?: unknown;
   eventType?: unknown;
   clientRequestId?: unknown;
+  expectedStateVersion?: unknown;
   storeToken?: unknown;
   location?: unknown;
 };
@@ -86,6 +87,8 @@ export async function POST(request: Request) {
     !(body.eventType in transitions) ||
     typeof body.clientRequestId !== "string" ||
     !uuidPattern.test(body.clientRequestId) ||
+    (body.expectedStateVersion !== undefined &&
+      (typeof body.expectedStateVersion !== "string" || !/^\d{1,12}(?:\.\d{1,6})?$/.test(body.expectedStateVersion))) ||
     location === undefined
   ) {
     return NextResponse.json(
@@ -158,6 +161,13 @@ export async function POST(request: Request) {
       });
     }
 
+    // Old tabs can still recover an already saved operation above. An unsaved
+    // request must identify the state it started from, including across a full
+    // OFF_DUTY -> WORKING -> OFF_DUTY cycle on another screen.
+    if (body.expectedStateVersion === undefined) {
+      return NextResponse.json({ ok: false, code: "STATE_VERSION_REQUIRED" }, { status: 400 });
+    }
+
     type TransactionSql = Parameters<Parameters<typeof sql.transaction>[0]>[0];
     const createPunchQuery = (transactionSql: TransactionSql) => transactionSql`
       WITH target AS (
@@ -183,6 +193,7 @@ export async function POST(request: Request) {
           AND setk.revoked_at IS NULL
           AND (setk.expires_at IS NULL OR setk.expires_at > NOW())
           AND ss.state = ${transition.from}
+          AND EXTRACT(EPOCH FROM ss.updated_at)::text = ${body.expectedStateVersion}
           AND (
             ${eventType} <> 'CHECK_IN'
             OR NOT EXISTS (

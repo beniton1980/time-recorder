@@ -8,6 +8,7 @@ import type { PunchLocationReader } from "@/lib/punch-location.mjs";
 import { measurePunchStage } from "@/lib/punch-performance.mjs";
 import { readPendingOperation, savePendingOperation, clearPendingOperation, tabOperationStorage } from "@/lib/attendance-operation";
 import type { EventType, CorrectionIntent, PendingOperation, OperationResult } from "@/lib/attendance-operation";
+import { withAttendanceDeadline } from "@/lib/attendance-request";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 
@@ -33,6 +34,7 @@ type Membership = {
   store_id: string;
   store_name: string;
   state: WorkState;
+  state_version: string | null;
   last_event_id: string | null;
   last_event_revision_id: string | null;
   last_event_at: string | null;
@@ -124,14 +126,16 @@ function sessionView(response: Response, data: SessionData): ViewState {
 async function loadStaffSession(storeToken: string, pending?: PendingOperation) {
   const idToken = liff.getIDToken();
   if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
-  const response = await measurePunchStage("session", () => fetch("/api/session/bootstrap", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idToken, storeToken, pendingOperation: pending
-      ? { kind: pending.kind, clientRequestId: pending.clientRequestId } : undefined }),
+  return measurePunchStage("session", () => withAttendanceDeadline(async signal => {
+    const response = await fetch("/api/session/bootstrap", {
+      method: "POST", signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken, storeToken, pendingOperation: pending
+        ? { kind: pending.kind, clientRequestId: pending.clientRequestId } : undefined }),
+    });
+    const data = await response.json() as SessionData;
+    return { view: sessionView(response, data), result: data.operationResult ?? null };
   }));
-  const data = await response.json() as SessionData;
-  return { view: sessionView(response, data), result: data.operationResult ?? null };
 }
 
 function operationLabel(operation: PendingOperation) {
@@ -155,7 +159,7 @@ function operationNotice(operation: PendingOperation, result: OperationResult) {
 export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
   const [submitting, setSubmitting] = useState<EventType | null>(null);
-  const [punchPhase, setPunchPhase] = useState<"location" | "sending">("location");
+  const [punchPhase, setPunchPhase] = useState<"location" | "sending" | "confirming">("location");
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [showCorrection, setShowCorrection] = useState(false);
@@ -279,10 +283,10 @@ export default function Home() {
       // The membership is authoritative even if the registration response is lost
       // or another tap already registered this identity.
       try {
-        await fetch("/api/staff/self-register", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+        await withAttendanceDeadline(signal => fetch("/api/staff/self-register", {
+          method: "POST", signal, headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ idToken, storeToken, legalName }),
-        });
+        }));
       } catch { /* A failed response does not establish that the write failed. */ }
       const session = await loadStaffSession(storeToken);
       if (session.view.kind === "unregistered") {
@@ -353,6 +357,7 @@ export default function Home() {
     } else {
       setCorrectionSubmitting(true);
     }
+    let responseStatus: number | undefined;
     try {
       const idToken = liff.getIDToken();
       if (!idToken || !storeTokenRef.current) throw new Error("AUTH_UNAVAILABLE");
@@ -363,19 +368,23 @@ export default function Home() {
         reader.clear();
         setPunchPhase("sending");
       }
-      const response = await measurePunchStage("send", () => fetch(
+      const response = await measurePunchStage("send", () => withAttendanceDeadline(signal => fetch(
         operation.kind === "punch" ? "/api/punch" : "/api/correction-requests", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", signal, headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             idToken, storeToken: storeTokenRef.current, clientRequestId: operation.clientRequestId,
-            ...(operation.kind === "punch" ? { eventType: operation.eventType, location } : operation.intent),
+            ...(operation.kind === "punch" ? { eventType: operation.eventType, expectedStateVersion: operation.expectedStateVersion, location } : operation.intent),
           }),
         },
-      ));
+      )));
+      responseStatus = response.status;
+    } catch { /* A timeout does not establish whether the write committed. */ }
+    try {
+      setPunchPhase("confirming");
       // Refresh all visible state together, including when the write succeeded but
       // the response body was truncated. No stale local history is appended.
       if (await refreshOperation(operation)) return;
-      if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+      if (responseStatus !== undefined && responseStatus >= 400 && responseStatus < 500 && responseStatus !== 408 && responseStatus !== 429) {
         forgetOperation(operation);
         setNotice(operation.kind === "punch"
           ? "打刻は追加されていません。最新の勤務状態と履歴を確認してください。"
@@ -384,9 +393,6 @@ export default function Home() {
         setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
       }
     } catch {
-      try {
-        if (await refreshOperation(operation)) return;
-      } catch { /* Keep the same intent until its result can be established. */ }
       setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
     } finally {
       punchInFlightRef.current = false;
@@ -490,9 +496,15 @@ export default function Home() {
 
   async function submitPunch(eventType: EventType) {
     if (view.kind !== "ready" || punchInFlightRef.current || pendingOperationRef.current || showCorrection) return;
+    const expectedStateVersion = view.membership.state_version;
+    if (!expectedStateVersion) {
+      setNotice("勤務情報を確認できませんでした。画面を読み込み直してください。");
+      return;
+    }
     await measurePunchStage("total", () => sendOperation({
       kind: "punch", clientRequestId: crypto.randomUUID(), eventType,
       staffId: view.membership.staff_id, storeId: view.membership.store_id,
+      expectedStateVersion,
     }));
   }
 
@@ -618,7 +630,8 @@ export default function Home() {
                   onClick={() => void submitPunch(eventType)}
                 >
                   {submitting === eventType
-                    ? punchPhase === "location" ? "位置情報を確認しています…" : "打刻を送信しています…"
+                    ? punchPhase === "location" ? "位置情報を確認しています…"
+                      : punchPhase === "sending" ? "打刻を送信しています…" : "記録を確認しています…"
                     : eventLabels[eventType]}
                 </button>
               ))}
