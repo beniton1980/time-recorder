@@ -56,7 +56,10 @@ for(const [name,env,expected] of [
 
 test("double tap locks; lost response recovers state, history and result together",async()=>{
  const s=screen(),b=punch(s);b.props.onClick();b.props.onClick();assert.equal(punch(s).props.disabled,true);assert.equal(s.calls.length,0);
+ assert.equal(text(s.render()).includes("送信結果が未確認です"),false,"permission wait is not a failed response");
+ assert.equal(s.storage.map.size,1,"retain the same operation while waiting for location");
  s.locate();await settle();assert.equal(s.calls.length,1);assert.equal(s.calls[0].body.location,null);
+ assert.equal(text(s.render()).includes("送信結果が未確認です"),false,"in-flight send only shows progress");
  s.lose();await settle();assert.equal(s.calls[1].url,"/api/session/bootstrap");
  assert.equal(s.calls[1].body.pendingOperation.clientRequestId,s.calls[0].body.clientRequestId);
  const event={id:randomUUID(),event_type:"CHECK_IN",occurred_at:new Date().toISOString(),location_status:"UNAVAILABLE"};
@@ -79,6 +82,7 @@ test("hung write and result lookup release recovery buttons and preserve the sam
  assert.equal(s.calls[1].url,"/api/session/bootstrap");
  s.expire();await settle();s.discardHung();
  assert.equal(s.calls.length,2);assert.equal(button(s,"結果を確認").props.disabled,false);
+ assert.equal(text(s.render()).includes("送信結果が未確認です"),true,"failed lookup must retain recovery controls");
  assert.equal(button(s,"同じ内容で再試行").props.disabled,false);assert.equal(punch(s).props.disabled,true);
  button(s,"同じ内容で再試行").props.onClick();s.locate();await settle();
  assert.equal(s.calls[2].body.clientRequestId,first.clientRequestId);
@@ -97,6 +101,21 @@ test("a stalled bootstrap response body also returns to retry controls",async()=
  const s=screen();punch(s).props.onClick();s.locate();await settle();s.respond({ok:true});await settle();
  s.hangBody();await settle();s.expire();await settle();
  assert.equal(button(s,"結果を確認").props.disabled,false);assert.equal(s.storage.map.size,1);
+});
+test("correction submission shows progress until result confirmation completes",async()=>{
+ const s=screen();button(s,"打刻修正").props.onClick();
+ nodes(s.render(),"select")[0].props.onChange({target:{value:"OTHER"}});
+ nodes(s.render(),"textarea")[0].props.onChange({target:{value:"Fixture correction"}});
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ button(s,"この内容で申請").props.onClick();await settle();
+ assert.match(text(s.render()),/修正申請を送信・確認しています/);
+ assert.equal(text(s.render()).includes("送信結果が未確認です"),false);
+ assert.equal(s.calls[0].url,"/api/correction-requests");
+ s.respond({ok:true});await settle();
+ assert.match(text(s.render()),/修正申請を送信・確認しています/);
+ s.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
+ assert.equal(text(s.render()).includes("修正申請を送信・確認しています"),false);
+ assert.equal(s.storage.map.size,0);
 });
 test("registration timeout still checks membership and enables a retry when offline",async()=>{
  const s=screen({kind:"unregistered",storeName:"Fixture"});nodes(s.render(),"input")[0].props.onChange({target:{value:"Fixture Name"}});

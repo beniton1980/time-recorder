@@ -518,10 +518,12 @@ export default function Home() {
   }
 
   return (
-    <main>
+    <main className="attendance-screen">
       <section className="card" aria-live="polite">
-        <p className="eyebrow">ONOGAMI</p>
-        <h1>勤怠</h1>
+        <header className="attendance-header">
+          <p className="eyebrow">ONOGAMI</p>
+          <h1>勤怠</h1>
+        </header>
 
         {view.kind === "loading" && (
           <div className="message">
@@ -596,7 +598,11 @@ export default function Home() {
                 </p>
               )}
 
-            {pendingOperation && (
+            {correctionSubmitting && (
+              <p className="punch-notice" role="status">修正申請を送信・確認しています…</p>
+            )}
+
+            {pendingOperation && submitting === null && !correctionSubmitting && (
               <div className="operation-recovery" role="status">
                 <p>{operationLabel(pendingOperation)}の送信結果が未確認です。</p>
                 <p className="field-help">確認が終わるまで、別の打刻や訂正は行えません。再試行しても同じ操作は重複しません。</p>
@@ -639,24 +645,20 @@ export default function Home() {
 
             <details className="location-guide">
               <summary>
-                位置情報は距離確認に使用します（取得できなくても打刻できます）
+                位置情報なしでも打刻できます
               </summary>
               <div className="location-guide-detail">
                 <p>
-                  店舗から離れている場合も打刻は記録されます。
+                  位置情報は距離確認に使用します。許可しない場合や取得できない場合、店舗から離れている場合も、打刻は記録されます。
                 </p>
                 <p>
-                  管理者には不正の断定ではなく、確認の目安として表示されます。
-                </p>
-                <p>
-                  位置情報を許可済みの場合は、この画面を開いた後に確認を始めます。
-                  正確な位置情報は保存せず、確認結果だけを記録します。
+                  正確な位置情報は保存しません。管理者には不正の断定ではなく、確認の目安として結果だけを表示します。許可済みの場合は画面を開くと確認を始めます。
                 </p>
               </div>
             </details>
 
 
-            {!showCorrection && (
+            <div className="attendance-tools">
               <button
                 className="correction-link"
                 type="button"
@@ -665,7 +667,15 @@ export default function Home() {
               >
                 打刻修正
               </button>
-            )}
+              <button
+                className="close-app-button"
+                type="button"
+                disabled={submitting !== null || correctionSubmitting}
+                onClick={closeApp}
+              >
+                画面を閉じる
+              </button>
+            </div>
 
             {showCorrection && (
               <form
@@ -910,17 +920,8 @@ export default function Home() {
               </form>
             )}
 
-            <button
-              className="close-app-button"
-              type="button"
-              disabled={submitting !== null || correctionSubmitting}
-              onClick={closeApp}
-            >
-              打刻画面を閉じる
-            </button>
-
-            <div className="punch-history">
-              <p className="punch-history-title">本日の打刻履歴</p>
+            <details className="punch-history">
+              <summary className="punch-history-title">本日の打刻履歴</summary>
               {view.membership.recent_punches.length > 0 ? (
                 <ol>
                   {view.membership.recent_punches.map((punch) => (
@@ -936,7 +937,7 @@ export default function Home() {
               ) : (
                 <p className="punch-history-empty">本日の打刻はありません</p>
               )}
-            </div>
+            </details>
 
           </div>
         )}

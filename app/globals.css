@@ -460,3 +460,103 @@ h1 {
   cursor: wait;
   opacity: 0.6;
 }
+
+/* Keep the daily staff screen compact without clipping expanded content or zoom. */
+.attendance-screen {
+  min-height: 100svh;
+  padding: 12px;
+}
+
+.attendance-screen .card {
+  width: min(100%, 480px);
+  min-width: 0;
+  min-height: 0;
+  padding: 20px;
+  overflow-wrap: anywhere;
+}
+
+.attendance-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.attendance-header .eyebrow { margin: 0; }
+.attendance-header h1 { font-size: 24px; }
+.attendance-screen .message { margin-top: 16px; }
+.attendance-screen .clock { margin-bottom: 12px; }
+.attendance-screen .clock-date { font-size: 13px; }
+.attendance-screen .clock-time { font-size: clamp(40px, 12vw, 52px); }
+.attendance-screen .store { margin-bottom: 4px !important; font-size: 13px; }
+.attendance-screen .status { font-size: 18px; line-height: 1.4; }
+.attendance-screen .state { margin-top: 12px !important; font-size: 24px; }
+.attendance-screen .last-punch { margin-top: 4px !important; font-size: 14px; }
+.attendance-screen .punch-notice { margin-top: 8px !important; font-size: 14px; line-height: 1.5; }
+
+.attendance-screen .punch-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.attendance-screen .punch-button { min-height: 54px; padding: 12px 8px; line-height: 1.25; }
+.attendance-screen .punch-button:only-child { grid-column: 1 / -1; }
+
+.attendance-screen .location-guide {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.attendance-screen .location-guide summary { min-height: 44px; padding: 12px 0; }
+.attendance-screen .location-guide-detail { padding: 0 0 12px; }
+
+.attendance-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.attendance-tools > button {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 6px;
+  border: 1px solid #b8c8bd;
+  border-radius: 10px;
+  background: #fff;
+  color: #274d38;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.attendance-screen .punch-history { margin-top: 12px; padding: 0; }
+.attendance-screen .punch-history summary { min-height: 44px; padding: 12px 14px; cursor: pointer; }
+.attendance-screen .punch-history ol { margin: 0 14px 14px; }
+.attendance-screen .punch-history-empty { margin: 0 14px 14px !important; }
+.attendance-screen .punch-history li { grid-template-columns: 52px minmax(0, 1fr) auto; gap: 8px; }
+.attendance-screen .operation-recovery { margin-top: 12px; }
+.attendance-screen .correction-form { padding: 16px; }
+.attendance-screen .correction-form label { min-width: 0; }
+.attendance-screen .correction-date-time { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (max-width: 440px) {
+  .attendance-screen .correction-date-time { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Small inputs trigger automatic focus zoom in iPhone web views. */
+.attendance-screen input,
+.attendance-screen select,
+.attendance-screen textarea {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 16px;
+}
+
+.attendance-screen summary:focus-visible,
+.attendance-screen button:focus-visible {
+  outline: 3px solid #397451;
+  outline-offset: 3px;
+}
