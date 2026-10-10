@@ -102,6 +102,66 @@ test("a stalled bootstrap response body also returns to retry controls",async()=
  s.hangBody();await settle();s.expire();await settle();
  assert.equal(button(s,"結果を確認").props.disabled,false);assert.equal(s.storage.map.size,1);
 });
+for(const [validationCode,explanation,otherExplanation] of [
+ ["STORE_LOCATION_UNAVAILABLE",/店舗の位置が未設定/,/端末の位置情報を取得できません/],
+ ["CLIENT_LOCATION_UNAVAILABLE",/端末の位置情報を取得できません/,/店舗の位置が未設定/],
+]){
+ test(`recovered ${validationCode} stays in GPS details without implying a failed punch`,async()=>{
+  const s=screen();punch(s).props.onClick();s.locate();await settle();s.lose();await settle();
+  const result={id:randomUUID(),event_type:"CHECK_IN",occurred_at:"2026-10-09T18:47:00.000Z",
+   location_status:"UNAVAILABLE",validation_code:validationCode};
+  s.respond(response({...member,state:"WORKING",last_event_id:result.id,last_event_at:result.occurred_at,last_event_type:"CHECK_IN"},result));await settle();
+  const tree=s.render(),feedback=nodes(tree,"div").find(n=>n.props.className==="punch-feedback");
+  assert.equal(text(feedback),"03:47の出勤を記録しました");
+  assert.doesNotMatch(text(feedback),/位置|未確認/);
+  const details=nodes(tree,"details").find(n=>n.props.className==="location-guide");
+  assert.notEqual(details.props.open,true,"the optional explanation must stay collapsed");
+  assert.match(text(details),explanation);assert.doesNotMatch(text(details),otherExplanation);
+  assert.equal(punch(s).props.disabled,false);assert.equal(s.storage.map.size,0);
+ });
+}
+
+for(const [previousType,nextType,previousLabel,nextLabel,state] of [
+ ["CHECK_OUT","BREAK_START","退勤","休憩開始","OFF_DUTY"],
+ ["BREAK_START","CHECK_OUT","休憩開始","退勤","ON_BREAK"],
+]){
+ test(`${previousType} mistake uses the previous record without date or time entry`,async()=>{
+  const previousId=randomUUID(),revisionId=randomUUID(),previousAt="2026-10-09T18:47:00.000Z";
+  const membership={...member,state,last_event_id:previousId,last_event_revision_id:revisionId,
+   last_event_at:previousAt,last_event_type:previousType};
+  const s=screen({kind:"ready",membership});button(s,"打刻修正").props.onClick();
+  assert.equal(nodes(s.render(),"select")[0].props.value,"MISTAKE");
+  assert.equal(nodes(s.render(),"input").length,0,"a mistake correction must not ask the user to reconstruct its date or time");
+  const preview=nodes(s.render(),"div").find(n=>n.props.className==="last-punch-correction");
+  assert.match(text(preview),new RegExp(`03:47 ${previousLabel}→03:47 ${nextLabel}`));
+  nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+  assert.equal(nodes(s.render(),"input").length,0);
+  assert.match(text(s.render()),new RegExp(`03:47 ${previousLabel} → ${nextLabel}`));
+  button(s,"この内容で申請").props.onClick();await settle();
+  assert.equal(s.calls[0].url,"/api/correction-requests");
+  assert.equal(s.calls[0].body.category,"MISTAKE");assert.equal(s.calls[0].body.targetEventId,previousId);
+  assert.equal(s.calls[0].body.expectedRevisionId,revisionId);assert.equal(s.calls[0].body.eventType,nextType);
+  assert.equal("occurredAt" in s.calls[0].body,false,"the server keeps the referenced record's original date and time");
+  s.respond({ok:true});await settle();
+  s.respond(response({...membership,last_event_type:nextType},{id:randomUUID(),status:"APPROVED"}));await settle();
+  assert.equal(s.storage.map.size,0);
+ });
+}
+
+test("an unsupported previous punch does not silently switch a mistake into a missed-punch request",()=>{
+ const s=screen({kind:"ready",membership:{...member,state:"WORKING",last_event_id:randomUUID(),
+  last_event_revision_id:randomUUID(),last_event_at:"2026-10-09T18:47:00.000Z",last_event_type:"CHECK_IN"}});
+ button(s,"打刻修正").props.onClick();
+ assert.equal(nodes(s.render(),"select")[0].props.value,"MISTAKE");
+ assert.equal(nodes(s.render(),"input").length,0);
+ assert.match(text(s.render()),/前回の打刻は種類の押し間違いとして修正できません/);
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ assert.equal(button(s,"この内容で申請"),undefined);assert.equal(s.calls.length,0);
+ nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+ assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.type),["date","time"],
+  "date and time are requested only after the user explicitly chooses a missed punch");
+});
+
 test("correction submission shows progress until result confirmation completes",async()=>{
  const s=screen();button(s,"打刻修正").props.onClick();
  nodes(s.render(),"select")[0].props.onChange({target:{value:"OTHER"}});

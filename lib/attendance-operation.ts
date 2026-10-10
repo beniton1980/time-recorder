@@ -14,6 +14,7 @@ export type OperationResult = {
   event_type?: EventType;
   occurred_at?: string;
   location_status?: string;
+  validation_code?: string | null;
   status?: "PENDING" | "APPROVED" | "REJECTED";
   requested_event_type?: EventType;
 };

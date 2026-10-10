@@ -12,7 +12,8 @@ test("four punches remain valid and replay refreshes saved result without anothe
  const before=Number((await f.db.query("SELECT count(*) n FROM punch_events")).rows[0].n);
  for(const [eventType,state] of [["CHECK_IN","WORKING"],["BREAK_START","ON_BREAK"],["BREAK_END","WORKING"],["CHECK_OUT","OFF_DUTY"]]){
   const current=await f.call(f.bootstrap,{});
-  const body={eventType,clientRequestId:randomUUID(),location:null,expectedStateVersion:current.memberships[0].state_version};
+  const location=eventType==="CHECK_IN"?{latitude:35,longitude:139,accuracy:10}:null;
+  const body={eventType,clientRequestId:randomUUID(),location,expectedStateVersion:current.memberships[0].state_version};
   assert.match(body.expectedStateVersion,/^\d+\.\d{6}$/);
   assert.equal((await f.call(f.punch,body)).ok,true);
   assert.equal((await f.call(f.punch,body)).status,"already_applied");
@@ -20,6 +21,12 @@ test("four punches remain valid and replay refreshes saved result without anothe
   const session=await f.call(f.bootstrap,{pendingOperation:{kind:"punch",clientRequestId:body.clientRequestId}});
   assert.equal(session.memberships[0].state,state);assert.equal(session.operationResult.event_type,eventType);
   assert.equal(session.memberships[0].last_event_id,session.operationResult.id);
+  assert.equal(session.operationResult.location_status,"UNAVAILABLE");
+  assert.equal(session.operationResult.validation_code,location?"STORE_LOCATION_UNAVAILABLE":"CLIENT_LOCATION_UNAVAILABLE",
+   "result recovery preserves whether the store or the device lacked location");
+  for(const field of ["latitude","longitude","gps_accuracy_m","distance_from_store_m"]){
+   assert.equal(field in session.operationResult,false,"result recovery must not expose exact location telemetry");
+  }
   assert.equal((await f.call(f.punch,{...body,eventType:eventType==="CHECK_IN"?"CHECK_OUT":"CHECK_IN"})).code,"CLIENT_REQUEST_CONFLICT");
  }
  assert.equal(Number((await f.db.query("SELECT count(*) n FROM punch_events")).rows[0].n),before+4);

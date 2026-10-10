@@ -44,6 +44,8 @@ type Membership = {
 
 type ViewState =
   | { kind: "loading" }
+  | { kind: "login_required"; message?: string }
+  | { kind: "line_auth_error" }
   | { kind: "unregistered"; storeName: string }
   | { kind: "store_required"; message: string }
   | {
@@ -148,12 +150,22 @@ function operationLabel(operation: PendingOperation) {
 function operationNotice(operation: PendingOperation, result: OperationResult) {
   if (operation.kind === "punch") {
     return (result.occurred_at ? formatTime(result.occurred_at) + "の" : "")
-      + eventLabels[result.event_type ?? operation.eventType] + "を記録しました"
-      + (result.location_status === "OK" ? "" : "（位置情報は未確認）");
+      + eventLabels[result.event_type ?? operation.eventType] + "を記録しました";
   }
   if (result.status === "PENDING") return "打刻修正を申請しました（承認待ち）";
   if (result.status === "REJECTED") return "この修正申請は却下されています。現在の記録を確認してください。";
   return "打刻修正が反映されています。現在の記録を表示しています。";
+}
+
+function locationExplanation(result: OperationResult) {
+  if (result.location_status === "OK") return "店舗の範囲内を確認しました。";
+  switch (result.validation_code) {
+    case "STORE_LOCATION_UNAVAILABLE": return "店舗の位置が未設定のため、距離は確認していません。";
+    case "CLIENT_LOCATION_UNAVAILABLE": return "端末の位置情報を取得できませんでした。";
+    case "LOW_GPS_ACCURACY": return "位置情報の精度が低いため、距離は確認できませんでした。";
+    case "OUTSIDE_STORE_RADIUS": return "店舗の範囲外として記録しました。";
+    default: return "位置情報による確認はできませんでした。";
+  }
 }
 
 export default function Home() {
@@ -183,6 +195,7 @@ export default function Home() {
   const registrationInFlightRef = useRef(false);
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
   const [recovering, setRecovering] = useState(false);
+  const [locationNotice, setLocationNotice] = useState<string | null>(null);
   const readyForPunch = view.kind === "ready";
 
   useEffect(() => {
@@ -220,6 +233,7 @@ export default function Home() {
     async function bootstrap() {
       try {
         await measurePunchStage("line", () => liff.init({ liffId: LIFF_ID }));
+        if (!active) return;
         const storeToken = new URLSearchParams(window.location.search).get("store_token");
         if (!storeToken) {
           if (active) setView({ kind: "store_required", message: "店舗に設置されたQRコードから開いてください。" });
@@ -227,7 +241,7 @@ export default function Home() {
         }
         storeTokenRef.current = storeToken;
         if (!liff.isLoggedIn()) {
-          liff.login({ redirectUri: window.location.href });
+          setView({ kind: liff.isInClient() ? "line_auth_error" : "login_required" });
           return;
         }
         let session = await loadStaffSession(storeToken);
@@ -247,6 +261,7 @@ export default function Home() {
                 pendingOperationRef.current = null;
                 setPendingOperation(null);
                 setNotice(operationNotice(pending, session.result));
+                if (pending.kind === "punch") setLocationNotice(locationExplanation(session.result));
               }
             } catch {
               if (active) setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
@@ -261,6 +276,20 @@ export default function Home() {
     void bootstrap();
     return () => { active = false; };
   }, []);
+
+  function beginLineLogin() {
+    if (view.kind !== "login_required") return;
+    if (liff.isInClient()) {
+      setView({ kind: "line_auth_error" });
+      return;
+    }
+    try {
+      // Keep login directly inside the user's tap; init already completed.
+      liff.login({ redirectUri: window.location.href });
+    } catch {
+      setView({ kind: "login_required", message: "LINEのログイン画面を開けませんでした。もう一度お試しください。" });
+    }
+  }
 
   async function selfRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -322,6 +351,7 @@ export default function Home() {
       forgetOperation(operation);
       setShowCorrection(false);
       setNotice(operationNotice(operation, session.result));
+      if (operation.kind === "punch") setLocationNotice(locationExplanation(session.result));
       return true;
     }
     return false;
@@ -420,9 +450,7 @@ export default function Home() {
   function openCorrectionForm() {
     if (view.kind !== "ready" || pendingOperationRef.current || punchInFlightRef.current) return;
 
-    setCorrectionCategory(
-      canCorrectLastPunch(view.membership) ? "MISTAKE" : "MISSED",
-    );
+    setCorrectionCategory("MISTAKE");
     setCorrectionDate("");
     setCorrectionTime("");
     setCorrectionReason("");
@@ -532,6 +560,30 @@ export default function Home() {
           </div>
         )}
 
+        {view.kind === "login_required" && (
+          <div className="message">
+            <p className="status">LINEで本人確認</p>
+            <p className="note">ログインすると、打刻画面に進みます。</p>
+            <div className="punch-actions">
+              <button className="punch-button" type="button" onClick={beginLineLogin}>
+                LINEでログイン
+              </button>
+            </div>
+            <p className="note">LINEが開かない場合は、Safari／Chromeでこのページを開き直してください。</p>
+            {view.message && <p className="correction-error" role="alert">{view.message}</p>}
+          </div>
+        )}
+
+        {view.kind === "line_auth_error" && (
+          <div className="message">
+            <p className="status">LINEの認証を確認できませんでした</p>
+            <p className="note">この画面を閉じて、店舗のQRコードを読み直してください。</p>
+            <button className="close-app-button" type="button" onClick={closeApp}>
+              画面を閉じる
+            </button>
+          </div>
+        )}
+
         {view.kind === "store_required" && (
           <div className="message">
             <p className="status">店舗QRコードが必要です</p>
@@ -590,18 +642,41 @@ export default function Home() {
             <p className="status">{view.membership.legal_name}さん</p>
             <p className="state">{stateLabels[view.membership.state]}</p>
 
-            {view.membership.last_event_at &&
-              view.membership.last_event_type && (
-                <p className="last-punch">
+            <p className="last-punch">
+              {view.membership.last_event_at && view.membership.last_event_type && (
+                <>
                   {formatTime(view.membership.last_event_at)} に
                   {eventLabels[view.membership.last_event_type]}
-                </p>
+                </>
               )}
+            </p>
 
-            {correctionSubmitting && (
-              <p className="punch-notice" role="status">修正申請を送信・確認しています…</p>
-            )}
+            <div className="punch-actions">
+              {actionsByState[view.membership.state].map((eventType) => (
+                <button
+                  className={
+                    eventType === "BREAK_START"
+                      ? "punch-button punch-button-secondary"
+                      : "punch-button"
+                  }
+                  type="button"
+                  key={eventType}
+                  disabled={submitting !== null || correctionSubmitting || recovering || pendingOperation !== null || showCorrection}
+                  onClick={() => void submitPunch(eventType)}
+                >
+                  {submitting === eventType
+                    ? punchPhase === "location" ? "位置確認中…"
+                      : punchPhase === "sending" ? "送信中…" : "確認中…"
+                    : eventLabels[eventType]}
+                </button>
+              ))}
+            </div>
 
+            <div className="punch-feedback" role="status">
+              {correctionSubmitting
+                ? <p className="punch-notice">修正申請を送信・確認しています…</p>
+                : notice && <p className="punch-notice">{notice}</p>}
+            </div>
             {pendingOperation && submitting === null && !correctionSubmitting && (
               <div className="operation-recovery" role="status">
                 <p>{operationLabel(pendingOperation)}の送信結果が未確認です。</p>
@@ -620,34 +695,14 @@ export default function Home() {
                 </div>
               </div>
             )}
-            {notice && <p className="punch-notice" role="status">{notice}</p>}
 
-            <div className="punch-actions">
-              {actionsByState[view.membership.state].map((eventType) => (
-                <button
-                  className={
-                    eventType === "BREAK_START"
-                      ? "punch-button punch-button-secondary"
-                      : "punch-button"
-                  }
-                  type="button"
-                  key={eventType}
-                  disabled={submitting !== null || correctionSubmitting || recovering || pendingOperation !== null || showCorrection}
-                  onClick={() => void submitPunch(eventType)}
-                >
-                  {submitting === eventType
-                    ? punchPhase === "location" ? "位置情報を確認しています…"
-                      : punchPhase === "sending" ? "打刻を送信しています…" : "記録を確認しています…"
-                    : eventLabels[eventType]}
-                </button>
-              ))}
-            </div>
 
             <details className="location-guide">
               <summary>
                 位置情報なしでも打刻できます
               </summary>
               <div className="location-guide-detail">
+                {locationNotice && <p>直前の位置確認：{locationNotice}</p>}
                 <p>
                   位置情報は距離確認に使用します。許可しない場合や取得できない場合、店舗から離れている場合も、打刻は記録されます。
                 </p>

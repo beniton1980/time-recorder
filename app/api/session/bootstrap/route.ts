@@ -88,7 +88,8 @@ export async function POST(request: Request) {
         CASE
           WHEN ${pending?.kind ?? null}::text = 'punch' THEN (
             SELECT json_build_object('id', pe.id, 'event_type', pe.event_type,
-              'occurred_at', pe.occurred_at, 'location_status', pe.location_status)
+              'occurred_at', pe.occurred_at, 'location_status', pe.location_status,
+              'validation_code', pe.validation_code)
             FROM punch_events pe
             WHERE pe.staff_id = st.id AND pe.store_id = s.id
               AND pe.client_request_id = ${pending?.clientRequestId ?? null}::uuid

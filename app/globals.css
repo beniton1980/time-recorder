@@ -491,8 +491,9 @@ h1 {
 .attendance-screen .store { margin-bottom: 4px !important; font-size: 13px; }
 .attendance-screen .status { font-size: 18px; line-height: 1.4; }
 .attendance-screen .state { margin-top: 12px !important; font-size: 24px; }
-.attendance-screen .last-punch { margin-top: 4px !important; font-size: 14px; }
-.attendance-screen .punch-notice { margin-top: 8px !important; font-size: 14px; line-height: 1.5; }
+.attendance-screen .last-punch { min-height: 1.5em; margin-top: 4px !important; font-size: 14px; line-height: 1.5; }
+.attendance-screen .punch-feedback { min-height: 50px; padding-top: 8px; }
+.attendance-screen .punch-notice { margin: 0 !important; font-size: 14px; line-height: 1.5; }
 
 .attendance-screen .punch-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -500,7 +501,7 @@ h1 {
   margin-top: 16px;
 }
 
-.attendance-screen .punch-button { min-height: 54px; padding: 12px 8px; line-height: 1.25; }
+.attendance-screen .punch-button { min-height: 84px; padding: 12px 8px; font-size: 22px; line-height: 1.25; }
 .attendance-screen .punch-button:only-child { grid-column: 1 / -1; }
 
 .attendance-screen .location-guide {
