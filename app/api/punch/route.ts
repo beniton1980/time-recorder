@@ -134,10 +134,12 @@ export async function POST(request: Request) {
         ss.state
       FROM punch_events pe
       JOIN staff st ON st.id = pe.staff_id
+      JOIN stores s ON s.id = st.store_id
       JOIN staff_states ss ON ss.staff_id = st.id
       JOIN store_entry_tokens setk ON setk.store_id = pe.store_id
       WHERE pe.client_request_id = ${body.clientRequestId}
         AND st.line_user_id = ${identity.sub}
+        AND st.status = 'active' AND s.status = 'active'
         AND setk.token_hash = ${tokenHash}
         AND setk.active = TRUE
         AND setk.revoked_at IS NULL
@@ -146,6 +148,9 @@ export async function POST(request: Request) {
     `;
 
     if (existing.length === 1) {
+      if (existing[0].event_type !== eventType) {
+        return NextResponse.json({ ok: false, code: "CLIENT_REQUEST_CONFLICT" }, { status: 409 });
+      }
       return NextResponse.json({
         ok: true,
         status: "already_applied",

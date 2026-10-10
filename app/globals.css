@@ -172,7 +172,7 @@ h1 {
 .punch-button {
   min-height: 56px;
   padding: 14px 20px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 14px;
   background: #397451;
   color: #fff;
@@ -301,6 +301,17 @@ h1 {
   border-radius: 12px;
   background: #fff;
 }
+
+.operation-recovery {
+  padding: 16px;
+  border: 1px solid #d9c6a4;
+  border-radius: 12px;
+  background: #fffdf7;
+  text-align: left;
+}
+
+.operation-recovery > p:first-child { margin-top: 0; font-weight: 700; }
+.operation-recovery .correction-actions > button { min-height: 48px; }
 
 .correction-review > p {
   font-weight: 700;

@@ -6,11 +6,12 @@ import type { FormEvent } from "react";
 import { createPunchLocationReader } from "@/lib/punch-location.mjs";
 import type { PunchLocationReader } from "@/lib/punch-location.mjs";
 import { measurePunchStage } from "@/lib/punch-performance.mjs";
+import { readPendingOperation, savePendingOperation, clearPendingOperation, tabOperationStorage } from "@/lib/attendance-operation";
+import type { EventType, CorrectionIntent, PendingOperation, OperationResult } from "@/lib/attendance-operation";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
-type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
 
 type PunchHistoryItem = {
   effective_id: string;
@@ -33,6 +34,7 @@ type Membership = {
   store_name: string;
   state: WorkState;
   last_event_id: string | null;
+  last_event_revision_id: string | null;
   last_event_at: string | null;
   last_event_type: EventType | null;
   recent_punches: PunchHistoryItem[];
@@ -88,6 +90,68 @@ function formatTime(value: Date | string) {
   }).format(new Date(value));
 }
 
+type SessionData = {
+  ok: boolean;
+  code?: string;
+  registered?: boolean;
+  store?: { store_name: string };
+  memberships?: Membership[];
+  activeStoreConflict?: ActiveStoreConflict | null;
+  operationResult?: OperationResult | null;
+};
+
+function sessionView(response: Response, data: SessionData): ViewState {
+  if (!response.ok || !data.ok) {
+    if (data.code === "STORE_TOKEN_REQUIRED" || data.code === "STORE_TOKEN_INVALID") {
+      return { kind: "store_required", message: "この店舗QRコードは利用できません。" };
+    }
+    if (data.code === "STAFF_INACTIVE") {
+      return { kind: "store_required", message: "この店舗での利用は停止されています。管理者に確認してください。" };
+    }
+    throw new Error("認証を確認できませんでした。通信を確認して、もう一度お試しください。");
+  }
+  if (!data.registered && data.store) {
+    return { kind: "unregistered", storeName: data.store.store_name };
+  }
+  const membership = data.memberships?.[0];
+  if (!membership) throw new Error("勤務情報を取得できませんでした。");
+  if (data.activeStoreConflict) {
+    return { kind: "active_store_conflict", requestedStoreName: membership.store_name, activeStore: data.activeStoreConflict };
+  }
+  return { kind: "ready", membership };
+}
+
+async function loadStaffSession(storeToken: string, pending?: PendingOperation) {
+  const idToken = liff.getIDToken();
+  if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+  const response = await measurePunchStage("session", () => fetch("/api/session/bootstrap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idToken, storeToken, pendingOperation: pending
+      ? { kind: pending.kind, clientRequestId: pending.clientRequestId } : undefined }),
+  }));
+  const data = await response.json() as SessionData;
+  return { view: sessionView(response, data), result: data.operationResult ?? null };
+}
+
+function operationLabel(operation: PendingOperation) {
+  if (operation.kind === "punch") return eventLabels[operation.eventType];
+  if (operation.intent.category === "MISTAKE") return eventLabels[operation.intent.eventType] + "への訂正";
+  if (operation.intent.category === "MISSED") return "押し忘れた" + eventLabels[operation.intent.eventType] + "の申請";
+  return "打刻修正の申請";
+}
+
+function operationNotice(operation: PendingOperation, result: OperationResult) {
+  if (operation.kind === "punch") {
+    return (result.occurred_at ? formatTime(result.occurred_at) + "の" : "")
+      + eventLabels[result.event_type ?? operation.eventType] + "を記録しました"
+      + (result.location_status === "OK" ? "" : "（位置情報は未確認）");
+  }
+  if (result.status === "PENDING") return "打刻修正を申請しました（承認待ち）";
+  if (result.status === "REJECTED") return "この修正申請は却下されています。現在の記録を確認してください。";
+  return "打刻修正が反映されています。現在の記録を表示しています。";
+}
+
 export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
   const [submitting, setSubmitting] = useState<EventType | null>(null);
@@ -111,6 +175,10 @@ export default function Home() {
   const storeTokenRef = useRef<string | null>(null);
   const locationReaderRef = useRef<PunchLocationReader | null>(null);
   const punchInFlightRef = useRef(false);
+  const pendingOperationRef = useRef<PendingOperation | null>(null);
+  const registrationInFlightRef = useRef(false);
+  const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
+  const [recovering, setRecovering] = useState(false);
   const readyForPunch = view.kind === "ready";
 
   useEffect(() => {
@@ -145,149 +213,193 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
-
     async function bootstrap() {
       try {
         await measurePunchStage("line", () => liff.init({ liffId: LIFF_ID }));
-
-        const storeToken = new URLSearchParams(window.location.search).get(
-          "store_token",
-        );
-
+        const storeToken = new URLSearchParams(window.location.search).get("store_token");
         if (!storeToken) {
-          setView({
-            kind: "store_required",
-            message: "店舗に設置されたQRコードから開いてください。",
-          });
+          if (active) setView({ kind: "store_required", message: "店舗に設置されたQRコードから開いてください。" });
           return;
         }
-
         storeTokenRef.current = storeToken;
-
         if (!liff.isLoggedIn()) {
           liff.login({ redirectUri: window.location.href });
           return;
         }
-
-        const idToken = liff.getIDToken();
-
-        if (!idToken) {
-          throw new Error("LINEの認証情報を取得できませんでした。");
-        }
-
-        const response = await measurePunchStage("session", () => fetch("/api/session/bootstrap", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken, storeToken }),
-        }));
-
-        const data = await response.json();
-
-        if (!response.ok || !data.ok) {
-          if (
-            data.code === "STORE_TOKEN_REQUIRED" ||
-            data.code === "STORE_TOKEN_INVALID"
-          ) {
-            setView({
-              kind: "store_required",
-              message: "この店舗QRコードは利用できません。",
-            });
-            return;
-          }
-
-          if (data.code === "STAFF_INACTIVE") {
-            setView({
-              kind: "store_required",
-              message: "この店舗での利用は停止されています。管理者に確認してください。",
-            });
-            return;
-          }
-
-          throw new Error("認証を確認できませんでした。");
-        }
-
+        let session = await loadStaffSession(storeToken);
         if (!active) return;
-
-        if (!data.registered) {
-          setView({ kind: "unregistered", storeName: data.store.store_name as string });
-          return;
+        if (session.view.kind === "ready") {
+          const { staff_id, store_id } = session.view.membership;
+          const pending = readPendingOperation(tabOperationStorage(), staff_id, store_id);
+          if (pending) {
+            pendingOperationRef.current = pending;
+            setPendingOperation(pending);
+            try {
+              // Reload only checks the result. It never creates a new punch.
+              session = await loadStaffSession(storeToken, pending);
+              if (!active) return;
+              if (session.result) {
+                clearPendingOperation(tabOperationStorage(), pending);
+                pendingOperationRef.current = null;
+                setPendingOperation(null);
+                setNotice(operationNotice(pending, session.result));
+              }
+            } catch {
+              if (active) setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
+            }
+          }
         }
-
-        const membership = data.memberships[0] as Membership;
-        const activeStoreConflict =
-          data.activeStoreConflict as ActiveStoreConflict | null;
-
-        if (activeStoreConflict) {
-          setView({
-            kind: "active_store_conflict",
-            requestedStoreName: membership.store_name,
-            activeStore: activeStoreConflict,
-          });
-          return;
-        }
-
-        setView({
-          kind: "ready",
-          membership,
-        });
-      } catch (error) {
-        if (!active) return;
-
-        setView({
-          kind: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "画面を読み込めませんでした。",
-        });
+        if (active) setView(session.view);
+      } catch {
+        if (active) setView({ kind: "error", message: "画面を読み込めませんでした。通信を確認して、もう一度開いてください。" });
       }
     }
-
     void bootstrap();
-
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
 
   async function selfRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (registrationInFlightRef.current) return;
     const legalName = registrationName.trim();
     if (!legalName) {
       setRegistrationError("お名前を入力してください。");
       return;
     }
     const idToken = liff.getIDToken();
-    if (!idToken || !storeTokenRef.current) {
+    const storeToken = storeTokenRef.current;
+    if (!idToken || !storeToken) {
       setRegistrationError("LINEの認証情報を取得できませんでした。");
       return;
     }
+    registrationInFlightRef.current = true;
     setRegistrationSubmitting(true);
     setRegistrationError(null);
     try {
-      const response = await fetch("/api/staff/self-register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken, storeToken: storeTokenRef.current, legalName }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.code === "STAFF_ALREADY_REGISTERED"
-          ? "この店舗には既に登録されています。管理者へ利用状態をご確認ください。"
-          : "スタッフ登録を完了できませんでした。");
+      // The membership is authoritative even if the registration response is lost
+      // or another tap already registered this identity.
+      try {
+        await fetch("/api/staff/self-register", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken, storeToken, legalName }),
+        });
+      } catch { /* A failed response does not establish that the write failed. */ }
+      const session = await loadStaffSession(storeToken);
+      if (session.view.kind === "unregistered") {
+        setRegistrationError("登録を確認できませんでした。通信を確認して、もう一度お試しください。");
+      } else {
+        setView(session.view);
+        if (session.view.kind === "ready") setNotice("この店舗への登録を確認しました。打刻できます。");
       }
-      window.location.reload();
-    } catch (caught) {
-      setRegistrationError(caught instanceof Error ? caught.message : "スタッフ登録を完了できませんでした。");
+    } catch {
+      setRegistrationError("登録結果を確認できませんでした。通信を確認して、もう一度お試しください。");
+    } finally {
+      registrationInFlightRef.current = false;
       setRegistrationSubmitting(false);
     }
   }
 
+  function rememberOperation(operation: PendingOperation) {
+    savePendingOperation(tabOperationStorage(), operation);
+    pendingOperationRef.current = operation;
+    setPendingOperation(operation);
+  }
+
+  function forgetOperation(operation: PendingOperation) {
+    clearPendingOperation(tabOperationStorage(), operation);
+    pendingOperationRef.current = null;
+    setPendingOperation(null);
+  }
+
+  async function refreshOperation(operation: PendingOperation) {
+    const session = await loadStaffSession(storeTokenRef.current!, operation);
+    setView(session.view);
+    if (session.result) {
+      forgetOperation(operation);
+      setShowCorrection(false);
+      setNotice(operationNotice(operation, session.result));
+      return true;
+    }
+    return false;
+  }
+
+  async function checkPendingOperation() {
+    const operation = pendingOperationRef.current;
+    if (!operation || punchInFlightRef.current) return;
+    punchInFlightRef.current = true;
+    setRecovering(true);
+    setNotice(null);
+    try {
+      if (!await refreshOperation(operation)) {
+        setNotice("まだ完了を確認できません。同じ内容で再試行できます。");
+      }
+    } catch {
+      setNotice("送信結果を確認できませんでした。通信が戻ってから再確認してください。");
+    } finally {
+      punchInFlightRef.current = false;
+      setRecovering(false);
+    }
+  }
+
+  async function sendOperation(operation: PendingOperation) {
+    if (punchInFlightRef.current) return;
+    punchInFlightRef.current = true;
+    rememberOperation(operation);
+    setNotice(null);
+    setShowCorrection(false);
+    if (operation.kind === "punch") {
+      setSubmitting(operation.eventType);
+      setPunchPhase("location");
+    } else {
+      setCorrectionSubmitting(true);
+    }
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken || !storeTokenRef.current) throw new Error("AUTH_UNAVAILABLE");
+      let location = null;
+      if (operation.kind === "punch") {
+        const reader = locationReaderRef.current ?? createPunchLocationReader({ geolocation: navigator.geolocation });
+        location = await measurePunchStage("location", () => reader.read());
+        reader.clear();
+        setPunchPhase("sending");
+      }
+      const response = await measurePunchStage("send", () => fetch(
+        operation.kind === "punch" ? "/api/punch" : "/api/correction-requests", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idToken, storeToken: storeTokenRef.current, clientRequestId: operation.clientRequestId,
+            ...(operation.kind === "punch" ? { eventType: operation.eventType, location } : operation.intent),
+          }),
+        },
+      ));
+      // Refresh all visible state together, including when the write succeeded but
+      // the response body was truncated. No stale local history is appended.
+      if (await refreshOperation(operation)) return;
+      if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+        forgetOperation(operation);
+        setNotice(operation.kind === "punch"
+          ? "打刻は追加されていません。最新の勤務状態と履歴を確認してください。"
+          : "修正を受け付けられませんでした。最新の記録を確認し、内容を見直してください。");
+      } else {
+        setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
+      }
+    } catch {
+      try {
+        if (await refreshOperation(operation)) return;
+      } catch { /* Keep the same intent until its result can be established. */ }
+      setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
+    } finally {
+      punchInFlightRef.current = false;
+      setSubmitting(null);
+      setCorrectionSubmitting(false);
+    }
+  }
 
   function canCorrectLastPunch(membership: Membership) {
     return (
       membership.last_event_id !== null &&
       membership.last_event_at !== null &&
+      membership.last_event_revision_id != null &&
       (membership.last_event_type === "CHECK_OUT" ||
         membership.last_event_type === "BREAK_START")
     );
@@ -300,7 +412,7 @@ export default function Home() {
   }
 
   function openCorrectionForm() {
-    if (view.kind !== "ready") return;
+    if (view.kind !== "ready" || pendingOperationRef.current || punchInFlightRef.current) return;
 
     setCorrectionCategory(
       canCorrectLastPunch(view.membership) ? "MISTAKE" : "MISSED",
@@ -353,208 +465,35 @@ export default function Home() {
   }
 
   async function submitCorrectionRequest() {
-    if (view.kind !== "ready" || correctionSubmitting) return;
-
-    setCorrectionSubmitting(true);
-    setCorrectionError(null);
-    setNotice(null);
-
-    try {
-      const idToken = liff.getIDToken();
-
-      if (!idToken) {
-        throw new Error("LINEの認証情報を取得できませんでした。");
-      }
-
-      const response = await fetch("/api/correction-requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idToken,
-          storeToken: storeTokenRef.current,
-          category: correctionCategory,
-          eventType:
-            correctionCategory === "MISSED" ? correctionEvent : undefined,
-          occurredAt:
-            correctionCategory === "MISSED"
-              ? new Date(
-                  `${correctionDate}T${correctionTime}`,
-                ).toISOString()
-              : undefined,
-          reason:
-            correctionCategory === "OTHER"
-              ? correctionReason.trim()
-              : undefined,
-        }),
-      });
-      const data = await response.json();
-
-      if (!response.ok || !data.ok) {
-        throw new Error("修正申請を送信できませんでした。");
-      }
-
-      if (
-        correctionCategory === "MISTAKE" &&
-        data.status === "applied" &&
-        (data.correctionRequest.state === "OFF_DUTY" ||
-          data.correctionRequest.state === "ON_BREAK") &&
-        (data.correctionRequest.requested_event_type === "CHECK_OUT" ||
-          data.correctionRequest.requested_event_type === "BREAK_START")
-      ) {
-        setView({
-          kind: "ready",
-          membership: {
-            ...view.membership,
-            state: data.correctionRequest.state as WorkState,
-            last_event_at:
-              data.correctionRequest.requested_occurred_at as string,
-            last_event_type:
-              data.correctionRequest.requested_event_type as EventType,
-            recent_punches: view.membership.recent_punches.map((punch) =>
-              punch.original_event_id === view.membership.last_event_id
-                ? {
-                    ...punch,
-                    event_type:
-                      data.correctionRequest
-                        .requested_event_type as EventType,
-                    occurred_at:
-                      data.correctionRequest
-                        .requested_occurred_at as string,
-                    corrected: true,
-                  }
-                : punch,
-            ),
-          },
-        });
-        setShowCorrection(false);
-        setNotice("前回の打刻を修正しました");
+    if (view.kind !== "ready" || punchInFlightRef.current || pendingOperationRef.current) return;
+    const member = view.membership;
+    let intent: CorrectionIntent;
+    if (correctionCategory === "MISTAKE") {
+      const eventType = correctedLastEvent(member);
+      if (!canCorrectLastPunch(member) || (eventType !== "CHECK_OUT" && eventType !== "BREAK_START")) return;
+      intent = { category: "MISTAKE", targetEventId: member.last_event_id!,
+        expectedRevisionId: member.last_event_revision_id!, eventType };
+    } else if (correctionCategory === "MISSED") {
+      // Form fields are store-local wall time, independent of the device timezone.
+      const date = new Date(correctionDate + "T" + correctionTime + ":00+09:00");
+      if (!Number.isFinite(date.getTime())) {
+        setCorrectionError("追加する打刻の日付と時刻を確認してください。");
         return;
       }
-
-      setShowCorrection(false);
-      setNotice("打刻修正を申請しました（承認待ち）");
-    } catch (error) {
-      setCorrectionError(
-        error instanceof Error
-          ? error.message
-          : "修正申請を送信できませんでした。",
-      );
-    } finally {
-      setCorrectionSubmitting(false);
+      intent = { category: "MISSED", eventType: correctionEvent, occurredAt: date.toISOString() };
+    } else {
+      intent = { category: "OTHER", reason: correctionReason.trim() };
     }
+    await sendOperation({ kind: "correction", clientRequestId: crypto.randomUUID(),
+      staffId: member.staff_id, storeId: member.store_id, intent });
   }
 
   async function submitPunch(eventType: EventType) {
-    if (view.kind !== "ready" || punchInFlightRef.current) return;
-
-    punchInFlightRef.current = true;
-    setPunchPhase("location");
-    setSubmitting(eventType);
-    setNotice(null);
-
-    try {
-      const idToken = liff.getIDToken();
-
-      if (!idToken) {
-        throw new Error("LINEの認証情報を取得できませんでした。");
-      }
-
-      const { response, data } = await measurePunchStage("total", async () => {
-        const reader = locationReaderRef.current ?? createPunchLocationReader({ geolocation: navigator.geolocation });
-        const location = await measurePunchStage("location", () => reader.read());
-        reader.clear();
-        setPunchPhase("sending");
-        return measurePunchStage("send", async () => {
-          const response = await fetch("/api/punch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              idToken,
-              eventType,
-              clientRequestId: crypto.randomUUID(),
-              storeToken: storeTokenRef.current,
-              location,
-            }),
-          });
-          return { response, data: await response.json() };
-        });
-      });
-
-      if (!response.ok || !data.ok) {
-        if (
-          data.code === "INVALID_STATE_TRANSITION" &&
-          (data.currentState === "OFF_DUTY" ||
-            data.currentState === "WORKING" ||
-            data.currentState === "ON_BREAK")
-        ) {
-          setView({
-            kind: "ready",
-            membership: {
-              ...view.membership,
-              state: data.currentState as WorkState,
-            },
-          });
-          setNotice(
-            "勤務状態を最新に更新しました。もう一度操作してください。",
-          );
-          return;
-        }
-
-        if (data.code === "ACTIVE_AT_OTHER_STORE") {
-          throw new Error(
-            typeof data.message === "string"
-              ? data.message
-              : "別の店舗で勤務中です。勤務中の店舗で退勤してから出勤してください。",
-          );
-        }
-
-        throw new Error("打刻を完了できませんでした。");
-      }
-
-      const nextState = data.punch.state as WorkState;
-
-      setView({
-        kind: "ready",
-        membership: {
-          ...view.membership,
-          state: nextState,
-          last_event_id: data.punch.event_id as string,
-          last_event_at: data.punch.occurred_at as string,
-          last_event_type: eventType,
-          recent_punches: [
-            ...view.membership.recent_punches,
-            {
-              effective_id: data.punch.event_id as string,
-              original_event_id: data.punch.event_id as string,
-              event_type: eventType,
-              occurred_at: data.punch.occurred_at as string,
-              corrected: false,
-            },
-          ].slice(-8),
-        },
-      });
-
-      const locationStatus = data.punch.location_status as string;
-
-      if (locationStatus === "OK") {
-        setNotice(`${eventLabels[eventType]}を記録しました`);
-      } else if (locationStatus === "WARNING") {
-        setNotice(
-          `${eventLabels[eventType]}を記録しました（位置情報を確認してください）`,
-        );
-      } else {
-        setNotice(
-          `${eventLabels[eventType]}を記録しました（位置情報は未確認）`,
-        );
-      }
-    } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "打刻を完了できませんでした。",
-      );
-    } finally {
-      punchInFlightRef.current = false;
-      setSubmitting(null);
-    }
+    if (view.kind !== "ready" || punchInFlightRef.current || pendingOperationRef.current || showCorrection) return;
+    await measurePunchStage("total", () => sendOperation({
+      kind: "punch", clientRequestId: crypto.randomUUID(), eventType,
+      staffId: view.membership.staff_id, storeId: view.membership.store_id,
+    }));
   }
 
   function closeApp() {
@@ -645,6 +584,26 @@ export default function Home() {
                 </p>
               )}
 
+            {pendingOperation && (
+              <div className="operation-recovery" role="status">
+                <p>{operationLabel(pendingOperation)}の送信結果が未確認です。</p>
+                <p className="field-help">確認が終わるまで、別の打刻や訂正は行えません。再試行しても同じ操作は重複しません。</p>
+                <div className="correction-actions">
+                  <button className="correction-cancel" type="button"
+                    disabled={submitting !== null || correctionSubmitting || recovering}
+                    onClick={() => void checkPendingOperation()}>
+                    {recovering ? "確認中…" : "結果を確認"}
+                  </button>
+                  <button className="correction-submit" type="button"
+                    disabled={submitting !== null || correctionSubmitting || recovering}
+                    onClick={() => void sendOperation(pendingOperation)}>
+                    {submitting !== null || correctionSubmitting ? "送信中…" : "同じ内容で再試行"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {notice && <p className="punch-notice" role="status">{notice}</p>}
+
             <div className="punch-actions">
               {actionsByState[view.membership.state].map((eventType) => (
                 <button
@@ -655,7 +614,7 @@ export default function Home() {
                   }
                   type="button"
                   key={eventType}
-                  disabled={submitting !== null}
+                  disabled={submitting !== null || correctionSubmitting || recovering || pendingOperation !== null || showCorrection}
                   onClick={() => void submitPunch(eventType)}
                 >
                   {submitting === eventType
@@ -688,7 +647,7 @@ export default function Home() {
               <button
                 className="correction-link"
                 type="button"
-                disabled={submitting !== null}
+                disabled={submitting !== null || correctionSubmitting || recovering || pendingOperation !== null || showCorrection}
                 onClick={openCorrectionForm}
               >
                 打刻修正
@@ -937,8 +896,6 @@ export default function Home() {
                 )}
               </form>
             )}
-
-            {notice && <p className="punch-notice">{notice}</p>}
 
             <button
               className="close-app-button"
