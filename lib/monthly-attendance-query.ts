@@ -26,6 +26,7 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
         cr.staff_id,
         st.legal_name,
         COALESCE(
+          cr.requested_business_date,
           target.business_date,
           ((cr.requested_occurred_at AT TIME ZONE s.timezone)
             - make_interval(mins => s.business_day_start_minute))::date,
@@ -40,6 +41,7 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
       WHERE cr.store_id = ${storeId}::uuid
         AND cr.status = 'PENDING'
         AND COALESCE(
+          cr.requested_business_date,
           target.business_date,
           ((cr.requested_occurred_at AT TIME ZONE s.timezone)
             - make_interval(mins => s.business_day_start_minute))::date,

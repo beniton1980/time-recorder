@@ -21,6 +21,7 @@ function screen(initial={kind:"ready",membership:member},storage=memory(),env={}
   useRef(value){const i=ri++;refs[i]??={current:i===0?"fixture-token":i===1?reader:value};return refs[i];}
  },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async options=>{liffInits.push(options);},isLoggedIn:()=>true,
   isInClient:()=>true,closeWindow:()=>{uiCalls.lineClose++;}}},
+ "@/lib/correction-validation":loadTs("lib/correction-validation.ts"),
  "@/lib/attendance-request":deadlines,"@/lib/attendance-operation":{...operations,tabOperationStorage:()=>storage},"@/lib/punch-location.mjs":{},"@/lib/punch-performance.mjs":{measurePunchStage:(_stage,task)=>task()}};
  const component=loadTs("app/page.tsx",modules,{Date:clock,process:{env},crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0,close:()=>{uiCalls.browserClose++;}},
  fetch:(url,options)=>{calls.push({url,body:JSON.parse(options.body),signal:options.signal});return new Promise((resolve,reject)=>requests.push({resolve,reject}));}});
@@ -43,6 +44,15 @@ function clockAt(instant){
   static advanceTo(value){now=Date.parse(value);}
  };
 }
+function missedForm(s,eventType="BREAK_PAIR"){
+ button(s,"打刻修正").props.onClick();
+ nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+ nodes(s.render(),"select")[1].props.onChange({target:{value:eventType}});
+}
+function enterTimes(s,values){
+ values.forEach((value,index)=>nodes(s.render(),"input")[index].props.onChange({target:{value}}));
+}
+const review=s=>nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
 
 for(const [name,env,expected] of [
  ["default",{},"2010761826-6FNSE1PD"],
@@ -220,17 +230,142 @@ test("a missed punch sends the entered Japan time and keeps that intent when ret
  nodes(s.render(),"input").find(n=>n.props.type==="date").props.onChange({target:{value:"2026-10-09"}});
  nodes(s.render(),"input").find(n=>n.props.type==="time").props.onChange({target:{value:"03:47"}});
  nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
- assert.equal(s.calls.length,0);assert.equal(s.storage.map.size,0);
+ assert.equal(s.calls.length,1);assert.equal(s.calls[0].url,"/api/correction-requests/validate");
+ assert.equal(s.storage.map.size,0);s.respond({ok:true});await settle();
  assert.match(text(s.render()),/2026\/10\/09 03:47/);
  button(s,"この内容で申請").props.onClick();await settle();
- const originalRequest=s.calls[0].body;
+ const originalRequest=s.calls[1].body;
  assert.equal(originalRequest.category,"MISSED");assert.equal(originalRequest.eventType,"BREAK_END");
  assert.equal(originalRequest.occurredAt,"2026-10-08T18:47:00.000Z");
  clock.advanceTo("2026-10-11T15:01:00.000Z");s.lose();await settle();s.respond(response());await settle();
  button(s,"同じ内容で再試行").props.onClick();await settle();
- assert.deepEqual(s.calls[2].body,originalRequest,"retry cannot substitute today's date or the send time for the entered event");
+ assert.deepEqual(s.calls[3].body,originalRequest,"retry cannot substitute today's date or the send time for the entered event");
  s.respond({ok:true});await settle();s.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
  assert.equal(s.storage.map.size,0);assert.equal(s.states[0].membership.state,member.state,"request submission does not apply the missing punch before approval");
+});
+
+test("pair validation is read-only, locks duplicate checks and input changes, and keeps both Japan dates through retry and reload",async()=>{
+ const s=screen();missedForm(s);
+ assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),["","","",""],"neither timestamp is inferred");
+ enterTimes(s,["2026-10-10","23:55","2026-10-11","00:10"]);
+ const form=nodes(s.render(),"form")[0],oldInputs=nodes(s.render(),"input"),oldToday=button(s,"今日");
+ form.props.onSubmit({preventDefault(){}});form.props.onSubmit({preventDefault(){}});
+ oldInputs[1].props.onChange({target:{value:"12:00"}});oldToday.props.onClick();
+ assert.equal(s.calls.length,1);assert.equal(s.calls[0].url,"/api/correction-requests/validate");
+ assert.equal("clientRequestId" in s.calls[0].body,false);assert.equal(s.storage.map.size,0);
+ assert.equal(nodes(s.render(),"fieldset")[0].props.disabled,true);assert.equal(button(s,"キャンセル").props.disabled,false);
+ assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),["2026-10-10","23:55","2026-10-11","00:10"]);
+ assert.deepEqual(s.calls[0].body,{idToken:"fixture-identity",storeToken:"fixture-token",category:"MISSED_BREAK",eventType:"BREAK_START",
+  occurredAt:"2026-10-10T14:55:00.000Z",breakEndedAt:"2026-10-10T15:10:00.000Z"});
+ s.respond({ok:true});await settle();
+ assert.match(text(s.render()),/休憩開始2026\/10\/10 23:55/);assert.match(text(s.render()),/休憩終了2026\/10\/11 00:10/);
+ button(s,"この内容で申請").props.onClick();await settle();const original=s.calls[1].body;
+ const pending=operations.readPendingOperation(s.storage,staff,store);
+ assert.equal(pending.intent.breakEndedAt,original.breakEndedAt);assert.equal(pending.intent.occurredAt,original.occurredAt);
+ s.lose();await settle();s.respond(response());await settle();
+ button(s,"同じ内容で再試行").props.onClick();await settle();assert.deepEqual(s.calls[3].body,original);
+ s.lose();await settle();s.respond(response());await settle();
+ const reopened=screen({kind:"loading"},s.storage);reopened.render();reopened.boot();await settle();reopened.respond(response());await settle();
+ assert.equal(reopened.calls[1].body.pendingOperation.clientRequestId,original.clientRequestId);
+ reopened.respond(response());await settle();button(reopened,"同じ内容で再試行").props.onClick();await settle();
+ assert.deepEqual(reopened.calls[2].body,original,"reload must preserve the entire break as one request");
+ reopened.respond({ok:true});await settle();reopened.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
+ assert.equal(s.storage.map.size,0);assert.equal(reopened.states[0].membership.state,member.state);
+});
+
+test("pair input requires both actual timestamps and checks their order before any validation request",()=>{
+ const s=screen();missedForm(s);enterTimes(s,["2026-10-10","23:55"]);review(s);
+ assert.match(text(s.render()),/休憩終了の日付と実際の時刻/);assert.equal(s.calls.length,0);
+ enterTimes(s,["2026-10-10","23:55","2026-10-10","23:55"]);review(s);
+ assert.match(text(s.render()),/休憩終了は、休憩開始より後/);assert.equal(s.calls.length,0);
+ enterTimes(s,["2026-10-10","23:55","2026-10-09","23:59"]);review(s);assert.equal(s.calls.length,0);
+ assert.equal(s.storage.map.size,0);assert.equal(button(s,"この内容で申請"),undefined);
+});
+
+test("cancelled validation cannot confirm or unlock a newer form, whether its old result succeeds or fails",async()=>{
+ for(const staleResult of [{ok:true},{ok:false,code:"CORRECTION_TIME_CONFLICT"}]){
+  const s=screen();missedForm(s,"BREAK_END");enterTimes(s,["2026-10-10","23:50"]);review(s);
+  button(s,"キャンセル").props.onClick();assert.equal(s.storage.map.size,0);assert.equal(punch(s).props.disabled,false);
+  missedForm(s);enterTimes(s,["2026-10-10","23:55","2026-10-11","00:10"]);review(s);
+  s.respond(staleResult,staleResult.ok?200:409);await settle();
+  assert.equal(nodes(s.render(),"fieldset")[0].props.disabled,true);assert.equal(button(s,"この内容で申請"),undefined);
+  assert.doesNotMatch(text(s.render()),/同じ時刻の打刻がすでに/);assert.equal(s.calls.length,2);
+  s.respond({ok:true});await settle();assert.match(text(s.render()),/休憩終了2026\/10\/11 00:10/);
+  const oldSubmit=button(s,"この内容で申請");button(s,"入力に戻る").props.onClick();oldSubmit.props.onClick();
+  assert.equal(s.calls.length,2,"returning to input invalidates the old confirmation immediately");
+  enterTimes(s,["2026-10-10","23:56","2026-10-11","00:11"]);review(s);
+  assert.equal(s.calls.length,3);assert.equal(s.calls[2].url,"/api/correction-requests/validate");
+  assert.equal(button(s,"この内容で申請"),undefined,"editing requires another server check");
+  s.respond({ok:true});await settle();button(s,"キャンセル").props.onClick();assert.equal(s.storage.map.size,0);
+ }
+});
+
+test("stalled validation and its response body return to editable inputs without an uncertain-write journal",async()=>{
+ for(const stalledBody of [false,true]){
+  const s=screen();missedForm(s);enterTimes(s,["2026-10-10","23:55","2026-10-11","00:10"]);review(s);
+  if(stalledBody){s.hangBody();await settle();}
+  s.expire();await settle();if(!stalledBody)s.discardHung();
+  assert.equal(nodes(s.render(),"fieldset")[0].props.disabled,false);assert.equal(button(s,"内容を確認").props.disabled,false);
+  assert.match(text(s.render()),/まだ申請は送信していません/);assert.equal(s.storage.map.size,0);
+  assert.equal(button(s,"結果を確認"),undefined);assert.equal(button(s,"この内容で申請"),undefined);
+ }
+});
+
+test("missing break start offers a pair without inventing its start, a type change, or the existing consultation form",async()=>{
+ for(const action of ["開始・終了をまとめて申請","種類を選び直す","時刻が分からないので相談"]){
+  const s=screen();missedForm(s,"BREAK_END");enterTimes(s,["2026-10-11","00:10"]);review(s);
+  s.respond({ok:false,code:"CORRECTION_BREAK_START_REQUIRED"},409);await settle();
+  assert.match(text(s.render()),/休憩開始の記録がありません/);assert.equal(button(s,"この内容で申請"),undefined);
+  button(s,action).props.onClick();assert.equal(s.storage.map.size,0);assert.equal(s.calls.length,1);
+  if(action==="開始・終了をまとめて申請"){
+   assert.equal(nodes(s.render(),"select")[1].props.value,"BREAK_PAIR");
+   assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),["","","2026-10-11","00:10"]);
+   review(s);assert.equal(s.calls.length,1);
+  }else if(action==="時刻が分からないので相談"){
+   assert.equal(nodes(s.render(),"select")[0].props.value,"OTHER");assert.equal(nodes(s.render(),"textarea").length,1);
+   review(s);assert.equal(button(s,"この内容で申請"),undefined,"consultation still needs the user's explanation");
+  }else assert.equal(nodes(s.render(),"select")[1].props.value,"BREAK_END","focusing the type selector does not guess a replacement");
+ }
+});
+
+test("a final rejection restores both timestamps only after an authoritative lookup, including a delayed lookup",async()=>{
+ for(const delayedLookup of [false,true]){
+  const s=screen();missedForm(s);enterTimes(s,["2026-10-10","23:55","2026-10-11","00:10"]);review(s);
+  s.respond({ok:true});await settle();button(s,"この内容で申請").props.onClick();await settle();
+  s.respond({ok:false,code:"CORRECTION_SEQUENCE_INVALID"},409);await settle();
+  assert.equal(s.storage.map.size,1);assert.equal(nodes(s.render(),"form").length,0);
+  if(delayedLookup){
+   s.lose();await settle();assert.equal(s.storage.map.size,1);assert.equal(nodes(s.render(),"form").length,0);
+   button(s,"結果を確認").props.onClick();await settle();
+  }
+  s.respond(response());await settle();assert.equal(s.storage.map.size,0);
+  assert.match(text(s.render()),/申請は追加されていません。前後の打刻とつながりません/);
+  assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),["2026-10-10","23:55","2026-10-11","00:10"]);
+  assert.equal(button(s,"内容を確認").props.disabled,false);assert.equal(button(s,"キャンセル").props.disabled,false);
+ }
+});
+
+test("a saved pair found after a rejected response takes precedence over the rejection",async()=>{
+ const s=screen();missedForm(s);enterTimes(s,["2026-10-10","23:55","2026-10-11","00:10"]);review(s);
+ s.respond({ok:true});await settle();button(s,"この内容で申請").props.onClick();await settle();
+ s.respond({ok:false,code:"CORRECTION_PENDING_CONFLICT"},409);await settle();
+ s.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
+ assert.equal(s.storage.map.size,0);assert.equal(nodes(s.render(),"form").length,0);
+ assert.match(text(s.render()),/承認待ち/);assert.doesNotMatch(text(s.render()),/申請は追加されていません/);
+});
+
+test("pair journals preserve only the two valid ordered timestamps and reject incomplete or reversed intents",()=>{
+ const identity={kind:"correction",clientRequestId:randomUUID(),staffId:staff,storeId:store};
+ const intent={category:"MISSED_BREAK",eventType:"BREAK_START",occurredAt:"2026-10-10T23:55:00+09:00",breakEndedAt:"2026-10-11T00:10:00+09:00"};
+ for(const invalid of [{...intent,breakEndedAt:undefined},{...intent,breakEndedAt:"invalid"},{...intent,breakEndedAt:intent.occurredAt},
+  {...intent,breakEndedAt:"2026-10-10T23:54:00+09:00"},{...intent,eventType:"BREAK_END"}]){
+  const storage=memory();operations.savePendingOperation(storage,{...identity,intent:invalid});assert.equal(storage.map.size,0);
+ }
+ const storage=memory();operations.savePendingOperation(storage,{...identity,intent:{...intent,idToken:"private-fixture",location:{latitude:1}}});
+ const pending=operations.readPendingOperation(storage,staff,store);
+ assert.equal(pending.intent.occurredAt,"2026-10-10T14:55:00.000Z");assert.equal(pending.intent.breakEndedAt,"2026-10-10T15:10:00.000Z");
+ assert.deepEqual(Object.keys(pending.intent).sort(),["breakEndedAt","category","eventType","occurredAt"]);
+ assert.equal([...storage.map.values()][0].includes("private-fixture"),false);
 });
 
 for(const phase of ["input","confirmation"]){
@@ -239,11 +374,13 @@ for(const phase of ["input","confirmation"]){
   nodes(s.render(),"select")[0].props.onChange({target:{value:"OTHER"}});
   nodes(s.render(),"textarea")[0].props.onChange({target:{value:"Fixture unsent correction"}});
   if(phase==="confirmation") nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+  const oldSubmit=button(s,"この内容で申請");
   assert.equal(button(s,"打刻画面を閉じる"),undefined,"closing the app is not an editing action");
   assert.equal(nodes(s.render(),"button").filter(b=>text(b)==="キャンセル").length,1);
   const cancel=button(s,"キャンセル");
   assert.equal(cancel.props.type,"button");assert.equal(cancel.props.disabled,false);
   cancel.props.onClick();
+  oldSubmit?.props.onClick();
   assert.equal(nodes(s.render(),"form").length,0);assert.equal(punch(s).props.disabled,false);
   assert.equal(button(s,"打刻画面を閉じる").props.disabled,false);
   assert.deepEqual(s.states[0],{kind:"ready",membership:member});

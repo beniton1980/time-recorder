@@ -20,6 +20,7 @@ type CorrectionRequestBody = {
   expectedRevisionId?: unknown;
   eventType?: unknown;
   occurredAt?: unknown;
+  breakEndedAt?: unknown;
   reason?: unknown;
 };
 
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
   const tokenHash = hashStoreEntryToken(body.storeToken);
   const category = body.category;
   if (typeof body.idToken !== "string" || !tokenHash
-    || (category !== "MISTAKE" && category !== "MISSED" && category !== "OTHER")) {
+    || (category !== "MISTAKE" && category !== "MISSED" && category !== "MISSED_BREAK" && category !== "OTHER")) {
     return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
   // Old open tabs must refresh rather than sending an unidentifiable toggle.
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
   let expectedRevisionId: string | null = null;
   let eventType: string | null = null;
   let occurredAt: string | null = null;
+  let breakEndedAt: string | null = null;
   let reason: string | null = null;
   if (category === "MISTAKE") {
     if (typeof body.targetEventId !== "string" || !uuidPattern.test(body.targetEventId)
@@ -58,7 +60,7 @@ export async function POST(request: Request) {
     targetEventId = body.targetEventId;
     expectedRevisionId = body.expectedRevisionId;
     eventType = body.eventType;
-  } else if (category === "MISSED") {
+  } else if (category === "MISSED" || category === "MISSED_BREAK") {
     const date = typeof body.occurredAt === "string" ? new Date(body.occurredAt) : null;
     if (typeof body.eventType !== "string" || !eventTypes.includes(body.eventType)
       || !date || Number.isNaN(date.getTime())) {
@@ -66,6 +68,13 @@ export async function POST(request: Request) {
     }
     eventType = body.eventType;
     occurredAt = date.toISOString();
+    if (category === "MISSED_BREAK") {
+      const ended = typeof body.breakEndedAt === "string" ? new Date(body.breakEndedAt) : null;
+      if (eventType !== "BREAK_START" || !ended || !Number.isFinite(ended.getTime()) || ended <= date) {
+        return NextResponse.json({ ok: false, code: "INVALID_CORRECTION_REQUEST" }, { status: 400 });
+      }
+      breakEndedAt = ended.toISOString();
+    }
   } else {
     reason = typeof body.reason === "string" ? body.reason.trim() : "";
     if (!reason || reason.length > 500) {
@@ -102,7 +111,7 @@ export async function POST(request: Request) {
         ${String(member.store_id)}::uuid, ${String(member.staff_id)}::uuid,
         ${body.clientRequestId}::uuid, ${category},
         ${targetEventId}::uuid, ${expectedRevisionId}::uuid,
-        ${eventType}, ${occurredAt}::timestamptz, ${reason}
+        ${eventType}, ${occurredAt}::timestamptz, ${reason}, ${breakEndedAt}::timestamptz
       )
     `;
     return NextResponse.json({
@@ -120,6 +129,10 @@ export async function POST(request: Request) {
       STAFF_OR_STORE_NOT_FOUND: 404,
       OCCURRED_AT_OUT_OF_RANGE: 400,
       INVALID_CORRECTION_REQUEST: 400,
+      CORRECTION_BREAK_START_REQUIRED: 409,
+      CORRECTION_SEQUENCE_INVALID: 409,
+      CORRECTION_TIME_CONFLICT: 409,
+      CORRECTION_PENDING_CONFLICT: 409,
     };
     for (const [code, status] of Object.entries(knownErrors)) {
       if (message.includes(code)) return NextResponse.json({ ok: false, code }, { status });

@@ -2,6 +2,7 @@
 
 import liff from "@line/liff";
 import { useCallback, useEffect, useState } from "react";
+import { correctionValidationMessage } from "@/lib/correction-validation";
 import styles from "./manager.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -38,6 +39,8 @@ type Correction = {
   operation: "ADD" | "REPLACE" | "VOID" | "REVIEW";
   requested_event_type: EventType | null;
   requested_occurred_at: string | null;
+  group_id?: string | null;
+  requested_break_ended_at?: string | null;
   reason: string | null;
   requested_at: string;
   legal_name: string;
@@ -559,10 +562,13 @@ export default function ManagerPage() {
 
     const verb = decision === "APPROVED" ? "承認" : "却下";
     await dismissKeyboard();
-    if (!window.confirm(`${correction.legal_name}さんの申請を${verb}しますか？`)) return;
+    const details = correction.requested_break_ended_at
+      ? "\n\n休憩開始と終了をまとめて処理します。" : "";
+    if (!window.confirm(`${correction.legal_name}さんの申請を${verb}しますか？${details}`)) return;
 
     setDeciding(correction.id);
     setError(null);
+    setFieldErrors((current) => { const next = { ...current }; delete next[correction.id]; return next; });
 
     try {
       const idToken = liff.getIDToken();
@@ -587,6 +593,14 @@ export default function ManagerPage() {
       const data = await response.json();
 
       if (!response.ok || !data.ok) {
+        const validationMessage = correctionValidationMessage(data.code);
+        if (validationMessage) {
+          setFieldErrors((current) => ({ ...current,
+            [correction.id]: `${validationMessage}承認は行っていません。記録と申請内容を確認してください。`,
+          }));
+          await reloadDashboard(selectedDate);
+          return;
+        }
         if (data.code === "RESOLUTION_REQUIRED" || data.code === "INVALID_RESOLUTION_TIME") {
           throw new Error("追加する打刻の種類・日付・時刻を確認してください。");
         }
@@ -1080,7 +1094,13 @@ export default function ManagerPage() {
                         </time>
                       </div>
 
-                      {correction.operation === "ADD" && correction.requested_event_type && correction.requested_occurred_at ? (
+                      {correction.requested_break_ended_at && correction.requested_occurred_at ? (
+                        <p>
+                          休憩開始・終了をまとめて追加<br />
+                          開始：{formatDateTime(correction.requested_occurred_at)}<br />
+                          終了：{formatDateTime(correction.requested_break_ended_at)}
+                        </p>
+                      ) : correction.operation === "ADD" && correction.requested_event_type && correction.requested_occurred_at ? (
                         <p className={styles.requestDetail}>
                           打刻漏れを追加：{formatDateTime(correction.requested_occurred_at)}{" "}
                           {eventLabels[correction.requested_event_type]}
@@ -1156,17 +1176,17 @@ export default function ManagerPage() {
                               />
                             </label>
                           </div>
-                          {fieldErrors[correction.id] && (
-                            <p className={styles.fieldError} role="alert">
-                              {fieldErrors[correction.id]}
-                            </p>
-                          )}
                           <small>
                             承認すると、この打刻が訂正データとして追加されます。
                           </small>
                         </div>
                       )}
 
+                      {fieldErrors[correction.id] && (
+                        <p className={styles.fieldError} role="alert">
+                          {fieldErrors[correction.id]}
+                        </p>
+                      )}
                       <div className={styles.actions}>
                         <button
                           type="button"

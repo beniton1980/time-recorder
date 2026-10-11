@@ -6,10 +6,11 @@ import { loadTs } from "./load-ts.mjs";
 
 export const token = "FICTITIOUS_FIXTURE_QR_ONLY_20261010";
 export const tokenHash = createHash("sha256").update(token).digest("hex");
-export async function fixture() {
+export async function fixture({throughMigration = null} = {}) {
   const db = new PGlite({ extensions: { btree_gist }, parsers: { 1082: v => v, 1184: v => new Date(v).toISOString() } });
   const dir = new URL("../../db/migrations/", import.meta.url);
-  for (const name of (await readdir(dir)).filter(n => n.endsWith(".sql") && !n.startsWith("0040_")).sort()) {
+  const migrations = (await readdir(dir)).filter(n => n.endsWith(".sql") && (!throughMigration || n <= throughMigration)).sort();
+  for (const name of migrations.filter(n => n < "0040_")) {
     const sql = (await readFile(new URL(name, dir), "utf8"))
       .replace("CREATE EXTENSION IF NOT EXISTS pgcrypto;", "")
       .replaceAll("DATABASE neondb", "DATABASE postgres").replaceAll("ROLE neondb_owner", "ROLE postgres");
@@ -22,7 +23,9 @@ export async function fixture() {
   await db.query("INSERT INTO store_entry_tokens(store_id,token_hash) VALUES ($1,$2)",[store,tokenHash]);
   // Exercise an upgrade with existing correction history, not only an empty install.
   await db.query("INSERT INTO correction_requests(store_id,staff_id,operation,reason) VALUES ($1,$2,'REVIEW','Legacy fixture')",[store,staff]);
-  await db.exec(await readFile(new URL("0040_staff_correction_idempotency.sql",dir),"utf8"));
+  for (const name of migrations.filter(n => n >= "0040_")) {
+    await db.exec(await readFile(new URL(name,dir),"utf8"));
+  }
   function getSql(context) {
     const query=(strings,params)=>({ text:strings.reduce((out,s,i)=>out+(i?"$"+i:"")+s,""), params });
     const run=queries=>db.transaction(async tx=>{
@@ -41,7 +44,7 @@ export async function fixture() {
     "next/server":{NextResponse:{json:(value,options)=>Response.json(value,options)}},
     "@/lib/db":{getSql}, "@/lib/safe-log":{logServerError(){},logServerInfo(){}},
     "@/lib/line/verify-id-token":{LineTokenVerificationError,verifyLineIdToken:async id=>{
-      if(!["fixture_actor","fixture_other","fixture_new"].includes(id)) throw new LineTokenVerificationError();
+      if(!["fixture_actor","fixture_other","fixture_new","fixture_manager"].includes(id)) throw new LineTokenVerificationError();
       return {sub:id};
     }},
     "@/lib/store-entry-token":{hashStoreEntryToken:value=>typeof value==="string"?createHash("sha256").update(value).digest("hex"):null},
@@ -49,6 +52,7 @@ export async function fixture() {
   };
   const api=path=>loadTs("app/api/"+path+"/route.ts",modules);
   const correction=api("correction-requests"), bootstrap=api("session/bootstrap"), punch=api("punch");
+  const validate=api("correction-requests/validate"), decision=api("manager/corrections/decision"), dashboard=api("manager/dashboard");
   const call=async(route,body)=>{
     const response=await route.POST(new Request("http://fixture.local/api",{method:"POST",body:JSON.stringify({idToken:"fixture_actor",storeToken:token,...body})}));
     return {status:response.status,...await response.json()};
@@ -59,5 +63,5 @@ export async function fixture() {
     await db.query("UPDATE staff_states SET state=$1,last_event_id=$2,last_event_at=NOW() WHERE staff_id=$3",[type==="CHECK_OUT"?"OFF_DUTY":type==="BREAK_START"?"ON_BREAK":"WORKING",id,staff]);
     return id;
   };
-  return {db,store,otherStore,staff,otherStaff,getSql,call,correction,bootstrap,punch,add};
+  return {db,store,otherStore,staff,otherStaff,getSql,call,correction,bootstrap,punch,validate,decision,dashboard,add};
 }

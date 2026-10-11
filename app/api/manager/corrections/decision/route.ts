@@ -138,6 +138,12 @@ export async function POST(request: Request) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }
+    const message = error instanceof Error ? error.message : "";
+    for (const code of ["CORRECTION_BREAK_START_REQUIRED", "CORRECTION_SEQUENCE_INVALID",
+      "CORRECTION_TIME_CONFLICT", "CORRECTION_PENDING_CONFLICT", "REQUEST_NOT_PENDING",
+      "REQUEST_ALREADY_DECIDED"]) {
+      if (message.includes(code)) return NextResponse.json({ ok: false, code }, { status: 409 });
+    }
     logServerError("correction_decision_failed");
     return NextResponse.json({ ok: false, code: "DECISION_UNAVAILABLE" }, { status: 503 });
   }

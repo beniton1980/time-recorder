@@ -50,6 +50,7 @@ function screen({path = "app/page.tsx", loggedIn = false, inClient = false,
     "@/lib/punch-performance.mjs": {measurePunchStage: (_stage, task) => task()},
     "@/lib/attendance-request": {withAttendanceDeadline: task => task(new AbortController().signal)},
     "@/lib/attendance-operation": {readPendingOperation: () => null, tabOperationStorage: () => null},
+    "@/lib/correction-validation": loadTs("lib/correction-validation.ts"),
   };
   const component = loadTs(path, modules, {
     URL,
