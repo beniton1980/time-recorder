@@ -8,8 +8,9 @@ const operations=loadTs("lib/attendance-operation.ts");
 const staff=randomUUID(),store=randomUUID();
 const member={staff_id:staff,store_id:store,legal_name:"Fixture",store_name:"Fixture",state:"OFF_DUTY",state_version:"1791619200.123456",last_event_id:null,last_event_revision_id:null,last_event_at:null,last_event_type:null,recent_punches:[]};
 function memory(){const map=new Map();return{map,getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)};}
-function screen(initial={kind:"ready",membership:member},storage=memory(),env={}){
+function screen(initial={kind:"ready",membership:member},storage=memory(),env={},clock=Date){
  const states=[],refs=[],calls=[],requests=[],effects=[],liffInits=[];let si=0,ri=0,resolveLocation;
+ const uiCalls={lineClose:0,browserClose:0};
  const reader={read:()=>new Promise(resolve=>{resolveLocation=resolve;}),clear(){}};
  const timers=new Map();let timerId=0;
  const deadlines=loadTs("lib/attendance-request.ts",{}, {AbortController,
@@ -18,11 +19,12 @@ function screen(initial={kind:"ready",membership:member},storage=memory(),env={}
   useEffect(fn,deps){if(deps.length===0)effects.push(fn);},
   useState(value){const i=si++;if(!(i in states))states[i]=i===0?initial:value;return[states[i],v=>{states[i]=typeof v==="function"?v(states[i]):v;}];},
   useRef(value){const i=ri++;refs[i]??={current:i===0?"fixture-token":i===1?reader:value};return refs[i];}
- },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async options=>{liffInits.push(options);},isLoggedIn:()=>true}},
+ },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async options=>{liffInits.push(options);},isLoggedIn:()=>true,
+  isInClient:()=>true,closeWindow:()=>{uiCalls.lineClose++;}}},
  "@/lib/attendance-request":deadlines,"@/lib/attendance-operation":{...operations,tabOperationStorage:()=>storage},"@/lib/punch-location.mjs":{},"@/lib/punch-performance.mjs":{measurePunchStage:(_stage,task)=>task()}};
- const component=loadTs("app/page.tsx",modules,{process:{env},crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0},
+ const component=loadTs("app/page.tsx",modules,{Date:clock,process:{env},crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0,close:()=>{uiCalls.browserClose++;}},
  fetch:(url,options)=>{calls.push({url,body:JSON.parse(options.body),signal:options.signal});return new Promise((resolve,reject)=>requests.push({resolve,reject}));}});
- return{states,calls,storage,liffInits,render(){si=ri=0;return component.default();},locate(value=null){resolveLocation(value);},
+ return{states,calls,storage,liffInits,uiCalls,render(){si=ri=0;return component.default();},locate(value=null){resolveLocation(value);},
  expire(){const active=[...timers.values()];assert.equal(active.length,1,"one bounded request must be active");assert.equal(active[0].ms,15000);active[0].fn();},
  discardHung(){requests.shift();},
  hangBody(){requests.shift().resolve({status:200,ok:true,json:()=>new Promise(()=>{})});},
@@ -33,6 +35,14 @@ const text=t=>typeof t==="string"?t:Array.isArray(t)?t.map(text).join(""):t?.pro
 const button=(s,label)=>nodes(s.render(),"button").find(b=>text(b)===label);
 const punch=s=>nodes(s.render(),"button").find(b=>b.props.className==="punch-button");
 const response=(membership=member,operationResult=null)=>({ok:true,registered:true,memberships:[membership],operationResult});
+function clockAt(instant){
+ let now=Date.parse(instant);
+ return class extends Date {
+  constructor(...args){super(...(args.length?args:[now]));}
+  static now(){return now;}
+  static advanceTo(value){now=Date.parse(value);}
+ };
+}
 
 for(const [name,env,expected] of [
  ["default",{},"2010761826-6FNSE1PD"],
@@ -160,6 +170,115 @@ test("an unsupported previous punch does not silently switch a mistake into a mi
  nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
  assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.type),["date","time"],
   "date and time are requested only after the user explicitly chooses a missed punch");
+});
+
+test("missed punches after all four punch types require the actual time even after choosing a date",()=>{
+ for(const [last_event_type,state] of [["CHECK_IN","WORKING"],["BREAK_START","ON_BREAK"],["BREAK_END","WORKING"],["CHECK_OUT","OFF_DUTY"]]){
+  const membership={...member,state,last_event_type,last_event_id:randomUUID(),last_event_revision_id:randomUUID(),last_event_at:"2026-10-09T18:47:00.000Z"};
+  const s=screen({kind:"ready",membership},memory(),{},clockAt("2026-10-10T15:01:00.000Z"));
+  button(s,"打刻修正").props.onClick();nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+  assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),["",""],last_event_type);
+  for(const [label,expectedDate] of [["今日","2026-10-11"],["昨日","2026-10-10"]]){
+   const shortcut=button(s,label);assert.equal(shortcut.props.type,"button");shortcut.props.onClick();
+   assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),[expectedDate,""],"date selection must not guess the missing time");
+   nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+   assert.equal(button(s,"この内容で申請"),undefined);assert.match(text(s.render()),/追加する打刻の時刻を選択してください/);
+   assert.equal(s.calls.length,0);assert.equal(s.storage.map.size,0);
+  }
+ }
+});
+
+test("today and yesterday use Japan's calendar across midnight, month and year boundaries in either device time zone",()=>{
+ const originalTZ=process.env.TZ;
+ try{
+  for(const [zone,offset] of [["Pacific/Honolulu",600],["Pacific/Kiritimati",-840]]){
+   process.env.TZ=zone;
+   assert.equal(new Date("2026-01-31T15:00:00.000Z").getTimezoneOffset(),offset,"the device clock must actually use the requested zone");
+   for(const [instant,today,yesterday] of [
+    ["2026-01-31T14:59:59.999Z","2026-01-31","2026-01-30"],
+    ["2026-01-31T15:00:00.000Z","2026-02-01","2026-01-31"],
+    ["2026-12-31T15:00:00.000Z","2027-01-01","2026-12-31"],
+   ]){
+    const s=screen(undefined,memory(),{},clockAt(instant));button(s,"打刻修正").props.onClick();
+    nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+    nodes(s.render(),"input").find(n=>n.props.type==="time").props.onChange({target:{value:"03:47"}});
+    for(const [label,expectedDate] of [["今日",today],["昨日",yesterday]]){
+     button(s,label).props.onClick();
+     assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),[expectedDate,"03:47"],`${zone}: ${instant} ${label}; keep the user's actual time`);
+    }
+   }
+  }
+ }finally{if(originalTZ===undefined)delete process.env.TZ;else process.env.TZ=originalTZ;}
+});
+
+test("a missed punch sends the entered Japan time and keeps that intent when retrying on a later day",async()=>{
+ const clock=clockAt("2026-10-10T15:01:00.000Z"),s=screen(undefined,memory(),{},clock);
+ button(s,"打刻修正").props.onClick();nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+ nodes(s.render(),"select")[1].props.onChange({target:{value:"BREAK_END"}});
+ button(s,"昨日").props.onClick();
+ // A different date remains editable; its actual time is interpreted as JST, even before the business-day cutoff.
+ nodes(s.render(),"input").find(n=>n.props.type==="date").props.onChange({target:{value:"2026-10-09"}});
+ nodes(s.render(),"input").find(n=>n.props.type==="time").props.onChange({target:{value:"03:47"}});
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ assert.equal(s.calls.length,0);assert.equal(s.storage.map.size,0);
+ assert.match(text(s.render()),/2026\/10\/09 03:47/);
+ button(s,"この内容で申請").props.onClick();await settle();
+ const originalRequest=s.calls[0].body;
+ assert.equal(originalRequest.category,"MISSED");assert.equal(originalRequest.eventType,"BREAK_END");
+ assert.equal(originalRequest.occurredAt,"2026-10-08T18:47:00.000Z");
+ clock.advanceTo("2026-10-11T15:01:00.000Z");s.lose();await settle();s.respond(response());await settle();
+ button(s,"同じ内容で再試行").props.onClick();await settle();
+ assert.deepEqual(s.calls[2].body,originalRequest,"retry cannot substitute today's date or the send time for the entered event");
+ s.respond({ok:true});await settle();s.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
+ assert.equal(s.storage.map.size,0);assert.equal(s.states[0].membership.state,member.state,"request submission does not apply the missing punch before approval");
+});
+
+for(const phase of ["input","confirmation"]){
+ test(`cancelling correction from ${phase} returns to punching without saving or closing LINE`,()=>{
+  const s=screen();button(s,"打刻修正").props.onClick();
+  nodes(s.render(),"select")[0].props.onChange({target:{value:"OTHER"}});
+  nodes(s.render(),"textarea")[0].props.onChange({target:{value:"Fixture unsent correction"}});
+  if(phase==="confirmation") nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+  assert.equal(button(s,"打刻画面を閉じる"),undefined,"closing the app is not an editing action");
+  assert.equal(nodes(s.render(),"button").filter(b=>text(b)==="キャンセル").length,1);
+  const cancel=button(s,"キャンセル");
+  assert.equal(cancel.props.type,"button");assert.equal(cancel.props.disabled,false);
+  cancel.props.onClick();
+  assert.equal(nodes(s.render(),"form").length,0);assert.equal(punch(s).props.disabled,false);
+  assert.equal(button(s,"打刻画面を閉じる").props.disabled,false);
+  assert.deepEqual(s.states[0],{kind:"ready",membership:member});
+  assert.equal(s.calls.length,0);assert.equal(s.storage.map.size,0);
+  assert.deepEqual(s.uiCalls,{lineClose:0,browserClose:0});
+ });
+}
+
+test("sent and unconfirmed corrections cannot be cancelled or replaced during recovery",async()=>{
+ const s=screen();button(s,"打刻修正").props.onClick();
+ nodes(s.render(),"select")[0].props.onChange({target:{value:"OTHER"}});
+ nodes(s.render(),"textarea")[0].props.onChange({target:{value:"Fixture pending correction"}});
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ const oldCancel=button(s,"キャンセル"),oldBack=button(s,"入力に戻る");
+ button(s,"この内容で申請").props.onClick();await settle();
+ const originalRequest=s.calls[0].body;
+ const assertLocked=()=>{
+  oldCancel.props.onClick();oldBack.props.onClick();
+  assert.equal(button(s,"キャンセル"),undefined);assert.equal(button(s,"入力に戻る"),undefined);
+  assert.equal(button(s,"打刻修正").props.disabled,true);assert.equal(punch(s).props.disabled,true);
+  assert.equal(button(s,"打刻画面を閉じる").props.disabled,true);
+  assert.equal(s.storage.map.size,1);assert.deepEqual(s.uiCalls,{lineClose:0,browserClose:0});
+ };
+ assertLocked();assert.equal(s.calls.length,1);
+ s.lose();await settle();assertLocked();
+ s.lose();await settle();assertLocked();assert.equal(button(s,"結果を確認").props.disabled,false);
+ button(s,"結果を確認").props.onClick();await settle();assertLocked();
+ s.respond(response());await settle();assertLocked();
+ button(s,"同じ内容で再試行").props.onClick();await settle();assertLocked();
+ assert.deepEqual(s.calls[3].body,originalRequest,"recovery must resend the original correction intent");
+ s.respond({ok:true});await settle();
+ s.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
+ assert.equal(s.storage.map.size,0);assert.equal(punch(s).props.disabled,false);
+ assert.equal(button(s,"打刻画面を閉じる").props.disabled,false);
+ assert.deepEqual(s.uiCalls,{lineClose:0,browserClose:0});
 });
 
 test("correction submission shows progress until result confirmation completes",async()=>{

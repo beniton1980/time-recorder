@@ -94,6 +94,11 @@ function formatTime(value: Date | string) {
   }).format(new Date(value));
 }
 
+function correctionDateShortcut(daysAgo: number) {
+  // These are calendar dates in Japan, not the device's date or a business day.
+  return new Date(Date.now() + (9 - daysAgo * 24) * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 type SessionData = {
   ok: boolean;
   code?: string;
@@ -197,6 +202,7 @@ export default function Home() {
   const [recovering, setRecovering] = useState(false);
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
   const readyForPunch = view.kind === "ready";
+  const correctionLocked = submitting !== null || correctionSubmitting || recovering || pendingOperation !== null;
 
   useEffect(() => {
     if (!readyForPunch) return;
@@ -460,6 +466,13 @@ export default function Home() {
     setShowCorrection(true);
   }
 
+  function cancelCorrectionForm() {
+    if (punchInFlightRef.current || pendingOperationRef.current) return;
+    setShowCorrection(false);
+    setCorrectionReview(false);
+    setCorrectionError(null);
+  }
+
   function reviewCorrectionRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -713,7 +726,7 @@ export default function Home() {
             </details>
 
 
-            <div className="attendance-tools">
+            {!showCorrection && <div className="attendance-tools">
               <button
                 className="correction-link"
                 type="button"
@@ -722,15 +735,7 @@ export default function Home() {
               >
                 打刻修正
               </button>
-              <button
-                className="close-app-button"
-                type="button"
-                disabled={submitting !== null || correctionSubmitting}
-                onClick={closeApp}
-              >
-                画面を閉じる
-              </button>
-            </div>
+            </div>}
 
             {showCorrection && (
               <form
@@ -738,7 +743,17 @@ export default function Home() {
                 noValidate
                 onSubmit={reviewCorrectionRequest}
               >
-                <p className="correction-title">打刻修正</p>
+                <div className="correction-header">
+                  <p className="correction-title">打刻修正</p>
+                  <button
+                    className="correction-cancel"
+                    type="button"
+                    disabled={correctionLocked}
+                    onClick={cancelCorrectionForm}
+                  >
+                    キャンセル
+                  </button>
+                </div>
 
                 {!correctionReview ? (
                   <>
@@ -800,6 +815,9 @@ export default function Home() {
 
                     {correctionCategory === "MISSED" && (
                       <>
+                        <p className="field-help">
+                          記録が抜けた打刻を追加申請します。実際の日付と時刻を指定してください。管理者の承認後に反映されます。
+                        </p>
                         <label>
                           追加する打刻
                           <select
@@ -819,19 +837,31 @@ export default function Home() {
                         </label>
 
                         <div className="correction-date-time">
-                          <label>
-                            日付
-                            <input
-                              type="date"
-                              value={correctionDate}
-                              onChange={(event) => {
-                                setCorrectionDate(event.target.value);
+                          <div className="correction-date-field">
+                            <label>
+                              日付
+                              <input
+                                type="date"
+                                value={correctionDate}
+                                onChange={(event) => {
+                                  setCorrectionDate(event.target.value);
+                                  setCorrectionError(null);
+                                }}
+                              />
+                            </label>
+                            <div className="correction-date-shortcuts" role="group" aria-label="日付の入力補助">
+                              <button type="button" onClick={() => {
+                                setCorrectionDate(correctionDateShortcut(0));
                                 setCorrectionError(null);
-                              }}
-                            />
-                          </label>
+                              }}>今日</button>
+                              <button type="button" onClick={() => {
+                                setCorrectionDate(correctionDateShortcut(1));
+                                setCorrectionError(null);
+                              }}>昨日</button>
+                            </div>
+                          </div>
                           <label>
-                            時刻
+                            実際の時刻
                             <input
                               type="time"
                               step="60"
@@ -843,6 +873,7 @@ export default function Home() {
                             />
                           </label>
                         </div>
+                        <p className="field-help">時刻が分からない場合は「その他」から確認を依頼できます。</p>
                       </>
                     )}
 
@@ -872,14 +903,7 @@ export default function Home() {
                     )}
 
                     <div className="correction-actions">
-                      <button
-                        className="correction-cancel"
-                        type="button"
-                        onClick={() => setShowCorrection(false)}
-                      >
-                        キャンセル
-                      </button>
-                      <button className="correction-submit" type="submit">
+                      <button className="correction-submit" type="submit" disabled={correctionLocked}>
                         内容を確認
                       </button>
                     </div>
@@ -953,8 +977,9 @@ export default function Home() {
                       <button
                         className="correction-cancel"
                         type="button"
-                        disabled={correctionSubmitting}
+                        disabled={correctionLocked}
                         onClick={() => {
+                          if (punchInFlightRef.current || pendingOperationRef.current) return;
                           setCorrectionReview(false);
                           setCorrectionError(null);
                         }}
@@ -964,7 +989,7 @@ export default function Home() {
                       <button
                         className="correction-submit"
                         type="button"
-                        disabled={correctionSubmitting}
+                        disabled={correctionLocked}
                         onClick={() => void submitCorrectionRequest()}
                       >
                         {correctionSubmitting ? "送信中…" : "この内容で申請"}
@@ -993,6 +1018,19 @@ export default function Home() {
                 <p className="punch-history-empty">本日の打刻はありません</p>
               )}
             </details>
+
+            {!showCorrection && (
+              <div className="attendance-exit">
+                <button
+                  className="close-app-button"
+                  type="button"
+                  disabled={correctionLocked}
+                  onClick={closeApp}
+                >
+                  打刻画面を閉じる
+                </button>
+              </div>
+            )}
 
           </div>
         )}

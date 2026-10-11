@@ -516,12 +516,15 @@ h1 {
 
 .attendance-tools {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin-top: 4px;
 }
 
-.attendance-tools > button {
+.attendance-tools > button,
+.attendance-screen .correction-header > button,
+.attendance-screen .correction-date-shortcuts > button,
+.attendance-screen .attendance-exit > button {
   width: 100%;
   min-height: 44px;
   margin: 0;
@@ -533,6 +536,24 @@ h1 {
   font-size: 14px;
   text-decoration: none;
 }
+
+.attendance-screen .attendance-exit {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid #dbe4dc;
+}
+
+.attendance-screen .correction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.attendance-screen .correction-header > button { width: auto; flex-shrink: 0; padding-inline: 14px; }
+.attendance-screen .correction-actions > button:only-child { grid-column: 1 / -1; }
+.attendance-screen .correction-date-field { min-width: 0; display: grid; gap: 8px; }
+.attendance-screen .correction-date-shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 
 .attendance-screen .punch-history { margin-top: 12px; padding: 0; }
 .attendance-screen .punch-history summary { min-height: 44px; padding: 12px 14px; cursor: pointer; }
