@@ -290,8 +290,10 @@ export default function Home() {
       return;
     }
     try {
+      const redirectUri = new URL("/liff-entry", window.location.href);
+      if (storeTokenRef.current) redirectUri.searchParams.set("store_token", storeTokenRef.current);
       // Keep login directly inside the user's tap; init already completed.
-      liff.login({ redirectUri: window.location.href });
+      liff.login({ redirectUri: redirectUri.toString() });
     } catch {
       setView({ kind: "login_required", message: "LINEのログイン画面を開けませんでした。もう一度お試しください。" });
     }

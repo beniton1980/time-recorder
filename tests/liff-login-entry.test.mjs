@@ -52,6 +52,7 @@ function screen({path = "app/page.tsx", loggedIn = false, inClient = false,
     "@/lib/attendance-operation": {readPendingOperation: () => null, tabOperationStorage: () => null},
   };
   const component = loadTs(path, modules, {
+    URL,
     process: {env: {}},
     window: {
       location: {href, search: new URL(href).search, replace: url => calls.replace.push(url)},
@@ -84,17 +85,38 @@ test("external staff entry waits for init and starts login synchronously on the 
   assert.equal(s.calls.requests.length, 0, "unauthenticated entry must not call staff APIs");
   loginButton(s).props.onClick();
   assert.equal(s.calls.login.length, 1, "login must start in the tap without awaiting another task");
-  assert.equal(s.calls.login[0].redirectUri, href, "retain the original store QR on return");
+  assert.equal(s.calls.login[0].redirectUri, "https://fixture.example/liff-entry?store_token=fixture-store-token",
+    "return inside the production LIFF endpoint while retaining the original store QR");
   assert.equal(loginButton(s).props.disabled, undefined, "a blocked navigation must not leave a disabled button");
 });
 
-test("return from LINE initializes again and bootstraps the same store with the ID token", async () => {
-  const s = screen({loggedIn: true}); await s.start();
+test("LINE login returns through liff-entry once and bootstraps only the original store QR", async () => {
+  const storeToken = "fixture-token-with-special +/?=";
+  const origin = "https://fixture.example";
+  const params = new URLSearchParams({store_token: storeToken, entry: "manager", untrusted: "drop"});
+  const before = screen({href: `${origin}/?${params}#drop`}); await before.start();
+  loginButton(before).props.onClick();
+  assert.equal(before.calls.login.length, 1);
+  assert.equal(before.calls.requests.length, 0);
+  const redirectUri = before.calls.login[0].redirectUri;
+  const returnUrl = new URL(redirectUri);
+  assert.equal(returnUrl.origin, origin);
+  assert.equal(returnUrl.pathname, "/liff-entry", "the root URL is outside the production LIFF endpoint");
+  assert.deepEqual([...returnUrl.searchParams], [["store_token", storeToken]], "do not forward unrelated entry routes or parameters");
+  assert.equal(returnUrl.hash, "");
+
+  const entry = screen({path: "app/liff-entry/page.tsx", loggedIn: true, href: redirectUri}); await entry.start();
+  assert.equal(entry.calls.init.length, 1, "complete OAuth initialization before leaving the entry endpoint");
+  assert.equal(entry.calls.login.length, 0);
+  assert.equal(entry.calls.replace.length, 1);
+  assert.equal(entry.calls.replace[0], `/?${new URLSearchParams({store_token: storeToken})}`);
+
+  const s = screen({loggedIn: true, href: new URL(entry.calls.replace[0], origin).toString()}); await s.start();
   assert.equal(s.calls.init.length, 1);
   assert.equal(s.calls.login.length, 0);
   assert.equal(s.calls.requests.length, 1);
   assert.equal(s.calls.requests[0].url, "/api/session/bootstrap");
-  assert.deepEqual(s.calls.requests[0].body, {idToken: "fixture-id-token", storeToken: "fixture-store-token"});
+  assert.deepEqual(s.calls.requests[0].body, {idToken: "fixture-id-token", storeToken});
   assert.match(text(s.render()), /Fixture Storeへ初回登録/);
 });
 
