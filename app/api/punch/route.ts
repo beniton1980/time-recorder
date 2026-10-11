@@ -27,6 +27,7 @@ type PunchRequest = {
   idToken?: unknown;
   eventType?: unknown;
   clientRequestId?: unknown;
+  expectedStateVersion?: unknown;
   storeToken?: unknown;
   location?: unknown;
 };
@@ -86,6 +87,8 @@ export async function POST(request: Request) {
     !(body.eventType in transitions) ||
     typeof body.clientRequestId !== "string" ||
     !uuidPattern.test(body.clientRequestId) ||
+    (body.expectedStateVersion !== undefined &&
+      (typeof body.expectedStateVersion !== "string" || !/^\d{1,12}(?:\.\d{1,6})?$/.test(body.expectedStateVersion))) ||
     location === undefined
   ) {
     return NextResponse.json(
@@ -134,10 +137,12 @@ export async function POST(request: Request) {
         ss.state
       FROM punch_events pe
       JOIN staff st ON st.id = pe.staff_id
+      JOIN stores s ON s.id = st.store_id
       JOIN staff_states ss ON ss.staff_id = st.id
       JOIN store_entry_tokens setk ON setk.store_id = pe.store_id
       WHERE pe.client_request_id = ${body.clientRequestId}
         AND st.line_user_id = ${identity.sub}
+        AND st.status = 'active' AND s.status = 'active'
         AND setk.token_hash = ${tokenHash}
         AND setk.active = TRUE
         AND setk.revoked_at IS NULL
@@ -146,11 +151,21 @@ export async function POST(request: Request) {
     `;
 
     if (existing.length === 1) {
+      if (existing[0].event_type !== eventType) {
+        return NextResponse.json({ ok: false, code: "CLIENT_REQUEST_CONFLICT" }, { status: 409 });
+      }
       return NextResponse.json({
         ok: true,
         status: "already_applied",
         punch: existing[0],
       });
+    }
+
+    // Old tabs can still recover an already saved operation above. An unsaved
+    // request must identify the state it started from, including across a full
+    // OFF_DUTY -> WORKING -> OFF_DUTY cycle on another screen.
+    if (body.expectedStateVersion === undefined) {
+      return NextResponse.json({ ok: false, code: "STATE_VERSION_REQUIRED" }, { status: 400 });
     }
 
     type TransactionSql = Parameters<Parameters<typeof sql.transaction>[0]>[0];
@@ -178,6 +193,7 @@ export async function POST(request: Request) {
           AND setk.revoked_at IS NULL
           AND (setk.expires_at IS NULL OR setk.expires_at > NOW())
           AND ss.state = ${transition.from}
+          AND EXTRACT(EPOCH FROM ss.updated_at)::text = ${body.expectedStateVersion}
           AND (
             ${eventType} <> 'CHECK_IN'
             OR NOT EXISTS (

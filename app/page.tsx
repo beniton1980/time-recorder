@@ -6,11 +6,13 @@ import type { FormEvent } from "react";
 import { createPunchLocationReader } from "@/lib/punch-location.mjs";
 import type { PunchLocationReader } from "@/lib/punch-location.mjs";
 import { measurePunchStage } from "@/lib/punch-performance.mjs";
+import { readPendingOperation, savePendingOperation, clearPendingOperation, tabOperationStorage } from "@/lib/attendance-operation";
+import type { EventType, CorrectionIntent, PendingOperation, OperationResult } from "@/lib/attendance-operation";
+import { withAttendanceDeadline } from "@/lib/attendance-request";
 
-const LIFF_ID = "2010761826-6FNSE1PD";
+const LIFF_ID = process.env.NEXT_PUBLIC_ATTENDANCE_LIFF_ID || "2010761826-6FNSE1PD";
 
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
-type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
 
 type PunchHistoryItem = {
   effective_id: string;
@@ -32,7 +34,9 @@ type Membership = {
   store_id: string;
   store_name: string;
   state: WorkState;
+  state_version: string | null;
   last_event_id: string | null;
+  last_event_revision_id: string | null;
   last_event_at: string | null;
   last_event_type: EventType | null;
   recent_punches: PunchHistoryItem[];
@@ -40,6 +44,8 @@ type Membership = {
 
 type ViewState =
   | { kind: "loading" }
+  | { kind: "login_required"; message?: string }
+  | { kind: "line_auth_error" }
   | { kind: "unregistered"; storeName: string }
   | { kind: "store_required"; message: string }
   | {
@@ -88,10 +94,89 @@ function formatTime(value: Date | string) {
   }).format(new Date(value));
 }
 
+function correctionDateShortcut(daysAgo: number) {
+  // These are calendar dates in Japan, not the device's date or a business day.
+  return new Date(Date.now() + (9 - daysAgo * 24) * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+type SessionData = {
+  ok: boolean;
+  code?: string;
+  registered?: boolean;
+  store?: { store_name: string };
+  memberships?: Membership[];
+  activeStoreConflict?: ActiveStoreConflict | null;
+  operationResult?: OperationResult | null;
+};
+
+function sessionView(response: Response, data: SessionData): ViewState {
+  if (!response.ok || !data.ok) {
+    if (data.code === "STORE_TOKEN_REQUIRED" || data.code === "STORE_TOKEN_INVALID") {
+      return { kind: "store_required", message: "この店舗QRコードは利用できません。" };
+    }
+    if (data.code === "STAFF_INACTIVE") {
+      return { kind: "store_required", message: "この店舗での利用は停止されています。管理者に確認してください。" };
+    }
+    throw new Error("認証を確認できませんでした。通信を確認して、もう一度お試しください。");
+  }
+  if (!data.registered && data.store) {
+    return { kind: "unregistered", storeName: data.store.store_name };
+  }
+  const membership = data.memberships?.[0];
+  if (!membership) throw new Error("勤務情報を取得できませんでした。");
+  if (data.activeStoreConflict) {
+    return { kind: "active_store_conflict", requestedStoreName: membership.store_name, activeStore: data.activeStoreConflict };
+  }
+  return { kind: "ready", membership };
+}
+
+async function loadStaffSession(storeToken: string, pending?: PendingOperation) {
+  const idToken = liff.getIDToken();
+  if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+  return measurePunchStage("session", () => withAttendanceDeadline(async signal => {
+    const response = await fetch("/api/session/bootstrap", {
+      method: "POST", signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken, storeToken, pendingOperation: pending
+        ? { kind: pending.kind, clientRequestId: pending.clientRequestId } : undefined }),
+    });
+    const data = await response.json() as SessionData;
+    return { view: sessionView(response, data), result: data.operationResult ?? null };
+  }));
+}
+
+function operationLabel(operation: PendingOperation) {
+  if (operation.kind === "punch") return eventLabels[operation.eventType];
+  if (operation.intent.category === "MISTAKE") return eventLabels[operation.intent.eventType] + "への訂正";
+  if (operation.intent.category === "MISSED") return "押し忘れた" + eventLabels[operation.intent.eventType] + "の申請";
+  return "打刻修正の申請";
+}
+
+function operationNotice(operation: PendingOperation, result: OperationResult) {
+  if (operation.kind === "punch") {
+    return (result.occurred_at ? formatTime(result.occurred_at) + "の" : "")
+      + eventLabels[result.event_type ?? operation.eventType] + "を記録しました";
+  }
+  if (result.status === "PENDING") return "打刻修正を申請しました（承認待ち）";
+  if (result.status === "REJECTED") return "この修正申請は却下されています。現在の記録を確認してください。";
+  return "打刻修正が反映されています。現在の記録を表示しています。";
+}
+
+function locationExplanation(result: OperationResult) {
+  if (result.location_status === "OK") return "店舗の範囲内を確認しました。";
+  switch (result.validation_code) {
+    case "STORE_LOCATION_UNAVAILABLE": return "店舗の位置が未設定のため、距離は確認していません。";
+    case "CLIENT_LOCATION_UNAVAILABLE": return "端末の位置情報を取得できませんでした。";
+    case "LOW_GPS_ACCURACY": return "位置情報の精度が低いため、距離は確認できませんでした。";
+    case "OUTSIDE_STORE_RADIUS": return "店舗の範囲外として記録しました。";
+    default: return "位置情報による確認はできませんでした。";
+  }
+}
+
 export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
   const [submitting, setSubmitting] = useState<EventType | null>(null);
-  const [punchPhase, setPunchPhase] = useState<"location" | "sending">("location");
+  const [punchPhase, setPunchPhase] = useState<"location" | "sending" | "confirming">("location");
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [showCorrection, setShowCorrection] = useState(false);
@@ -111,7 +196,13 @@ export default function Home() {
   const storeTokenRef = useRef<string | null>(null);
   const locationReaderRef = useRef<PunchLocationReader | null>(null);
   const punchInFlightRef = useRef(false);
+  const pendingOperationRef = useRef<PendingOperation | null>(null);
+  const registrationInFlightRef = useRef(false);
+  const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  const [locationNotice, setLocationNotice] = useState<string | null>(null);
   const readyForPunch = view.kind === "ready";
+  const correctionLocked = submitting !== null || correctionSubmitting || recovering || pendingOperation !== null;
 
   useEffect(() => {
     if (!readyForPunch) return;
@@ -145,149 +236,214 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
-
     async function bootstrap() {
       try {
         await measurePunchStage("line", () => liff.init({ liffId: LIFF_ID }));
-
-        const storeToken = new URLSearchParams(window.location.search).get(
-          "store_token",
-        );
-
+        if (!active) return;
+        const storeToken = new URLSearchParams(window.location.search).get("store_token");
         if (!storeToken) {
-          setView({
-            kind: "store_required",
-            message: "店舗に設置されたQRコードから開いてください。",
-          });
+          if (active) setView({ kind: "store_required", message: "店舗に設置されたQRコードから開いてください。" });
           return;
         }
-
         storeTokenRef.current = storeToken;
-
         if (!liff.isLoggedIn()) {
-          liff.login({ redirectUri: window.location.href });
+          setView({ kind: liff.isInClient() ? "line_auth_error" : "login_required" });
           return;
         }
-
-        const idToken = liff.getIDToken();
-
-        if (!idToken) {
-          throw new Error("LINEの認証情報を取得できませんでした。");
-        }
-
-        const response = await measurePunchStage("session", () => fetch("/api/session/bootstrap", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken, storeToken }),
-        }));
-
-        const data = await response.json();
-
-        if (!response.ok || !data.ok) {
-          if (
-            data.code === "STORE_TOKEN_REQUIRED" ||
-            data.code === "STORE_TOKEN_INVALID"
-          ) {
-            setView({
-              kind: "store_required",
-              message: "この店舗QRコードは利用できません。",
-            });
-            return;
-          }
-
-          if (data.code === "STAFF_INACTIVE") {
-            setView({
-              kind: "store_required",
-              message: "この店舗での利用は停止されています。管理者に確認してください。",
-            });
-            return;
-          }
-
-          throw new Error("認証を確認できませんでした。");
-        }
-
+        let session = await loadStaffSession(storeToken);
         if (!active) return;
-
-        if (!data.registered) {
-          setView({ kind: "unregistered", storeName: data.store.store_name as string });
-          return;
+        if (session.view.kind === "ready") {
+          const { staff_id, store_id } = session.view.membership;
+          const pending = readPendingOperation(tabOperationStorage(), staff_id, store_id);
+          if (pending) {
+            pendingOperationRef.current = pending;
+            setPendingOperation(pending);
+            try {
+              // Reload only checks the result. It never creates a new punch.
+              session = await loadStaffSession(storeToken, pending);
+              if (!active) return;
+              if (session.result) {
+                clearPendingOperation(tabOperationStorage(), pending);
+                pendingOperationRef.current = null;
+                setPendingOperation(null);
+                setNotice(operationNotice(pending, session.result));
+                if (pending.kind === "punch") setLocationNotice(locationExplanation(session.result));
+              }
+            } catch {
+              if (active) setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
+            }
+          }
         }
-
-        const membership = data.memberships[0] as Membership;
-        const activeStoreConflict =
-          data.activeStoreConflict as ActiveStoreConflict | null;
-
-        if (activeStoreConflict) {
-          setView({
-            kind: "active_store_conflict",
-            requestedStoreName: membership.store_name,
-            activeStore: activeStoreConflict,
-          });
-          return;
-        }
-
-        setView({
-          kind: "ready",
-          membership,
-        });
-      } catch (error) {
-        if (!active) return;
-
-        setView({
-          kind: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "画面を読み込めませんでした。",
-        });
+        if (active) setView(session.view);
+      } catch {
+        if (active) setView({ kind: "error", message: "画面を読み込めませんでした。通信を確認して、もう一度開いてください。" });
       }
     }
-
     void bootstrap();
-
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
+
+  function beginLineLogin() {
+    if (view.kind !== "login_required") return;
+    if (liff.isInClient()) {
+      setView({ kind: "line_auth_error" });
+      return;
+    }
+    try {
+      const redirectUri = new URL("/liff-entry", window.location.href);
+      if (storeTokenRef.current) redirectUri.searchParams.set("store_token", storeTokenRef.current);
+      // Keep login directly inside the user's tap; init already completed.
+      liff.login({ redirectUri: redirectUri.toString() });
+    } catch {
+      setView({ kind: "login_required", message: "LINEのログイン画面を開けませんでした。もう一度お試しください。" });
+    }
+  }
 
   async function selfRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (registrationInFlightRef.current) return;
     const legalName = registrationName.trim();
     if (!legalName) {
       setRegistrationError("お名前を入力してください。");
       return;
     }
     const idToken = liff.getIDToken();
-    if (!idToken || !storeTokenRef.current) {
+    const storeToken = storeTokenRef.current;
+    if (!idToken || !storeToken) {
       setRegistrationError("LINEの認証情報を取得できませんでした。");
       return;
     }
+    registrationInFlightRef.current = true;
     setRegistrationSubmitting(true);
     setRegistrationError(null);
     try {
-      const response = await fetch("/api/staff/self-register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken, storeToken: storeTokenRef.current, legalName }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.code === "STAFF_ALREADY_REGISTERED"
-          ? "この店舗には既に登録されています。管理者へ利用状態をご確認ください。"
-          : "スタッフ登録を完了できませんでした。");
+      // The membership is authoritative even if the registration response is lost
+      // or another tap already registered this identity.
+      try {
+        await withAttendanceDeadline(signal => fetch("/api/staff/self-register", {
+          method: "POST", signal, headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken, storeToken, legalName }),
+        }));
+      } catch { /* A failed response does not establish that the write failed. */ }
+      const session = await loadStaffSession(storeToken);
+      if (session.view.kind === "unregistered") {
+        setRegistrationError("登録を確認できませんでした。通信を確認して、もう一度お試しください。");
+      } else {
+        setView(session.view);
+        if (session.view.kind === "ready") setNotice("この店舗への登録を確認しました。打刻できます。");
       }
-      window.location.reload();
-    } catch (caught) {
-      setRegistrationError(caught instanceof Error ? caught.message : "スタッフ登録を完了できませんでした。");
+    } catch {
+      setRegistrationError("登録結果を確認できませんでした。通信を確認して、もう一度お試しください。");
+    } finally {
+      registrationInFlightRef.current = false;
       setRegistrationSubmitting(false);
     }
   }
 
+  function rememberOperation(operation: PendingOperation) {
+    savePendingOperation(tabOperationStorage(), operation);
+    pendingOperationRef.current = operation;
+    setPendingOperation(operation);
+  }
+
+  function forgetOperation(operation: PendingOperation) {
+    clearPendingOperation(tabOperationStorage(), operation);
+    pendingOperationRef.current = null;
+    setPendingOperation(null);
+  }
+
+  async function refreshOperation(operation: PendingOperation) {
+    const session = await loadStaffSession(storeTokenRef.current!, operation);
+    setView(session.view);
+    if (session.result) {
+      forgetOperation(operation);
+      setShowCorrection(false);
+      setNotice(operationNotice(operation, session.result));
+      if (operation.kind === "punch") setLocationNotice(locationExplanation(session.result));
+      return true;
+    }
+    return false;
+  }
+
+  async function checkPendingOperation() {
+    const operation = pendingOperationRef.current;
+    if (!operation || punchInFlightRef.current) return;
+    punchInFlightRef.current = true;
+    setRecovering(true);
+    setNotice(null);
+    try {
+      if (!await refreshOperation(operation)) {
+        setNotice("まだ完了を確認できません。同じ内容で再試行できます。");
+      }
+    } catch {
+      setNotice("送信結果を確認できませんでした。通信が戻ってから再確認してください。");
+    } finally {
+      punchInFlightRef.current = false;
+      setRecovering(false);
+    }
+  }
+
+  async function sendOperation(operation: PendingOperation) {
+    if (punchInFlightRef.current) return;
+    punchInFlightRef.current = true;
+    rememberOperation(operation);
+    setNotice(null);
+    setShowCorrection(false);
+    if (operation.kind === "punch") {
+      setSubmitting(operation.eventType);
+      setPunchPhase("location");
+    } else {
+      setCorrectionSubmitting(true);
+    }
+    let responseStatus: number | undefined;
+    try {
+      const idToken = liff.getIDToken();
+      if (!idToken || !storeTokenRef.current) throw new Error("AUTH_UNAVAILABLE");
+      let location = null;
+      if (operation.kind === "punch") {
+        const reader = locationReaderRef.current ?? createPunchLocationReader({ geolocation: navigator.geolocation });
+        location = await measurePunchStage("location", () => reader.read());
+        reader.clear();
+        setPunchPhase("sending");
+      }
+      const response = await measurePunchStage("send", () => withAttendanceDeadline(signal => fetch(
+        operation.kind === "punch" ? "/api/punch" : "/api/correction-requests", {
+          method: "POST", signal, headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            idToken, storeToken: storeTokenRef.current, clientRequestId: operation.clientRequestId,
+            ...(operation.kind === "punch" ? { eventType: operation.eventType, expectedStateVersion: operation.expectedStateVersion, location } : operation.intent),
+          }),
+        },
+      )));
+      responseStatus = response.status;
+    } catch { /* A timeout does not establish whether the write committed. */ }
+    try {
+      setPunchPhase("confirming");
+      // Refresh all visible state together, including when the write succeeded but
+      // the response body was truncated. No stale local history is appended.
+      if (await refreshOperation(operation)) return;
+      if (responseStatus !== undefined && responseStatus >= 400 && responseStatus < 500 && responseStatus !== 408 && responseStatus !== 429) {
+        forgetOperation(operation);
+        setNotice(operation.kind === "punch"
+          ? "打刻は追加されていません。最新の勤務状態と履歴を確認してください。"
+          : "修正を受け付けられませんでした。最新の記録を確認し、内容を見直してください。");
+      } else {
+        setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
+      }
+    } catch {
+      setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
+    } finally {
+      punchInFlightRef.current = false;
+      setSubmitting(null);
+      setCorrectionSubmitting(false);
+    }
+  }
 
   function canCorrectLastPunch(membership: Membership) {
     return (
       membership.last_event_id !== null &&
       membership.last_event_at !== null &&
+      membership.last_event_revision_id != null &&
       (membership.last_event_type === "CHECK_OUT" ||
         membership.last_event_type === "BREAK_START")
     );
@@ -300,11 +456,9 @@ export default function Home() {
   }
 
   function openCorrectionForm() {
-    if (view.kind !== "ready") return;
+    if (view.kind !== "ready" || pendingOperationRef.current || punchInFlightRef.current) return;
 
-    setCorrectionCategory(
-      canCorrectLastPunch(view.membership) ? "MISTAKE" : "MISSED",
-    );
+    setCorrectionCategory("MISTAKE");
     setCorrectionDate("");
     setCorrectionTime("");
     setCorrectionReason("");
@@ -312,6 +466,13 @@ export default function Home() {
     setCorrectionError(null);
     setNotice(null);
     setShowCorrection(true);
+  }
+
+  function cancelCorrectionForm() {
+    if (punchInFlightRef.current || pendingOperationRef.current) return;
+    setShowCorrection(false);
+    setCorrectionReview(false);
+    setCorrectionError(null);
   }
 
   function reviewCorrectionRequest(event: FormEvent<HTMLFormElement>) {
@@ -353,208 +514,41 @@ export default function Home() {
   }
 
   async function submitCorrectionRequest() {
-    if (view.kind !== "ready" || correctionSubmitting) return;
-
-    setCorrectionSubmitting(true);
-    setCorrectionError(null);
-    setNotice(null);
-
-    try {
-      const idToken = liff.getIDToken();
-
-      if (!idToken) {
-        throw new Error("LINEの認証情報を取得できませんでした。");
-      }
-
-      const response = await fetch("/api/correction-requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idToken,
-          storeToken: storeTokenRef.current,
-          category: correctionCategory,
-          eventType:
-            correctionCategory === "MISSED" ? correctionEvent : undefined,
-          occurredAt:
-            correctionCategory === "MISSED"
-              ? new Date(
-                  `${correctionDate}T${correctionTime}`,
-                ).toISOString()
-              : undefined,
-          reason:
-            correctionCategory === "OTHER"
-              ? correctionReason.trim()
-              : undefined,
-        }),
-      });
-      const data = await response.json();
-
-      if (!response.ok || !data.ok) {
-        throw new Error("修正申請を送信できませんでした。");
-      }
-
-      if (
-        correctionCategory === "MISTAKE" &&
-        data.status === "applied" &&
-        (data.correctionRequest.state === "OFF_DUTY" ||
-          data.correctionRequest.state === "ON_BREAK") &&
-        (data.correctionRequest.requested_event_type === "CHECK_OUT" ||
-          data.correctionRequest.requested_event_type === "BREAK_START")
-      ) {
-        setView({
-          kind: "ready",
-          membership: {
-            ...view.membership,
-            state: data.correctionRequest.state as WorkState,
-            last_event_at:
-              data.correctionRequest.requested_occurred_at as string,
-            last_event_type:
-              data.correctionRequest.requested_event_type as EventType,
-            recent_punches: view.membership.recent_punches.map((punch) =>
-              punch.original_event_id === view.membership.last_event_id
-                ? {
-                    ...punch,
-                    event_type:
-                      data.correctionRequest
-                        .requested_event_type as EventType,
-                    occurred_at:
-                      data.correctionRequest
-                        .requested_occurred_at as string,
-                    corrected: true,
-                  }
-                : punch,
-            ),
-          },
-        });
-        setShowCorrection(false);
-        setNotice("前回の打刻を修正しました");
+    if (view.kind !== "ready" || punchInFlightRef.current || pendingOperationRef.current) return;
+    const member = view.membership;
+    let intent: CorrectionIntent;
+    if (correctionCategory === "MISTAKE") {
+      const eventType = correctedLastEvent(member);
+      if (!canCorrectLastPunch(member) || (eventType !== "CHECK_OUT" && eventType !== "BREAK_START")) return;
+      intent = { category: "MISTAKE", targetEventId: member.last_event_id!,
+        expectedRevisionId: member.last_event_revision_id!, eventType };
+    } else if (correctionCategory === "MISSED") {
+      // Form fields are store-local wall time, independent of the device timezone.
+      const date = new Date(correctionDate + "T" + correctionTime + ":00+09:00");
+      if (!Number.isFinite(date.getTime())) {
+        setCorrectionError("追加する打刻の日付と時刻を確認してください。");
         return;
       }
-
-      setShowCorrection(false);
-      setNotice("打刻修正を申請しました（承認待ち）");
-    } catch (error) {
-      setCorrectionError(
-        error instanceof Error
-          ? error.message
-          : "修正申請を送信できませんでした。",
-      );
-    } finally {
-      setCorrectionSubmitting(false);
+      intent = { category: "MISSED", eventType: correctionEvent, occurredAt: date.toISOString() };
+    } else {
+      intent = { category: "OTHER", reason: correctionReason.trim() };
     }
+    await sendOperation({ kind: "correction", clientRequestId: crypto.randomUUID(),
+      staffId: member.staff_id, storeId: member.store_id, intent });
   }
 
   async function submitPunch(eventType: EventType) {
-    if (view.kind !== "ready" || punchInFlightRef.current) return;
-
-    punchInFlightRef.current = true;
-    setPunchPhase("location");
-    setSubmitting(eventType);
-    setNotice(null);
-
-    try {
-      const idToken = liff.getIDToken();
-
-      if (!idToken) {
-        throw new Error("LINEの認証情報を取得できませんでした。");
-      }
-
-      const { response, data } = await measurePunchStage("total", async () => {
-        const reader = locationReaderRef.current ?? createPunchLocationReader({ geolocation: navigator.geolocation });
-        const location = await measurePunchStage("location", () => reader.read());
-        reader.clear();
-        setPunchPhase("sending");
-        return measurePunchStage("send", async () => {
-          const response = await fetch("/api/punch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              idToken,
-              eventType,
-              clientRequestId: crypto.randomUUID(),
-              storeToken: storeTokenRef.current,
-              location,
-            }),
-          });
-          return { response, data: await response.json() };
-        });
-      });
-
-      if (!response.ok || !data.ok) {
-        if (
-          data.code === "INVALID_STATE_TRANSITION" &&
-          (data.currentState === "OFF_DUTY" ||
-            data.currentState === "WORKING" ||
-            data.currentState === "ON_BREAK")
-        ) {
-          setView({
-            kind: "ready",
-            membership: {
-              ...view.membership,
-              state: data.currentState as WorkState,
-            },
-          });
-          setNotice(
-            "勤務状態を最新に更新しました。もう一度操作してください。",
-          );
-          return;
-        }
-
-        if (data.code === "ACTIVE_AT_OTHER_STORE") {
-          throw new Error(
-            typeof data.message === "string"
-              ? data.message
-              : "別の店舗で勤務中です。勤務中の店舗で退勤してから出勤してください。",
-          );
-        }
-
-        throw new Error("打刻を完了できませんでした。");
-      }
-
-      const nextState = data.punch.state as WorkState;
-
-      setView({
-        kind: "ready",
-        membership: {
-          ...view.membership,
-          state: nextState,
-          last_event_id: data.punch.event_id as string,
-          last_event_at: data.punch.occurred_at as string,
-          last_event_type: eventType,
-          recent_punches: [
-            ...view.membership.recent_punches,
-            {
-              effective_id: data.punch.event_id as string,
-              original_event_id: data.punch.event_id as string,
-              event_type: eventType,
-              occurred_at: data.punch.occurred_at as string,
-              corrected: false,
-            },
-          ].slice(-8),
-        },
-      });
-
-      const locationStatus = data.punch.location_status as string;
-
-      if (locationStatus === "OK") {
-        setNotice(`${eventLabels[eventType]}を記録しました`);
-      } else if (locationStatus === "WARNING") {
-        setNotice(
-          `${eventLabels[eventType]}を記録しました（位置情報を確認してください）`,
-        );
-      } else {
-        setNotice(
-          `${eventLabels[eventType]}を記録しました（位置情報は未確認）`,
-        );
-      }
-    } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "打刻を完了できませんでした。",
-      );
-    } finally {
-      punchInFlightRef.current = false;
-      setSubmitting(null);
+    if (view.kind !== "ready" || punchInFlightRef.current || pendingOperationRef.current || showCorrection) return;
+    const expectedStateVersion = view.membership.state_version;
+    if (!expectedStateVersion) {
+      setNotice("勤務情報を確認できませんでした。画面を読み込み直してください。");
+      return;
     }
+    await measurePunchStage("total", () => sendOperation({
+      kind: "punch", clientRequestId: crypto.randomUUID(), eventType,
+      staffId: view.membership.staff_id, storeId: view.membership.store_id,
+      expectedStateVersion,
+    }));
   }
 
   function closeApp() {
@@ -567,15 +561,41 @@ export default function Home() {
   }
 
   return (
-    <main>
+    <main className="attendance-screen">
       <section className="card" aria-live="polite">
-        <p className="eyebrow">ONOGAMI</p>
-        <h1>勤怠</h1>
+        <header className="attendance-header">
+          <p className="eyebrow">ONOGAMI</p>
+          <h1>勤怠</h1>
+        </header>
 
         {view.kind === "loading" && (
           <div className="message">
             <span className="spinner" aria-hidden="true" />
             <p>LINE認証を確認しています</p>
+          </div>
+        )}
+
+        {view.kind === "login_required" && (
+          <div className="message">
+            <p className="status">LINEで本人確認</p>
+            <p className="note">ログインすると、打刻画面に進みます。</p>
+            <div className="punch-actions">
+              <button className="punch-button" type="button" onClick={beginLineLogin}>
+                LINEでログイン
+              </button>
+            </div>
+            <p className="note">LINEが開かない場合は、Safari／Chromeでこのページを開き直してください。</p>
+            {view.message && <p className="correction-error" role="alert">{view.message}</p>}
+          </div>
+        )}
+
+        {view.kind === "line_auth_error" && (
+          <div className="message">
+            <p className="status">LINEの認証を確認できませんでした</p>
+            <p className="note">この画面を閉じて、店舗のQRコードを読み直してください。</p>
+            <button className="close-app-button" type="button" onClick={closeApp}>
+              画面を閉じる
+            </button>
           </div>
         )}
 
@@ -637,13 +657,14 @@ export default function Home() {
             <p className="status">{view.membership.legal_name}さん</p>
             <p className="state">{stateLabels[view.membership.state]}</p>
 
-            {view.membership.last_event_at &&
-              view.membership.last_event_type && (
-                <p className="last-punch">
+            <p className="last-punch">
+              {view.membership.last_event_at && view.membership.last_event_type && (
+                <>
                   {formatTime(view.membership.last_event_at)} に
                   {eventLabels[view.membership.last_event_type]}
-                </p>
+                </>
               )}
+            </p>
 
             <div className="punch-actions">
               {actionsByState[view.membership.state].map((eventType) => (
@@ -655,45 +676,68 @@ export default function Home() {
                   }
                   type="button"
                   key={eventType}
-                  disabled={submitting !== null}
+                  disabled={submitting !== null || correctionSubmitting || recovering || pendingOperation !== null || showCorrection}
                   onClick={() => void submitPunch(eventType)}
                 >
                   {submitting === eventType
-                    ? punchPhase === "location" ? "位置情報を確認しています…" : "打刻を送信しています…"
+                    ? punchPhase === "location" ? "位置確認中…"
+                      : punchPhase === "sending" ? "送信中…" : "確認中…"
                     : eventLabels[eventType]}
                 </button>
               ))}
             </div>
 
+            <div className="punch-feedback" role="status">
+              {correctionSubmitting
+                ? <p className="punch-notice">修正申請を送信・確認しています…</p>
+                : notice && <p className="punch-notice">{notice}</p>}
+            </div>
+            {pendingOperation && submitting === null && !correctionSubmitting && (
+              <div className="operation-recovery" role="status">
+                <p>{operationLabel(pendingOperation)}の送信結果が未確認です。</p>
+                <p className="field-help">確認が終わるまで、別の打刻や訂正は行えません。再試行しても同じ操作は重複しません。</p>
+                <div className="correction-actions">
+                  <button className="correction-cancel" type="button"
+                    disabled={submitting !== null || correctionSubmitting || recovering}
+                    onClick={() => void checkPendingOperation()}>
+                    {recovering ? "確認中…" : "結果を確認"}
+                  </button>
+                  <button className="correction-submit" type="button"
+                    disabled={submitting !== null || correctionSubmitting || recovering}
+                    onClick={() => void sendOperation(pendingOperation)}>
+                    {submitting !== null || correctionSubmitting ? "送信中…" : "同じ内容で再試行"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+
             <details className="location-guide">
               <summary>
-                位置情報は距離確認に使用します（取得できなくても打刻できます）
+                位置情報なしでも打刻できます
               </summary>
               <div className="location-guide-detail">
+                {locationNotice && <p>直前の位置確認：{locationNotice}</p>}
                 <p>
-                  店舗から離れている場合も打刻は記録されます。
+                  位置情報は距離確認に使用します。許可しない場合や取得できない場合、店舗から離れている場合も、打刻は記録されます。
                 </p>
                 <p>
-                  管理者には不正の断定ではなく、確認の目安として表示されます。
-                </p>
-                <p>
-                  位置情報を許可済みの場合は、この画面を開いた後に確認を始めます。
-                  正確な位置情報は保存せず、確認結果だけを記録します。
+                  正確な位置情報は保存しません。管理者には不正の断定ではなく、確認の目安として結果だけを表示します。許可済みの場合は画面を開くと確認を始めます。
                 </p>
               </div>
             </details>
 
 
-            {!showCorrection && (
+            {!showCorrection && <div className="attendance-tools">
               <button
                 className="correction-link"
                 type="button"
-                disabled={submitting !== null}
+                disabled={submitting !== null || correctionSubmitting || recovering || pendingOperation !== null || showCorrection}
                 onClick={openCorrectionForm}
               >
                 打刻修正
               </button>
-            )}
+            </div>}
 
             {showCorrection && (
               <form
@@ -701,7 +745,17 @@ export default function Home() {
                 noValidate
                 onSubmit={reviewCorrectionRequest}
               >
-                <p className="correction-title">打刻修正</p>
+                <div className="correction-header">
+                  <p className="correction-title">打刻修正</p>
+                  <button
+                    className="correction-cancel"
+                    type="button"
+                    disabled={correctionLocked}
+                    onClick={cancelCorrectionForm}
+                  >
+                    キャンセル
+                  </button>
+                </div>
 
                 {!correctionReview ? (
                   <>
@@ -763,6 +817,9 @@ export default function Home() {
 
                     {correctionCategory === "MISSED" && (
                       <>
+                        <p className="field-help">
+                          記録が抜けた打刻を追加申請します。実際の日付と時刻を指定してください。管理者の承認後に反映されます。
+                        </p>
                         <label>
                           追加する打刻
                           <select
@@ -782,19 +839,31 @@ export default function Home() {
                         </label>
 
                         <div className="correction-date-time">
-                          <label>
-                            日付
-                            <input
-                              type="date"
-                              value={correctionDate}
-                              onChange={(event) => {
-                                setCorrectionDate(event.target.value);
+                          <div className="correction-date-field">
+                            <label>
+                              日付
+                              <input
+                                type="date"
+                                value={correctionDate}
+                                onChange={(event) => {
+                                  setCorrectionDate(event.target.value);
+                                  setCorrectionError(null);
+                                }}
+                              />
+                            </label>
+                            <div className="correction-date-shortcuts" role="group" aria-label="日付の入力補助">
+                              <button type="button" onClick={() => {
+                                setCorrectionDate(correctionDateShortcut(0));
                                 setCorrectionError(null);
-                              }}
-                            />
-                          </label>
+                              }}>今日</button>
+                              <button type="button" onClick={() => {
+                                setCorrectionDate(correctionDateShortcut(1));
+                                setCorrectionError(null);
+                              }}>昨日</button>
+                            </div>
+                          </div>
                           <label>
-                            時刻
+                            実際の時刻
                             <input
                               type="time"
                               step="60"
@@ -806,6 +875,7 @@ export default function Home() {
                             />
                           </label>
                         </div>
+                        <p className="field-help">時刻が分からない場合は「その他」から確認を依頼できます。</p>
                       </>
                     )}
 
@@ -835,14 +905,7 @@ export default function Home() {
                     )}
 
                     <div className="correction-actions">
-                      <button
-                        className="correction-cancel"
-                        type="button"
-                        onClick={() => setShowCorrection(false)}
-                      >
-                        キャンセル
-                      </button>
-                      <button className="correction-submit" type="submit">
+                      <button className="correction-submit" type="submit" disabled={correctionLocked}>
                         内容を確認
                       </button>
                     </div>
@@ -916,8 +979,9 @@ export default function Home() {
                       <button
                         className="correction-cancel"
                         type="button"
-                        disabled={correctionSubmitting}
+                        disabled={correctionLocked}
                         onClick={() => {
+                          if (punchInFlightRef.current || pendingOperationRef.current) return;
                           setCorrectionReview(false);
                           setCorrectionError(null);
                         }}
@@ -927,7 +991,7 @@ export default function Home() {
                       <button
                         className="correction-submit"
                         type="button"
-                        disabled={correctionSubmitting}
+                        disabled={correctionLocked}
                         onClick={() => void submitCorrectionRequest()}
                       >
                         {correctionSubmitting ? "送信中…" : "この内容で申請"}
@@ -938,19 +1002,8 @@ export default function Home() {
               </form>
             )}
 
-            {notice && <p className="punch-notice">{notice}</p>}
-
-            <button
-              className="close-app-button"
-              type="button"
-              disabled={submitting !== null || correctionSubmitting}
-              onClick={closeApp}
-            >
-              打刻画面を閉じる
-            </button>
-
-            <div className="punch-history">
-              <p className="punch-history-title">本日の打刻履歴</p>
+            <details className="punch-history">
+              <summary className="punch-history-title">本日の打刻履歴</summary>
               {view.membership.recent_punches.length > 0 ? (
                 <ol>
                   {view.membership.recent_punches.map((punch) => (
@@ -966,7 +1019,20 @@ export default function Home() {
               ) : (
                 <p className="punch-history-empty">本日の打刻はありません</p>
               )}
-            </div>
+            </details>
+
+            {!showCorrection && (
+              <div className="attendance-exit">
+                <button
+                  className="close-app-button"
+                  type="button"
+                  disabled={correctionLocked}
+                  onClick={closeApp}
+                >
+                  打刻画面を閉じる
+                </button>
+              </div>
+            )}
 
           </div>
         )}

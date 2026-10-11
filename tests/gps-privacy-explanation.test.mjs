@@ -6,7 +6,7 @@ test("attendance screen explains soft GPS without labeling staff as fraudulent",
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 
   assert.match(page, /位置情報は距離確認に使用します/);
-  assert.match(page, /取得できなくても打刻できます/);
+  assert.match(page, /位置情報なしでも打刻できます/);
   assert.match(page, /不正の断定ではなく、確認の目安/);
   assert.doesNotMatch(page, /位置情報を許可しないと打刻できません/);
 });

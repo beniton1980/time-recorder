@@ -1,93 +1,318 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import vm from "node:vm";
-import ts from "typescript";
 import * as jsxRuntime from "react/jsx-runtime";
-
-const source = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
-const compiled = ts.transpileModule(source, { compilerOptions: {
-  module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
-} }).outputText;
-const settle = () => new Promise((resolve) => setImmediate(resolve));
-
-function screen() {
-  const states = []; const refs = []; const calls = [];
-  let stateIndex = 0; let refIndex = 0; let resolveLocation; let resolveSend;
-  const membership = {
-    staff_id: "fixture-staff", legal_name: "検証スタッフ", store_id: "fixture-store",
-    store_name: "検証店舗", state: "OFF_DUTY", last_event_id: null,
-    last_event_at: null, last_event_type: null, recent_punches: [],
-  };
-  const reader = { read: () => new Promise((resolve) => { resolveLocation = resolve; }), clear() {} };
-  const modules = {
-    "react/jsx-runtime": jsxRuntime,
-    react: {
-      useEffect() {},
-      useState(initial) {
-        const index = stateIndex++;
-        if (!(index in states)) states[index] = index === 0 ? { kind: "ready", membership } : initial;
-        return [states[index], (value) => { states[index] = value; }];
-      },
-      useRef(initial) {
-        const index = refIndex++;
-        refs[index] ??= { current: index === 0 ? "fixture-store-token" : index === 1 ? reader : initial };
-        return refs[index];
-      },
-    },
-    "@line/liff": { default: { getIDToken: () => "fixture-id-token" } },
-    "@/lib/punch-location.mjs": {},
-    "@/lib/punch-performance.mjs": { measurePunchStage: (_stage, task) => task() },
-  };
-  const exports = {};
-  vm.runInNewContext(compiled, {
-    exports, require: (name) => { assert.ok(modules[name], name); return modules[name]; },
-    crypto: { randomUUID: () => "fixture-request-id" },
-    fetch: (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return new Promise((resolve) => { resolveSend = resolve; }); },
-  });
-  function render() { stateIndex = 0; refIndex = 0; return exports.default(); }
-  return {
-    render, states, calls,
-    locate: (value) => resolveLocation(value),
-    send: (ok) => resolveSend({ ok, json: async () => ok ? {
-      ok: true, punch: { state: "WORKING", event_id: "fixture-event", occurred_at: "2026-09-12T12:00:00Z", location_status: "OK" },
-    } : { ok: false } }),
-  };
+import {randomUUID} from "node:crypto";
+import {loadTs} from "./helpers/load-ts.mjs";
+const settle=()=>new Promise(resolve=>setImmediate(resolve));
+const operations=loadTs("lib/attendance-operation.ts");
+const staff=randomUUID(),store=randomUUID();
+const member={staff_id:staff,store_id:store,legal_name:"Fixture",store_name:"Fixture",state:"OFF_DUTY",state_version:"1791619200.123456",last_event_id:null,last_event_revision_id:null,last_event_at:null,last_event_type:null,recent_punches:[]};
+function memory(){const map=new Map();return{map,getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)};}
+function screen(initial={kind:"ready",membership:member},storage=memory(),env={},clock=Date){
+ const states=[],refs=[],calls=[],requests=[],effects=[],liffInits=[];let si=0,ri=0,resolveLocation;
+ const uiCalls={lineClose:0,browserClose:0};
+ const reader={read:()=>new Promise(resolve=>{resolveLocation=resolve;}),clear(){}};
+ const timers=new Map();let timerId=0;
+ const deadlines=loadTs("lib/attendance-request.ts",{}, {AbortController,
+  setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);}});
+ const modules={"react/jsx-runtime":jsxRuntime,react:{
+  useEffect(fn,deps){if(deps.length===0)effects.push(fn);},
+  useState(value){const i=si++;if(!(i in states))states[i]=i===0?initial:value;return[states[i],v=>{states[i]=typeof v==="function"?v(states[i]):v;}];},
+  useRef(value){const i=ri++;refs[i]??={current:i===0?"fixture-token":i===1?reader:value};return refs[i];}
+ },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async options=>{liffInits.push(options);},isLoggedIn:()=>true,
+  isInClient:()=>true,closeWindow:()=>{uiCalls.lineClose++;}}},
+ "@/lib/attendance-request":deadlines,"@/lib/attendance-operation":{...operations,tabOperationStorage:()=>storage},"@/lib/punch-location.mjs":{},"@/lib/punch-performance.mjs":{measurePunchStage:(_stage,task)=>task()}};
+ const component=loadTs("app/page.tsx",modules,{Date:clock,process:{env},crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0,close:()=>{uiCalls.browserClose++;}},
+ fetch:(url,options)=>{calls.push({url,body:JSON.parse(options.body),signal:options.signal});return new Promise((resolve,reject)=>requests.push({resolve,reject}));}});
+ return{states,calls,storage,liffInits,uiCalls,render(){si=ri=0;return component.default();},locate(value=null){resolveLocation(value);},
+ expire(){const active=[...timers.values()];assert.equal(active.length,1,"one bounded request must be active");assert.equal(active[0].ms,15000);active[0].fn();},
+ discardHung(){requests.shift();},
+ hangBody(){requests.shift().resolve({status:200,ok:true,json:()=>new Promise(()=>{})});},
+ respond(value,status=200){requests.shift().resolve({status,ok:status<400,json:async()=>value});},lose(){requests.shift().reject(new Error("fixture network"));},boot(){effects.forEach(fn=>fn());}};
+}
+function nodes(t,type){if(!t||typeof t!=="object")return[];if(Array.isArray(t))return t.flatMap(x=>nodes(x,type));return[...(t.type===type?[t]:[]),...nodes(t.props?.children,type)];}
+const text=t=>typeof t==="string"?t:Array.isArray(t)?t.map(text).join(""):t?.props?text(t.props.children):"";
+const button=(s,label)=>nodes(s.render(),"button").find(b=>text(b)===label);
+const punch=s=>nodes(s.render(),"button").find(b=>b.props.className==="punch-button");
+const response=(membership=member,operationResult=null)=>({ok:true,registered:true,memberships:[membership],operationResult});
+function clockAt(instant){
+ let now=Date.parse(instant);
+ return class extends Date {
+  constructor(...args){super(...(args.length?args:[now]));}
+  static now(){return now;}
+  static advanceTo(value){now=Date.parse(value);}
+ };
 }
 
-function nodes(tree, type) {
-  if (!tree || typeof tree !== "object") return [];
-  if (Array.isArray(tree)) return tree.flatMap((child) => nodes(child, type));
-  return [...(tree.type === type ? [tree] : []), ...nodes(tree.props?.children, type)];
+for(const [name,env,expected] of [
+ ["default",{},"2010761826-6FNSE1PD"],
+ ["isolated Preview",{NEXT_PUBLIC_ATTENDANCE_LIFF_ID:"2010761826-fixture"},"2010761826-fixture"],
+]){
+ test(`staff screen and entry initialize the ${name} LIFF`,async()=>{
+  const s=screen({kind:"loading"},memory(),env);s.render();s.boot();await settle();
+  assert.deepEqual(s.liffInits.map(options=>options.liffId),[expected]);
+  s.respond(response());await settle();
+  const effects=[],inits=[],redirects=[];
+  const entry=loadTs("app/liff-entry/page.tsx",{
+   "react/jsx-runtime":jsxRuntime,
+   react:{useState:()=>["",()=>{}],useEffect:fn=>effects.push(fn)},
+   "@line/liff":{default:{init:async options=>{inits.push(options);},isLoggedIn:()=>true}},
+  },{process:{env},URLSearchParams,window:{location:{search:"?store_token=fixture-token&untrusted=drop",replace:url=>redirects.push(url)}}});
+  entry.default();effects.forEach(fn=>fn());await settle();
+  assert.deepEqual(inits.map(options=>options.liffId),[expected]);
+  assert.deepEqual(redirects,["/?store_token=fixture-token"]);
+ });
 }
-const punchButton = (tree) => nodes(tree, "button").find((button) => button.props.className === "punch-button");
 
-test("tap locks immediately, shows real stages, and confirms only after server success", async () => {
-  const s = screen(); const button = punchButton(s.render());
-  button.props.onClick(); button.props.onClick();
-  assert.equal(punchButton(s.render()).props.disabled, true);
-  assert.equal(punchButton(s.render()).props.children, "位置情報を確認しています…");
-  assert.equal(s.calls.length, 0);
-  s.locate({ latitude: 35, longitude: 139, accuracy: 10 }); await settle();
-  assert.equal(s.calls.length, 1);
-  assert.equal(s.calls[0].url, "/api/punch");
-  assert.equal(s.calls[0].body.storeToken, "fixture-store-token");
-  assert.equal(s.calls[0].body.idToken, "fixture-id-token");
-  assert.equal(punchButton(s.render()).props.children, "打刻を送信しています…");
-  assert.equal(s.states[0].membership.state, "OFF_DUTY");
-  s.send(true); await settle();
-  assert.equal(s.states[0].membership.state, "WORKING");
-  assert.equal(s.states[0].membership.recent_punches.length, 1);
-  assert.equal(punchButton(s.render()).props.disabled, false);
+test("double tap locks; lost response recovers state, history and result together",async()=>{
+ const s=screen(),b=punch(s);b.props.onClick();b.props.onClick();assert.equal(punch(s).props.disabled,true);assert.equal(s.calls.length,0);
+ assert.equal(text(s.render()).includes("送信結果が未確認です"),false,"permission wait is not a failed response");
+ assert.equal(s.storage.map.size,1,"retain the same operation while waiting for location");
+ s.locate();await settle();assert.equal(s.calls.length,1);assert.equal(s.calls[0].body.location,null);
+ assert.equal(text(s.render()).includes("送信結果が未確認です"),false,"in-flight send only shows progress");
+ s.lose();await settle();assert.equal(s.calls[1].url,"/api/session/bootstrap");
+ assert.equal(s.calls[1].body.pendingOperation.clientRequestId,s.calls[0].body.clientRequestId);
+ const event={id:randomUUID(),event_type:"CHECK_IN",occurred_at:new Date().toISOString(),location_status:"UNAVAILABLE"};
+ s.respond(response({...member,state:"WORKING",last_event_id:event.id,last_event_type:"CHECK_IN",recent_punches:[event]},event));await settle();
+ assert.equal(s.states[0].membership.state,"WORKING");assert.equal(s.states[0].membership.recent_punches.length,1);
+ assert.equal(punch(s).props.disabled,false);assert.equal(s.storage.map.size,0);assert.ok(s.states.some(x=>typeof x==="string"&&x.includes("出勤を記録しました")));
+});
+test("failure before saving retries identical intent and blocks unrelated actions",async()=>{
+ const s=screen();punch(s).props.onClick();s.locate();await settle();s.lose();await settle();s.respond(response({...member,state_version:"1791619300.654321"}));await settle();
+ assert.equal(punch(s).props.disabled,true);assert.equal(button(s,"打刻修正").props.disabled,true);
+ const first=s.calls[0].body;button(s,"同じ内容で再試行").props.onClick();s.locate();await settle();
+ assert.equal(s.calls[2].body.clientRequestId,first.clientRequestId);assert.equal(s.calls[2].body.eventType,first.eventType);
+ assert.equal(first.expectedStateVersion,member.state_version);assert.equal(s.calls[2].body.expectedStateVersion,first.expectedStateVersion);
+ s.respond({ok:true});await settle();s.respond(response({...member,state:"WORKING"},{id:randomUUID(),event_type:"CHECK_IN"}));await settle();assert.equal(s.storage.map.size,0);
+});
+test("hung write and result lookup release recovery buttons and preserve the same operation",async()=>{
+ const s=screen();punch(s).props.onClick();s.locate();await settle();
+ const first=s.calls[0].body;
+ s.expire();await settle();assert.equal(s.calls[0].signal.aborted,true);s.discardHung();
+ assert.equal(s.calls[1].url,"/api/session/bootstrap");
+ s.expire();await settle();s.discardHung();
+ assert.equal(s.calls.length,2);assert.equal(button(s,"結果を確認").props.disabled,false);
+ assert.equal(text(s.render()).includes("送信結果が未確認です"),true,"failed lookup must retain recovery controls");
+ assert.equal(button(s,"同じ内容で再試行").props.disabled,false);assert.equal(punch(s).props.disabled,true);
+ button(s,"同じ内容で再試行").props.onClick();s.locate();await settle();
+ assert.equal(s.calls[2].body.clientRequestId,first.clientRequestId);
+ assert.equal(s.calls[2].body.expectedStateVersion,first.expectedStateVersion);
+ s.respond({ok:true});await settle();s.respond(response({...member,state:"WORKING"},{id:randomUUID(),event_type:"CHECK_IN"}));await settle();
+ assert.equal(s.storage.map.size,0);assert.equal(punch(s).props.disabled,false);
+});
+test("reload reads pending result without creating any new punch",async()=>{
+ const storage=memory(),pending={kind:"punch",eventType:"CHECK_IN",clientRequestId:randomUUID(),staffId:staff,storeId:store};
+ operations.savePendingOperation(storage,pending);const s=screen({kind:"loading"},storage);s.render();s.boot();await settle();
+ s.respond(response());await settle();assert.equal(s.calls[1].body.pendingOperation.clientRequestId,pending.clientRequestId);
+ s.respond(response({...member,state:"WORKING"},{id:randomUUID(),event_type:"CHECK_IN"}));await settle();
+ assert.ok(s.calls.every(c=>c.url==="/api/session/bootstrap"));assert.equal(storage.map.size,0);assert.equal(s.states[0].membership.state,"WORKING");
+});
+test("a stalled bootstrap response body also returns to retry controls",async()=>{
+ const s=screen();punch(s).props.onClick();s.locate();await settle();s.respond({ok:true});await settle();
+ s.hangBody();await settle();s.expire();await settle();
+ assert.equal(button(s,"結果を確認").props.disabled,false);assert.equal(s.storage.map.size,1);
+});
+for(const [validationCode,explanation,otherExplanation] of [
+ ["STORE_LOCATION_UNAVAILABLE",/店舗の位置が未設定/,/端末の位置情報を取得できません/],
+ ["CLIENT_LOCATION_UNAVAILABLE",/端末の位置情報を取得できません/,/店舗の位置が未設定/],
+]){
+ test(`recovered ${validationCode} stays in GPS details without implying a failed punch`,async()=>{
+  const s=screen();punch(s).props.onClick();s.locate();await settle();s.lose();await settle();
+  const result={id:randomUUID(),event_type:"CHECK_IN",occurred_at:"2026-10-09T18:47:00.000Z",
+   location_status:"UNAVAILABLE",validation_code:validationCode};
+  s.respond(response({...member,state:"WORKING",last_event_id:result.id,last_event_at:result.occurred_at,last_event_type:"CHECK_IN"},result));await settle();
+  const tree=s.render(),feedback=nodes(tree,"div").find(n=>n.props.className==="punch-feedback");
+  assert.equal(text(feedback),"03:47の出勤を記録しました");
+  assert.doesNotMatch(text(feedback),/位置|未確認/);
+  const details=nodes(tree,"details").find(n=>n.props.className==="location-guide");
+  assert.notEqual(details.props.open,true,"the optional explanation must stay collapsed");
+  assert.match(text(details),explanation);assert.doesNotMatch(text(details),otherExplanation);
+  assert.equal(punch(s).props.disabled,false);assert.equal(s.storage.map.size,0);
+ });
+}
+
+for(const [previousType,nextType,previousLabel,nextLabel,state] of [
+ ["CHECK_OUT","BREAK_START","退勤","休憩開始","OFF_DUTY"],
+ ["BREAK_START","CHECK_OUT","休憩開始","退勤","ON_BREAK"],
+]){
+ test(`${previousType} mistake uses the previous record without date or time entry`,async()=>{
+  const previousId=randomUUID(),revisionId=randomUUID(),previousAt="2026-10-09T18:47:00.000Z";
+  const membership={...member,state,last_event_id:previousId,last_event_revision_id:revisionId,
+   last_event_at:previousAt,last_event_type:previousType};
+  const s=screen({kind:"ready",membership});button(s,"打刻修正").props.onClick();
+  assert.equal(nodes(s.render(),"select")[0].props.value,"MISTAKE");
+  assert.equal(nodes(s.render(),"input").length,0,"a mistake correction must not ask the user to reconstruct its date or time");
+  const preview=nodes(s.render(),"div").find(n=>n.props.className==="last-punch-correction");
+  assert.match(text(preview),new RegExp(`03:47 ${previousLabel}→03:47 ${nextLabel}`));
+  nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+  assert.equal(nodes(s.render(),"input").length,0);
+  assert.match(text(s.render()),new RegExp(`03:47 ${previousLabel} → ${nextLabel}`));
+  button(s,"この内容で申請").props.onClick();await settle();
+  assert.equal(s.calls[0].url,"/api/correction-requests");
+  assert.equal(s.calls[0].body.category,"MISTAKE");assert.equal(s.calls[0].body.targetEventId,previousId);
+  assert.equal(s.calls[0].body.expectedRevisionId,revisionId);assert.equal(s.calls[0].body.eventType,nextType);
+  assert.equal("occurredAt" in s.calls[0].body,false,"the server keeps the referenced record's original date and time");
+  s.respond({ok:true});await settle();
+  s.respond(response({...membership,last_event_type:nextType},{id:randomUUID(),status:"APPROVED"}));await settle();
+  assert.equal(s.storage.map.size,0);
+ });
+}
+
+test("an unsupported previous punch does not silently switch a mistake into a missed-punch request",()=>{
+ const s=screen({kind:"ready",membership:{...member,state:"WORKING",last_event_id:randomUUID(),
+  last_event_revision_id:randomUUID(),last_event_at:"2026-10-09T18:47:00.000Z",last_event_type:"CHECK_IN"}});
+ button(s,"打刻修正").props.onClick();
+ assert.equal(nodes(s.render(),"select")[0].props.value,"MISTAKE");
+ assert.equal(nodes(s.render(),"input").length,0);
+ assert.match(text(s.render()),/前回の打刻は種類の押し間違いとして修正できません/);
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ assert.equal(button(s,"この内容で申請"),undefined);assert.equal(s.calls.length,0);
+ nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+ assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.type),["date","time"],
+  "date and time are requested only after the user explicitly chooses a missed punch");
 });
 
-test("unavailable location still sends, a server failure stays unrecorded and unlocks retry", async () => {
-  const s = screen(); punchButton(s.render()).props.onClick();
-  s.locate(null); await settle();
-  assert.equal(s.calls[0].body.location, null);
-  s.send(false); await settle();
-  assert.equal(s.states[0].membership.state, "OFF_DUTY");
-  assert.equal(s.states[0].membership.recent_punches.length, 0);
-  assert.equal(punchButton(s.render()).props.disabled, false);
-  assert.ok(s.states.includes("打刻を完了できませんでした。"));
+test("missed punches after all four punch types require the actual time even after choosing a date",()=>{
+ for(const [last_event_type,state] of [["CHECK_IN","WORKING"],["BREAK_START","ON_BREAK"],["BREAK_END","WORKING"],["CHECK_OUT","OFF_DUTY"]]){
+  const membership={...member,state,last_event_type,last_event_id:randomUUID(),last_event_revision_id:randomUUID(),last_event_at:"2026-10-09T18:47:00.000Z"};
+  const s=screen({kind:"ready",membership},memory(),{},clockAt("2026-10-10T15:01:00.000Z"));
+  button(s,"打刻修正").props.onClick();nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+  assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),["",""],last_event_type);
+  for(const [label,expectedDate] of [["今日","2026-10-11"],["昨日","2026-10-10"]]){
+   const shortcut=button(s,label);assert.equal(shortcut.props.type,"button");shortcut.props.onClick();
+   assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),[expectedDate,""],"date selection must not guess the missing time");
+   nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+   assert.equal(button(s,"この内容で申請"),undefined);assert.match(text(s.render()),/追加する打刻の時刻を選択してください/);
+   assert.equal(s.calls.length,0);assert.equal(s.storage.map.size,0);
+  }
+ }
+});
+
+test("today and yesterday use Japan's calendar across midnight, month and year boundaries in either device time zone",()=>{
+ const originalTZ=process.env.TZ;
+ try{
+  for(const [zone,offset] of [["Pacific/Honolulu",600],["Pacific/Kiritimati",-840]]){
+   process.env.TZ=zone;
+   assert.equal(new Date("2026-01-31T15:00:00.000Z").getTimezoneOffset(),offset,"the device clock must actually use the requested zone");
+   for(const [instant,today,yesterday] of [
+    ["2026-01-31T14:59:59.999Z","2026-01-31","2026-01-30"],
+    ["2026-01-31T15:00:00.000Z","2026-02-01","2026-01-31"],
+    ["2026-12-31T15:00:00.000Z","2027-01-01","2026-12-31"],
+   ]){
+    const s=screen(undefined,memory(),{},clockAt(instant));button(s,"打刻修正").props.onClick();
+    nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+    nodes(s.render(),"input").find(n=>n.props.type==="time").props.onChange({target:{value:"03:47"}});
+    for(const [label,expectedDate] of [["今日",today],["昨日",yesterday]]){
+     button(s,label).props.onClick();
+     assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),[expectedDate,"03:47"],`${zone}: ${instant} ${label}; keep the user's actual time`);
+    }
+   }
+  }
+ }finally{if(originalTZ===undefined)delete process.env.TZ;else process.env.TZ=originalTZ;}
+});
+
+test("a missed punch sends the entered Japan time and keeps that intent when retrying on a later day",async()=>{
+ const clock=clockAt("2026-10-10T15:01:00.000Z"),s=screen(undefined,memory(),{},clock);
+ button(s,"打刻修正").props.onClick();nodes(s.render(),"select")[0].props.onChange({target:{value:"MISSED"}});
+ nodes(s.render(),"select")[1].props.onChange({target:{value:"BREAK_END"}});
+ button(s,"昨日").props.onClick();
+ // A different date remains editable; its actual time is interpreted as JST, even before the business-day cutoff.
+ nodes(s.render(),"input").find(n=>n.props.type==="date").props.onChange({target:{value:"2026-10-09"}});
+ nodes(s.render(),"input").find(n=>n.props.type==="time").props.onChange({target:{value:"03:47"}});
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ assert.equal(s.calls.length,0);assert.equal(s.storage.map.size,0);
+ assert.match(text(s.render()),/2026\/10\/09 03:47/);
+ button(s,"この内容で申請").props.onClick();await settle();
+ const originalRequest=s.calls[0].body;
+ assert.equal(originalRequest.category,"MISSED");assert.equal(originalRequest.eventType,"BREAK_END");
+ assert.equal(originalRequest.occurredAt,"2026-10-08T18:47:00.000Z");
+ clock.advanceTo("2026-10-11T15:01:00.000Z");s.lose();await settle();s.respond(response());await settle();
+ button(s,"同じ内容で再試行").props.onClick();await settle();
+ assert.deepEqual(s.calls[2].body,originalRequest,"retry cannot substitute today's date or the send time for the entered event");
+ s.respond({ok:true});await settle();s.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
+ assert.equal(s.storage.map.size,0);assert.equal(s.states[0].membership.state,member.state,"request submission does not apply the missing punch before approval");
+});
+
+for(const phase of ["input","confirmation"]){
+ test(`cancelling correction from ${phase} returns to punching without saving or closing LINE`,()=>{
+  const s=screen();button(s,"打刻修正").props.onClick();
+  nodes(s.render(),"select")[0].props.onChange({target:{value:"OTHER"}});
+  nodes(s.render(),"textarea")[0].props.onChange({target:{value:"Fixture unsent correction"}});
+  if(phase==="confirmation") nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+  assert.equal(button(s,"打刻画面を閉じる"),undefined,"closing the app is not an editing action");
+  assert.equal(nodes(s.render(),"button").filter(b=>text(b)==="キャンセル").length,1);
+  const cancel=button(s,"キャンセル");
+  assert.equal(cancel.props.type,"button");assert.equal(cancel.props.disabled,false);
+  cancel.props.onClick();
+  assert.equal(nodes(s.render(),"form").length,0);assert.equal(punch(s).props.disabled,false);
+  assert.equal(button(s,"打刻画面を閉じる").props.disabled,false);
+  assert.deepEqual(s.states[0],{kind:"ready",membership:member});
+  assert.equal(s.calls.length,0);assert.equal(s.storage.map.size,0);
+  assert.deepEqual(s.uiCalls,{lineClose:0,browserClose:0});
+ });
+}
+
+test("sent and unconfirmed corrections cannot be cancelled or replaced during recovery",async()=>{
+ const s=screen();button(s,"打刻修正").props.onClick();
+ nodes(s.render(),"select")[0].props.onChange({target:{value:"OTHER"}});
+ nodes(s.render(),"textarea")[0].props.onChange({target:{value:"Fixture pending correction"}});
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ const oldCancel=button(s,"キャンセル"),oldBack=button(s,"入力に戻る");
+ button(s,"この内容で申請").props.onClick();await settle();
+ const originalRequest=s.calls[0].body;
+ const assertLocked=()=>{
+  oldCancel.props.onClick();oldBack.props.onClick();
+  assert.equal(button(s,"キャンセル"),undefined);assert.equal(button(s,"入力に戻る"),undefined);
+  assert.equal(button(s,"打刻修正").props.disabled,true);assert.equal(punch(s).props.disabled,true);
+  assert.equal(button(s,"打刻画面を閉じる").props.disabled,true);
+  assert.equal(s.storage.map.size,1);assert.deepEqual(s.uiCalls,{lineClose:0,browserClose:0});
+ };
+ assertLocked();assert.equal(s.calls.length,1);
+ s.lose();await settle();assertLocked();
+ s.lose();await settle();assertLocked();assert.equal(button(s,"結果を確認").props.disabled,false);
+ button(s,"結果を確認").props.onClick();await settle();assertLocked();
+ s.respond(response());await settle();assertLocked();
+ button(s,"同じ内容で再試行").props.onClick();await settle();assertLocked();
+ assert.deepEqual(s.calls[3].body,originalRequest,"recovery must resend the original correction intent");
+ s.respond({ok:true});await settle();
+ s.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
+ assert.equal(s.storage.map.size,0);assert.equal(punch(s).props.disabled,false);
+ assert.equal(button(s,"打刻画面を閉じる").props.disabled,false);
+ assert.deepEqual(s.uiCalls,{lineClose:0,browserClose:0});
+});
+
+test("correction submission shows progress until result confirmation completes",async()=>{
+ const s=screen();button(s,"打刻修正").props.onClick();
+ nodes(s.render(),"select")[0].props.onChange({target:{value:"OTHER"}});
+ nodes(s.render(),"textarea")[0].props.onChange({target:{value:"Fixture correction"}});
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ button(s,"この内容で申請").props.onClick();await settle();
+ assert.match(text(s.render()),/修正申請を送信・確認しています/);
+ assert.equal(text(s.render()).includes("送信結果が未確認です"),false);
+ assert.equal(s.calls[0].url,"/api/correction-requests");
+ s.respond({ok:true});await settle();
+ assert.match(text(s.render()),/修正申請を送信・確認しています/);
+ s.respond(response(member,{id:randomUUID(),status:"PENDING"}));await settle();
+ assert.equal(text(s.render()).includes("修正申請を送信・確認しています"),false);
+ assert.equal(s.storage.map.size,0);
+});
+test("registration timeout still checks membership and enables a retry when offline",async()=>{
+ const s=screen({kind:"unregistered",storeName:"Fixture"});nodes(s.render(),"input")[0].props.onChange({target:{value:"Fixture Name"}});
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ s.expire();await settle();s.discardHung();assert.equal(s.calls[1].url,"/api/session/bootstrap");
+ s.expire();await settle();s.discardHung();
+ assert.equal(nodes(s.render(),"button").find(b=>b.props.type==="submit").props.disabled,false);
+});
+test("registration double-submit and lost response resolve active membership",async()=>{
+ const s=screen({kind:"unregistered",storeName:"Fixture"});nodes(s.render(),"input")[0].props.onChange({target:{value:"Fixture Name"}});
+ const form=nodes(s.render(),"form")[0];form.props.onSubmit({preventDefault(){}});form.props.onSubmit({preventDefault(){}});
+ assert.equal(s.calls.length,1);s.lose();await settle();s.respond(response());await settle();assert.equal(s.states[0].kind,"ready");
+});
+test("pending storage is scoped, validated and excludes credentials and GPS",()=>{
+ const storage=memory(),pending={kind:"punch",eventType:"CHECK_IN",clientRequestId:randomUUID(),staffId:staff,storeId:store};
+ operations.savePendingOperation(storage,{...pending,idToken:"secret",location:{latitude:1},legalName:"private"});
+ assert.equal([...storage.map.values()][0].includes("secret"),false);assert.equal([...storage.map.values()][0].includes("latitude"),false);
+ assert.equal(operations.readPendingOperation(storage,randomUUID(),store),null);assert.equal(operations.readPendingOperation(storage,staff,store).clientRequestId,pending.clientRequestId);
+ storage.map.set([...storage.map.keys()][0],"{");assert.equal(operations.readPendingOperation(storage,staff,store),null);
+ operations.savePendingOperation(null,pending);operations.clearPendingOperation(null,pending);
 });

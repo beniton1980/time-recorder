@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 type BootstrapRequest = {
   idToken?: unknown;
   storeToken?: unknown;
+  pendingOperation?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (typeof body.idToken !== "string" || body.idToken.length === 0) {
+  if (!body || typeof body.idToken !== "string" || body.idToken.length === 0) {
     return NextResponse.json(
       { ok: false, code: "ID_TOKEN_REQUIRED" },
       { status: 400 },
@@ -37,6 +38,14 @@ export async function POST(request: Request) {
   }
 
   const tokenHash = hashStoreEntryToken(body.storeToken);
+
+  const pending = body.pendingOperation as { kind?: unknown; clientRequestId?: unknown } | undefined;
+  if (pending !== undefined && (!pending
+    || (pending.kind !== "punch" && pending.kind !== "correction")
+    || typeof pending.clientRequestId !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pending.clientRequestId))) {
+    return NextResponse.json({ ok: false, code: "INVALID_PENDING_OPERATION" }, { status: 400 });
+  }
 
   if (!tokenHash) {
     return NextResponse.json(
@@ -70,10 +79,30 @@ export async function POST(request: Request) {
         s.id AS store_id,
         s.name AS store_name,
         COALESCE(ss.state, 'OFF_DUTY') AS state,
+        EXTRACT(EPOCH FROM ss.updated_at)::text AS state_version,
         ss.last_event_id,
+        COALESCE(epe.correction_request_id, epe.original_event_id) AS last_event_revision_id,
         COALESCE(epe.occurred_at, ss.last_event_at) AS last_event_at,
         epe.event_type AS last_event_type,
         COALESCE(history.items, '[]'::json) AS recent_punches,
+        CASE
+          WHEN ${pending?.kind ?? null}::text = 'punch' THEN (
+            SELECT json_build_object('id', pe.id, 'event_type', pe.event_type,
+              'occurred_at', pe.occurred_at, 'location_status', pe.location_status,
+              'validation_code', pe.validation_code)
+            FROM punch_events pe
+            WHERE pe.staff_id = st.id AND pe.store_id = s.id
+              AND pe.client_request_id = ${pending?.clientRequestId ?? null}::uuid
+          )
+          WHEN ${pending?.kind ?? null}::text = 'correction' THEN (
+            SELECT json_build_object('id', cr.id, 'status', cr.status,
+              'requested_event_type', cr.requested_event_type,
+              'requested_occurred_at', cr.requested_occurred_at)
+            FROM correction_requests cr
+            WHERE cr.staff_id = st.id AND cr.store_id = s.id
+              AND cr.client_request_id = ${pending?.clientRequestId ?? null}::uuid
+          )
+        END AS operation_result,
         (
           SELECT json_build_object(
             'store_id', active_store.id,
@@ -184,6 +213,8 @@ export async function POST(request: Request) {
       });
     }
 
+    // Result, state and history come from the same snapshot and active membership.
+    const operationResult = memberships[0].operation_result ?? null;
     const databaseMs = Date.now() - databaseStartedAt;
     const activeStoreConflict = memberships[0].active_store_conflict ?? null;
 
@@ -199,6 +230,7 @@ export async function POST(request: Request) {
       registered: true,
       memberships,
       activeStoreConflict,
+      operationResult,
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
