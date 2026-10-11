@@ -282,6 +282,26 @@ test("pair input requires both actual timestamps and checks their order before a
  assert.equal(s.storage.map.size,0);assert.equal(button(s,"この内容で申請"),undefined);
 });
 
+test("server future-time rejection keeps single and paired inputs editable without relying on the device clock",async()=>{
+ for(const eventType of ["CHECK_IN","BREAK_PAIR"]){
+  const s=screen({kind:"ready",membership:member},memory(),{},clockAt("2026-10-12T00:00:00.000Z"));
+  missedForm(s,eventType);
+  const entered=eventType==="BREAK_PAIR"?["2026-10-11","12:00","2026-10-11","13:00"]:["2026-10-11","12:00"];
+  enterTimes(s,entered);review(s);
+  assert.equal(s.calls.length,1);assert.equal(s.calls[0].url,"/api/correction-requests/validate");
+  s.respond({ok:false,code:"OCCURRED_AT_IN_FUTURE"},400);await settle();
+  assert.match(text(s.render()),/未来の日時は申請できません。実際に勤務した日時を入力してください。/);
+  assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),entered);
+  assert.equal(nodes(s.render(),"fieldset")[0].props.disabled,false);
+  assert.equal(button(s,"この内容で申請"),undefined);assert.equal(s.storage.map.size,0);
+  const corrected=entered.map(value=>value==="2026-10-11"?"2026-10-10":value);
+  enterTimes(s,corrected);review(s);
+  assert.equal(s.calls.length,2);assert.equal(s.calls[1].url,"/api/correction-requests/validate");
+  s.respond({ok:true});await settle();assert.ok(button(s,"この内容で申請"));
+  assert.doesNotMatch(text(s.render()),/未来の日時は申請できません/);
+ }
+});
+
 test("cancelled validation cannot confirm or unlock a newer form, whether its old result succeeds or fails",async()=>{
  for(const staleResult of [{ok:true},{ok:false,code:"CORRECTION_TIME_CONFLICT"}]){
   const s=screen();missedForm(s,"BREAK_END");enterTimes(s,["2026-10-10","23:50"]);review(s);
@@ -330,18 +350,20 @@ test("missing break start offers a pair without inventing its start, a type chan
 
 test("a final rejection restores both timestamps only after an authoritative lookup, including a delayed lookup",async()=>{
  for(const delayedLookup of [false,true]){
+ for(const [code,status,message] of [["CORRECTION_SEQUENCE_INVALID",409,"前後の打刻とつながりません"],["OCCURRED_AT_IN_FUTURE",400,"未来の日時は申請できません"]]){
   const s=screen();missedForm(s);enterTimes(s,["2026-10-10","23:55","2026-10-11","00:10"]);review(s);
   s.respond({ok:true});await settle();button(s,"この内容で申請").props.onClick();await settle();
-  s.respond({ok:false,code:"CORRECTION_SEQUENCE_INVALID"},409);await settle();
+  s.respond({ok:false,code},status);await settle();
   assert.equal(s.storage.map.size,1);assert.equal(nodes(s.render(),"form").length,0);
   if(delayedLookup){
    s.lose();await settle();assert.equal(s.storage.map.size,1);assert.equal(nodes(s.render(),"form").length,0);
    button(s,"結果を確認").props.onClick();await settle();
   }
   s.respond(response());await settle();assert.equal(s.storage.map.size,0);
-  assert.match(text(s.render()),/申請は追加されていません。前後の打刻とつながりません/);
+  assert.ok(text(s.render()).includes("申請は追加されていません。"+message));
   assert.deepEqual(nodes(s.render(),"input").map(n=>n.props.value),["2026-10-10","23:55","2026-10-11","00:10"]);
   assert.equal(button(s,"内容を確認").props.disabled,false);assert.equal(button(s,"キャンセル").props.disabled,false);
+ }
  }
 });
 

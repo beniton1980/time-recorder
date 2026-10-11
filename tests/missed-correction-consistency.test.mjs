@@ -53,6 +53,68 @@ async function scenario() {
 const decide = (id, decision = "APPROVED", type = null, time = null) => manager`
   SELECT * FROM decide_manager_correction(${f.store}::uuid,${id}::uuid,${decision},${type},${time}::timestamptz)`;
 
+test("future times are rejected at preflight and submission for all missed punch types", async () => {
+  const past = minutes => new Date(Date.now() - minutes * 60000).toISOString();
+  const future = () => new Date(Date.now() + 120000).toISOString();
+  for (const type of ["CHECK_IN", "BREAK_START", "BREAK_END", "CHECK_OUT"]) {
+    const s = await scenario();
+    if (type !== "CHECK_IN") await s.add("CHECK_IN", past(10));
+    if (type === "BREAK_END") await s.add("BREAK_START", past(5));
+    const before = await s.events(), state = await s.state();
+    await assert.rejects(s.preflight(type, future()), /OCCURRED_AT_IN_FUTURE/);
+    await assert.rejects(s.submit(type, future()), /OCCURRED_AT_IN_FUTURE/);
+    await assert.rejects(s.submit(type, future(), null, randomUUID(), true), /OCCURRED_AT_IN_FUTURE/);
+    assert.equal((await s.rows()).length, 0);
+    assert.deepEqual(await s.events(), before);
+    assert.equal(await s.state(), state);
+  }
+});
+
+test("both paired break timestamps obey the server clock, including the exact current-time boundary", async () => {
+  const s = await scenario();
+  await s.add("CHECK_IN", new Date(Date.now() - 600000).toISOString());
+  const end = new Date(Date.now() + 120000).toISOString();
+  for (const start of [new Date(Date.now() - 60000).toISOString(), new Date(Date.now() + 60000).toISOString()]) {
+    await assert.rejects(s.preflight("BREAK_START", start, end), /OCCURRED_AT_IN_FUTURE/);
+    await assert.rejects(s.submit("BREAK_START", start, end), /OCCURRED_AT_IN_FUTURE/);
+  }
+  assert.equal((await s.rows()).length, 0);
+  const empty = await scenario();
+  await assert.rejects(empty.sql`SELECT validate_correction_addition(${f.store}::uuid,${empty.staff}::uuid,'CHECK_IN',NOW()+INTERVAL '1 microsecond',NULL)`, /OCCURRED_AT_IN_FUTURE/);
+  await empty.sql`SELECT validate_correction_addition(${f.store}::uuid,${empty.staff}::uuid,'CHECK_IN',NOW(),NULL)`;
+  await empty.sql`SELECT validate_correction_addition(${f.store}::uuid,${empty.staff}::uuid,'CHECK_IN',NOW()-INTERVAL '1 microsecond',NULL)`;
+});
+
+test("approval rejects legacy future additions and review resolutions without changing state", async () => {
+  const s = await scenario();
+  const future = new Date(Date.now() + 120000).toISOString();
+  const id = randomUUID();
+  await f.db.query("INSERT INTO correction_requests(id,store_id,staff_id,operation,requested_event_type,requested_occurred_at,reason) VALUES ($1,$2,$3,'ADD','CHECK_IN',$4,'Future legacy fixture')", [id,f.store,s.staff,future]);
+  await assert.rejects(decide(id), /OCCURRED_AT_IN_FUTURE/);
+  assert.equal((await s.rows())[0].status, "PENDING");
+  assert.equal(await s.state(), "OFF_DUTY");
+  assert.equal((await s.events()).length, 0);
+  await decide(id, "REJECTED");
+  const review = (await s.sql`SELECT * FROM submit_staff_correction(${f.store}::uuid,${s.staff}::uuid,${randomUUID()}::uuid,'OTHER',NULL,NULL,NULL,NULL,'Fixture unknown time')`)[0];
+  await assert.rejects(decide(review.correction_request.id, "APPROVED", "CHECK_IN", future), /OCCURRED_AT_IN_FUTURE/);
+  assert.equal((await s.rows()).find(row=>row.id===review.correction_request.id).status, "PENDING");
+});
+
+test("a future end in a legacy pending pair cannot be partially approved", async () => {
+  const s = await scenario();
+  await s.add("CHECK_IN", new Date(Date.now() - 600000).toISOString());
+  const start = new Date(Date.now() - 300000).toISOString();
+  const end = new Date(Date.now() - 60000).toISOString();
+  const request = await s.submit("BREAK_START", start, end);
+  await f.db.query("UPDATE correction_requests SET requested_occurred_at=NOW()+INTERVAL '2 minutes' WHERE group_id=$1 AND requested_event_type='BREAK_END'", [request.correction_request.id]);
+  await assert.rejects(decide(request.correction_request.id), /OCCURRED_AT_IN_FUTURE/);
+  assert.ok((await s.rows()).every(row=>row.status==="PENDING" && row.approved_at===null));
+  assert.equal((await s.events()).length, 1);
+  assert.equal(await s.state(), "WORKING");
+  await decide(request.correction_request.id, "REJECTED");
+  assert.ok((await s.rows()).every(row=>row.status==="REJECTED"));
+});
+
 test("check-in alone cannot support a missed break end through preflight or either submission signature", async () => {
   const s = await scenario(); await s.add("CHECK_IN", at("09:00"));
   await assert.rejects(s.preflight("BREAK_END", at("13:00")), /CORRECTION_BREAK_START_REQUIRED/);
@@ -283,10 +345,12 @@ test("0040 saved MISSED, OTHER and MISTAKE intents remain replayable after upgra
   const old = await fixture({throughMigration: "0040_staff_correction_idempotency.sql"});
   try {
     const sql = old.getSql({mode: "staff", lineIdentity: "fixture_actor", storeTokenHash: tokenHash});
-    const missedId = randomUUID(), otherId = randomUUID(), mistakeId = randomUUID();
+    const missedId = randomUUID(), otherId = randomUUID(), mistakeId = randomUUID(), futureId = randomUUID();
+    const futureTime = new Date(Date.now() + 240000).toISOString();
+    const future = () => sql`SELECT * FROM submit_staff_correction(${old.store}::uuid,${old.staff}::uuid,${futureId}::uuid,'MISSED',NULL,NULL,'CHECK_IN',${futureTime}::timestamptz,NULL)`;
     const missed = () => sql`SELECT * FROM submit_staff_correction(${old.store}::uuid,${old.staff}::uuid,${missedId}::uuid,'MISSED',NULL,NULL,'BREAK_END',${at("13:00")}::timestamptz,NULL)`;
     const other = () => sql`SELECT * FROM submit_staff_correction(${old.store}::uuid,${old.staff}::uuid,${otherId}::uuid,'OTHER',NULL,NULL,NULL,NULL,'Legacy fixture review')`;
-    const savedMissed = (await missed())[0], savedOther = (await other())[0];
+    const savedMissed = (await missed())[0], savedOther = (await other())[0], savedFuture = (await future())[0];
     const target = await old.add("CHECK_OUT");
     const mistake = () => sql`SELECT * FROM submit_staff_correction(${old.store}::uuid,${old.staff}::uuid,${mistakeId}::uuid,'MISTAKE',${target}::uuid,${target}::uuid,'BREAK_START',NULL,NULL)`;
     const savedMistake = (await mistake())[0];
@@ -294,7 +358,7 @@ test("0040 saved MISSED, OTHER and MISTAKE intents remain replayable after upgra
     const viewBefore = (await old.db.query("SELECT * FROM effective_punch_events ORDER BY effective_id")).rows;
     const permissionsBefore = (await old.db.query("SELECT reloptions,relacl::text FROM pg_class WHERE oid='public.effective_punch_events'::regclass")).rows;
     await old.db.exec(await migration());
-    for (const [retry, original] of [[missed, savedMissed], [other, savedOther], [mistake, savedMistake]]) {
+    for (const [retry, original] of [[missed, savedMissed], [other, savedOther], [mistake, savedMistake], [future, savedFuture]]) {
       const result = (await retry())[0];
       assert.equal(result.result_status, "already_received");
       assert.equal(result.correction_request.id, original.correction_request.id);

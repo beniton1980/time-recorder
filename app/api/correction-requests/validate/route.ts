@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "";
     const errors: Record<string, number> = {
       STAFF_OR_STORE_NOT_FOUND: 404, INVALID_CORRECTION_REQUEST: 400,
-      OCCURRED_AT_OUT_OF_RANGE: 400, CORRECTION_BREAK_START_REQUIRED: 409,
+      OCCURRED_AT_IN_FUTURE: 400, OCCURRED_AT_OUT_OF_RANGE: 400, CORRECTION_BREAK_START_REQUIRED: 409,
       CORRECTION_SEQUENCE_INVALID: 409, CORRECTION_TIME_CONFLICT: 409, CORRECTION_PENDING_CONFLICT: 409,
     };
     for (const [code, status] of Object.entries(errors)) {

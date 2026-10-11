@@ -593,7 +593,9 @@ export default function ManagerPage() {
       const data = await response.json();
 
       if (!response.ok || !data.ok) {
-        const validationMessage = correctionValidationMessage(data.code);
+        const validationMessage = data.code === "OCCURRED_AT_IN_FUTURE"
+          ? "未来の日時が指定されています。"
+          : correctionValidationMessage(data.code);
         if (validationMessage) {
           setFieldErrors((current) => ({ ...current,
             [correction.id]: `${validationMessage}承認は行っていません。記録と申請内容を確認してください。`,

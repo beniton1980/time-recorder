@@ -162,10 +162,13 @@ BEGIN
     OR (p_break_ended_at IS NOT NULL AND (p_event_type <> 'BREAK_START' OR p_break_ended_at <= p_occurred_at)) THEN
     RAISE EXCEPTION 'INVALID_CORRECTION_REQUEST';
   END IF;
-  IF request_mode = 'staff' AND (
-    p_occurred_at < NOW() - INTERVAL '62 days' OR p_occurred_at > NOW() + INTERVAL '5 minutes'
-    OR p_break_ended_at > NOW() + INTERVAL '5 minutes'
-  ) THEN RAISE EXCEPTION 'OCCURRED_AT_OUT_OF_RANGE'; END IF;
+  -- Corrections describe work that already happened. Use the database clock
+  -- for both submission and approval, including either endpoint of a break.
+  IF p_occurred_at > NOW() OR p_break_ended_at > NOW() THEN
+    RAISE EXCEPTION 'OCCURRED_AT_IN_FUTURE';
+  END IF;
+  IF request_mode = 'staff' AND p_occurred_at < NOW() - INTERVAL '62 days'
+    THEN RAISE EXCEPTION 'OCCURRED_AT_OUT_OF_RANGE'; END IF;
 
   candidate_day := ((p_occurred_at AT TIME ZONE store_timezone) - make_interval(mins => day_start))::DATE;
   IF p_event_type <> 'CHECK_IN' THEN

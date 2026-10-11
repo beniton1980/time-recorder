@@ -25,6 +25,43 @@ const submit = (f, intent) => f.call(f.correction, { ...intent, clientRequestId:
 const decision = (f, id, choice = "APPROVED", extra = {}) => f.call(f.decision, { idToken: "fixture_manager", storeId: f.store, requestId: id, decision: choice, ...extra });
 const count = async f => (await f.db.query("SELECT count(*)::int AS n FROM correction_requests")).rows[0].n;
 
+test("future dates cannot pass preflight, direct submission, or manager approval", async () => {
+  const f = await fixture();
+  try {
+    await manager(f);
+    const future = new Date(Date.now() + 120000).toISOString();
+    const before = await count(f);
+    const intent = { category:"MISSED", eventType:"CHECK_IN", occurredAt:future };
+    for (const result of [await f.call(f.validate,intent), await submit(f,intent)]) {
+      assert.equal(result.status,400);
+      assert.equal(result.code,"OCCURRED_AT_IN_FUTURE");
+    }
+    assert.equal(await count(f),before);
+    const legacyId = randomUUID();
+    await f.db.query("INSERT INTO correction_requests(id,store_id,staff_id,operation,requested_event_type,requested_occurred_at,reason) VALUES ($1,$2,$3,'ADD','CHECK_IN',$4,'Future legacy fixture')",[legacyId,f.store,f.staff,future]);
+    const result = await decision(f,legacyId);
+    assert.equal(result.status,400);
+    assert.equal(result.code,"OCCURRED_AT_IN_FUTURE");
+    assert.equal((await f.db.query("SELECT status FROM correction_requests WHERE id=$1",[legacyId])).rows[0].status,"PENDING");
+    assert.equal((await f.db.query("SELECT count(*)::int n FROM effective_punch_events WHERE staff_id=$1",[f.staff])).rows[0].n,0);
+  } finally { await f.db.close(); }
+});
+
+test("a past break start with a future end cannot be submitted", async () => {
+  const f = await fixture();
+  try {
+    await seed(f,"CHECK_IN","09:00");
+    const before = await count(f);
+    const intent = {...pair(), breakEndedAt:new Date(Date.now()+120000).toISOString()};
+    for (const result of [await f.call(f.validate,intent),await submit(f,intent)]) {
+      assert.equal(result.status,400);
+      assert.equal(result.code,"OCCURRED_AT_IN_FUTURE");
+    }
+    assert.equal(await count(f),before);
+    assert.equal((await f.db.query("SELECT count(*)::int n FROM effective_punch_events WHERE staff_id=$1",[f.staff])).rows[0].n,1);
+  } finally { await f.db.close(); }
+});
+
 test("preflight and direct submission reject a lone break end without writing", async () => {
   const f = await fixture();
   try {
