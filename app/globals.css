@@ -564,7 +564,13 @@ h1 {
 .attendance-screen .correction-form { padding: 16px; }
 .attendance-screen .correction-form label { min-width: 0; }
 .attendance-screen .correction-date-time { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-.attendance-screen .correction-date-time input { height: 48px; }
+.attendance-screen .correction-date-time input {
+  /* iOS native date/time styling can force content-box (WebKit bug 301648). */
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  height: 48px;
+}
 
 @media (max-width: 440px) {
   .attendance-screen .correction-date-time { grid-template-columns: minmax(0, 1fr); }
