@@ -9,6 +9,7 @@ import { measurePunchStage } from "@/lib/punch-performance.mjs";
 import { readPendingOperation, savePendingOperation, clearPendingOperation, tabOperationStorage } from "@/lib/attendance-operation";
 import type { EventType, CorrectionIntent, PendingOperation, OperationResult } from "@/lib/attendance-operation";
 import { withAttendanceDeadline } from "@/lib/attendance-request";
+import { correctionValidationMessage } from "@/lib/correction-validation";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_ATTENDANCE_LIFF_ID || "2010761826-6FNSE1PD";
 
@@ -149,6 +150,7 @@ function operationLabel(operation: PendingOperation) {
   if (operation.kind === "punch") return eventLabels[operation.eventType];
   if (operation.intent.category === "MISTAKE") return eventLabels[operation.intent.eventType] + "への訂正";
   if (operation.intent.category === "MISSED") return "押し忘れた" + eventLabels[operation.intent.eventType] + "の申請";
+  if (operation.intent.category === "MISSED_BREAK") return "休憩開始・終了の申請";
   return "打刻修正の申請";
 }
 
@@ -183,7 +185,7 @@ export default function Home() {
   const [correctionCategory, setCorrectionCategory] =
     useState<"MISTAKE" | "MISSED" | "OTHER">("MISTAKE");
   const [correctionEvent, setCorrectionEvent] =
-    useState<EventType>("CHECK_IN");
+    useState<EventType | "BREAK_PAIR">("CHECK_IN");
   const [correctionDate, setCorrectionDate] = useState("");
   const [correctionTime, setCorrectionTime] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");
@@ -201,6 +203,14 @@ export default function Home() {
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
   const [recovering, setRecovering] = useState(false);
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
+  const [correctionEndDate, setCorrectionEndDate] = useState("");
+  const [correctionEndTime, setCorrectionEndTime] = useState("");
+  const [correctionValidating, setCorrectionValidating] = useState(false);
+  const [correctionCode, setCorrectionCode] = useState<string | null>(null);
+  const reviewedIntentRef = useRef<CorrectionIntent | null>(null);
+  const correctionValidationRef = useRef({ sequence: 0, pending: false });
+  const correctionEventSelectRef = useRef<HTMLSelectElement | null>(null);
+  const rejectedCorrectionRef = useRef<{ clientRequestId: string; code: unknown } | null>(null);
   const readyForPunch = view.kind === "ready";
   const correctionLocked = submitting !== null || correctionSubmitting || recovering || pendingOperation !== null;
 
@@ -350,6 +360,18 @@ export default function Home() {
     clearPendingOperation(tabOperationStorage(), operation);
     pendingOperationRef.current = null;
     setPendingOperation(null);
+    rejectedCorrectionRef.current = null;
+  }
+
+  function finishRejectedCorrection(operation: PendingOperation) {
+    const rejected = rejectedCorrectionRef.current;
+    if (operation.kind !== "correction" || rejected?.clientRequestId !== operation.clientRequestId) return false;
+    forgetOperation(operation);
+    restoreCorrectionIntent(operation.intent);
+    setCorrectionCode(typeof rejected.code === "string" ? rejected.code : null);
+    setCorrectionError("申請は追加されていません。" + (correctionValidationMessage(rejected.code)
+      ?? "最新の記録を確認し、内容を見直してください。"));
+    return true;
   }
 
   async function refreshOperation(operation: PendingOperation) {
@@ -373,7 +395,7 @@ export default function Home() {
     setNotice(null);
     try {
       if (!await refreshOperation(operation)) {
-        setNotice("まだ完了を確認できません。同じ内容で再試行できます。");
+        if (!finishRejectedCorrection(operation)) setNotice("まだ完了を確認できません。同じ内容で再試行できます。");
       }
     } catch {
       setNotice("送信結果を確認できませんでした。通信が戻ってから再確認してください。");
@@ -386,6 +408,7 @@ export default function Home() {
   async function sendOperation(operation: PendingOperation) {
     if (punchInFlightRef.current) return;
     punchInFlightRef.current = true;
+    rejectedCorrectionRef.current = null;
     rememberOperation(operation);
     setNotice(null);
     setShowCorrection(false);
@@ -396,6 +419,7 @@ export default function Home() {
       setCorrectionSubmitting(true);
     }
     let responseStatus: number | undefined;
+    let responseCode: unknown;
     try {
       const idToken = liff.getIDToken();
       if (!idToken || !storeTokenRef.current) throw new Error("AUTH_UNAVAILABLE");
@@ -406,27 +430,39 @@ export default function Home() {
         reader.clear();
         setPunchPhase("sending");
       }
-      const response = await measurePunchStage("send", () => withAttendanceDeadline(signal => fetch(
-        operation.kind === "punch" ? "/api/punch" : "/api/correction-requests", {
+      const response = await measurePunchStage("send", () => withAttendanceDeadline(async signal => {
+        const response = await fetch(operation.kind === "punch" ? "/api/punch" : "/api/correction-requests", {
           method: "POST", signal, headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             idToken, storeToken: storeTokenRef.current, clientRequestId: operation.clientRequestId,
             ...(operation.kind === "punch" ? { eventType: operation.eventType, expectedStateVersion: operation.expectedStateVersion, location } : operation.intent),
           }),
-        },
-      )));
+        });
+        responseStatus = response.status;
+        if (operation.kind === "correction" && !response.ok) {
+          const data = await response.json();
+          responseCode = data?.code;
+        }
+        return response;
+      }));
       responseStatus = response.status;
     } catch { /* A timeout does not establish whether the write committed. */ }
+    const terminalFailure = responseStatus !== undefined && responseStatus >= 400 && responseStatus < 500 && responseStatus !== 408 && responseStatus !== 429;
+    if (operation.kind === "correction" && terminalFailure) {
+      // Preserve a known rejection while result lookup is unavailable. A later
+      // lookup must still establish that no saved result exists before editing.
+      rejectedCorrectionRef.current = { clientRequestId: operation.clientRequestId, code: responseCode };
+    }
     try {
       setPunchPhase("confirming");
       // Refresh all visible state together, including when the write succeeded but
       // the response body was truncated. No stale local history is appended.
       if (await refreshOperation(operation)) return;
-      if (responseStatus !== undefined && responseStatus >= 400 && responseStatus < 500 && responseStatus !== 408 && responseStatus !== 429) {
-        forgetOperation(operation);
-        setNotice(operation.kind === "punch"
-          ? "打刻は追加されていません。最新の勤務状態と履歴を確認してください。"
-          : "修正を受け付けられませんでした。最新の記録を確認し、内容を見直してください。");
+      if (terminalFailure) {
+        if (!finishRejectedCorrection(operation)) {
+          forgetOperation(operation);
+          setNotice("打刻は追加されていません。最新の勤務状態と履歴を確認してください。");
+        }
       } else {
         setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
       }
@@ -458,81 +494,162 @@ export default function Home() {
   function openCorrectionForm() {
     if (view.kind !== "ready" || pendingOperationRef.current || punchInFlightRef.current) return;
 
+    invalidateCorrectionValidation();
     setCorrectionCategory("MISTAKE");
+    setCorrectionEvent("CHECK_IN");
     setCorrectionDate("");
     setCorrectionTime("");
+    setCorrectionEndDate("");
+    setCorrectionEndTime("");
     setCorrectionReason("");
     setCorrectionReview(false);
     setCorrectionError(null);
+    setCorrectionCode(null);
     setNotice(null);
     setShowCorrection(true);
   }
 
+  function invalidateCorrectionValidation() {
+    correctionValidationRef.current.sequence += 1;
+    correctionValidationRef.current.pending = false;
+    setCorrectionValidating(false);
+    reviewedIntentRef.current = null;
+  }
+
+  function changeCorrectionInput(update: () => void) {
+    if (correctionValidationRef.current.pending || punchInFlightRef.current || pendingOperationRef.current) return;
+    update();
+    reviewedIntentRef.current = null;
+    setCorrectionError(null);
+    setCorrectionCode(null);
+  }
+
+  function restoreCorrectionIntent(intent: CorrectionIntent) {
+    invalidateCorrectionValidation();
+    setCorrectionCategory(intent.category === "MISSED_BREAK" ? "MISSED" : intent.category);
+    setCorrectionReview(false);
+    setShowCorrection(true);
+    if (intent.category === "MISSED" || intent.category === "MISSED_BREAK") {
+      const start = new Date(Date.parse(intent.occurredAt) + 9 * 60 * 60 * 1000).toISOString();
+      setCorrectionEvent(intent.category === "MISSED_BREAK" ? "BREAK_PAIR" : intent.eventType);
+      setCorrectionDate(start.slice(0, 10));
+      setCorrectionTime(start.slice(11, 16));
+      const end = intent.category === "MISSED_BREAK"
+        ? new Date(Date.parse(intent.breakEndedAt) + 9 * 60 * 60 * 1000).toISOString() : "";
+      setCorrectionEndDate(end.slice(0, 10));
+      setCorrectionEndTime(end.slice(11, 16));
+    } else if (intent.category === "OTHER") {
+      setCorrectionReason(intent.reason);
+    }
+  }
+
   function cancelCorrectionForm() {
     if (punchInFlightRef.current || pendingOperationRef.current) return;
+    invalidateCorrectionValidation();
     setShowCorrection(false);
     setCorrectionReview(false);
     setCorrectionError(null);
+    setCorrectionCode(null);
   }
 
-  function reviewCorrectionRequest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (view.kind !== "ready") return;
-
-    if (
-      correctionCategory === "MISTAKE" &&
-      !canCorrectLastPunch(view.membership)
-    ) {
-      setCorrectionError(
-        "前回の打刻は、この画面から種類を変更できません。",
-      );
-      return;
+  function correctionIntentFromInput(): CorrectionIntent | null {
+    if (view.kind !== "ready") return null;
+    if (correctionCategory === "MISTAKE") {
+      const eventType = correctedLastEvent(view.membership);
+      if (!canCorrectLastPunch(view.membership) || (eventType !== "CHECK_OUT" && eventType !== "BREAK_START")) {
+        setCorrectionError("前回の打刻は、この画面から種類を変更できません。");
+        return null;
+      }
+      return { category: "MISTAKE", targetEventId: view.membership.last_event_id!,
+        expectedRevisionId: view.membership.last_event_revision_id!, eventType };
     }
-
     if (correctionCategory === "MISSED") {
       if (!correctionDate) {
         setCorrectionError("追加する打刻の日付を選択してください。");
-        return;
+        return null;
       }
-
       if (!correctionTime) {
         setCorrectionError("追加する打刻の時刻を選択してください。");
+        return null;
+      }
+      // Inputs are Japan wall time, regardless of the device's timezone.
+      const start = new Date(correctionDate + "T" + correctionTime + ":00+09:00");
+      if (!Number.isFinite(start.getTime())) {
+        setCorrectionError("追加する打刻の日付と時刻を確認してください。");
+        return null;
+      }
+      if (correctionEvent === "BREAK_PAIR") {
+        if (!correctionEndDate || !correctionEndTime) {
+          setCorrectionError("休憩終了の日付と実際の時刻を入力してください。");
+          return null;
+        }
+        const end = new Date(correctionEndDate + "T" + correctionEndTime + ":00+09:00");
+        if (!Number.isFinite(end.getTime()) || end.getTime() <= start.getTime()) {
+          setCorrectionError("休憩終了は、休憩開始より後の日時を指定してください。");
+          return null;
+        }
+        return { category: "MISSED_BREAK", eventType: "BREAK_START", occurredAt: start.toISOString(), breakEndedAt: end.toISOString() };
+      }
+      return { category: "MISSED", eventType: correctionEvent, occurredAt: start.toISOString() };
+    }
+    if (!correctionReason.trim()) {
+      setCorrectionError("管理者に確認してほしい内容を入力してください。");
+      return null;
+    }
+    return { category: "OTHER", reason: correctionReason.trim() };
+  }
+
+  async function reviewCorrectionRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (view.kind !== "ready" || correctionValidationRef.current.pending || punchInFlightRef.current || pendingOperationRef.current) return;
+    const intent = correctionIntentFromInput();
+    if (!intent) return;
+    setCorrectionError(null);
+    setCorrectionCode(null);
+    if (intent.category === "MISSED" || intent.category === "MISSED_BREAK") {
+      const idToken = liff.getIDToken(), storeToken = storeTokenRef.current;
+      if (!idToken || !storeToken) {
+        setCorrectionError("LINEの認証情報を取得できませんでした。");
         return;
       }
+      const sequence = ++correctionValidationRef.current.sequence;
+      correctionValidationRef.current.pending = true;
+      setCorrectionValidating(true);
+      try {
+        const { response, data } = await withAttendanceDeadline(async signal => {
+          const response = await fetch("/api/correction-requests/validate", {
+            method: "POST", signal, headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idToken, storeToken, ...intent }),
+          });
+          const data = await response.json() as { ok: boolean; code?: string };
+          return { response, data };
+        });
+        if (sequence !== correctionValidationRef.current.sequence) return;
+        if (!response.ok || !data.ok) {
+          setCorrectionCode(data.code ?? null);
+          setCorrectionError(correctionValidationMessage(data.code) ?? "内容を確認できませんでした。まだ申請は送信していません。もう一度お試しください。");
+          return;
+        }
+      } catch {
+        if (sequence === correctionValidationRef.current.sequence) {
+          setCorrectionError("内容を確認できませんでした。まだ申請は送信していません。通信を確認して、もう一度お試しください。");
+        }
+        return;
+      } finally {
+        if (sequence === correctionValidationRef.current.sequence) {
+          correctionValidationRef.current.pending = false;
+          setCorrectionValidating(false);
+        }
+      }
     }
-
-    if (correctionCategory === "OTHER" && !correctionReason.trim()) {
-      setCorrectionError(
-        "管理者に確認してほしい内容を入力してください。",
-      );
-      return;
-    }
-
-    setCorrectionError(null);
+    reviewedIntentRef.current = intent;
     setCorrectionReview(true);
   }
 
   async function submitCorrectionRequest() {
-    if (view.kind !== "ready" || punchInFlightRef.current || pendingOperationRef.current) return;
+    const intent = reviewedIntentRef.current;
+    if (view.kind !== "ready" || punchInFlightRef.current || pendingOperationRef.current || !intent) return;
     const member = view.membership;
-    let intent: CorrectionIntent;
-    if (correctionCategory === "MISTAKE") {
-      const eventType = correctedLastEvent(member);
-      if (!canCorrectLastPunch(member) || (eventType !== "CHECK_OUT" && eventType !== "BREAK_START")) return;
-      intent = { category: "MISTAKE", targetEventId: member.last_event_id!,
-        expectedRevisionId: member.last_event_revision_id!, eventType };
-    } else if (correctionCategory === "MISSED") {
-      // Form fields are store-local wall time, independent of the device timezone.
-      const date = new Date(correctionDate + "T" + correctionTime + ":00+09:00");
-      if (!Number.isFinite(date.getTime())) {
-        setCorrectionError("追加する打刻の日付と時刻を確認してください。");
-        return;
-      }
-      intent = { category: "MISSED", eventType: correctionEvent, occurredAt: date.toISOString() };
-    } else {
-      intent = { category: "OTHER", reason: correctionReason.trim() };
-    }
     await sendOperation({ kind: "correction", clientRequestId: crypto.randomUUID(),
       staffId: member.staff_id, storeId: member.store_id, intent });
   }
@@ -769,20 +886,19 @@ export default function Home() {
                 </div>
 
                 {!correctionReview ? (
-                  <>
+                  <fieldset className="correction-inputs" disabled={correctionValidating} aria-busy={correctionValidating}>
                     <label>
                       修正内容
                       <select
                         value={correctionCategory}
-                        onChange={(event) => {
+                        onChange={(event) => changeCorrectionInput(() => {
                           setCorrectionCategory(
                             event.target.value as
                               | "MISTAKE"
                               | "MISSED"
                               | "OTHER",
                           );
-                          setCorrectionError(null);
-                        }}
+                        })}
                       >
                         <option value="MISTAKE">
                           前回の打刻を押し間違えた
@@ -834,58 +950,86 @@ export default function Home() {
                         <label>
                           追加する打刻
                           <select
+                            ref={correctionEventSelectRef}
                             value={correctionEvent}
-                            onChange={(event) => {
-                              setCorrectionEvent(
-                                event.target.value as EventType,
-                              );
-                              setCorrectionError(null);
-                            }}
+                            onChange={(event) => changeCorrectionInput(() => {
+                              const next = event.target.value as EventType | "BREAK_PAIR";
+                              if ((next === "BREAK_PAIR") !== (correctionEvent === "BREAK_PAIR")) {
+                                setCorrectionDate("");
+                                setCorrectionTime("");
+                                setCorrectionEndDate("");
+                                setCorrectionEndTime("");
+                              }
+                              setCorrectionEvent(next);
+                            })}
                           >
                             <option value="CHECK_IN">出勤</option>
                             <option value="BREAK_START">休憩開始</option>
                             <option value="BREAK_END">休憩終了</option>
                             <option value="CHECK_OUT">退勤</option>
+                            <option value="BREAK_PAIR">休憩開始・終了の両方</option>
                           </select>
                         </label>
 
                         <div className="correction-date-time">
                           <div className="correction-date-field">
                             <label>
-                              日付
+                              {correctionEvent === "BREAK_PAIR" ? "休憩開始の日付" : "日付"}
                               <input
                                 type="date"
                                 value={correctionDate}
-                                onChange={(event) => {
+                                onChange={(event) => changeCorrectionInput(() => {
                                   setCorrectionDate(event.target.value);
-                                  setCorrectionError(null);
-                                }}
+                                })}
                               />
                             </label>
-                            <div className="correction-date-shortcuts" role="group" aria-label="日付の入力補助">
-                              <button type="button" onClick={() => {
+                            <div className="correction-date-shortcuts" role="group" aria-label={correctionEvent === "BREAK_PAIR" ? "休憩開始の日付の入力補助" : "日付の入力補助"}>
+                              <button type="button" onClick={() => changeCorrectionInput(() => {
                                 setCorrectionDate(correctionDateShortcut(0));
-                                setCorrectionError(null);
-                              }}>今日</button>
-                              <button type="button" onClick={() => {
+                              })}>今日</button>
+                              <button type="button" onClick={() => changeCorrectionInput(() => {
                                 setCorrectionDate(correctionDateShortcut(1));
-                                setCorrectionError(null);
-                              }}>昨日</button>
+                              })}>昨日</button>
                             </div>
                           </div>
                           <label>
-                            実際の時刻
+                            {correctionEvent === "BREAK_PAIR" ? "開始の実際の時刻" : "実際の時刻"}
                             <input
                               type="time"
                               step="60"
                               value={correctionTime}
-                              onChange={(event) => {
+                              onChange={(event) => changeCorrectionInput(() => {
                                 setCorrectionTime(event.target.value);
-                                setCorrectionError(null);
-                              }}
+                              })}
                             />
                           </label>
                         </div>
+                        {correctionEvent === "BREAK_PAIR" && (
+                          <div className="correction-date-time">
+                            <div className="correction-date-field">
+                              <label>
+                                休憩終了の日付
+                                <input type="date" value={correctionEndDate} onChange={(event) => changeCorrectionInput(() => {
+                                  setCorrectionEndDate(event.target.value);
+                                })} />
+                              </label>
+                              <div className="correction-date-shortcuts" role="group" aria-label="休憩終了の日付の入力補助">
+                                <button type="button" onClick={() => changeCorrectionInput(() => {
+                                  setCorrectionEndDate(correctionDateShortcut(0));
+                                })}>今日</button>
+                                <button type="button" onClick={() => changeCorrectionInput(() => {
+                                  setCorrectionEndDate(correctionDateShortcut(1));
+                                })}>昨日</button>
+                              </div>
+                            </div>
+                            <label>
+                              終了の実際の時刻
+                              <input type="time" step="60" value={correctionEndTime} onChange={(event) => changeCorrectionInput(() => {
+                                setCorrectionEndTime(event.target.value);
+                              })} />
+                            </label>
+                          </div>
+                        )}
                         <p className="field-help">時刻が分からない場合は「その他」から確認を依頼できます。</p>
                       </>
                     )}
@@ -901,10 +1045,9 @@ export default function Home() {
                           rows={4}
                           placeholder="例：休憩終了の時刻が分からないため確認してほしい"
                           value={correctionReason}
-                          onChange={(event) => {
+                          onChange={(event) => changeCorrectionInput(() => {
                             setCorrectionReason(event.target.value);
-                            setCorrectionError(null);
-                          }}
+                          })}
                         />
                       </label>
                     )}
@@ -915,12 +1058,31 @@ export default function Home() {
                       </p>
                     )}
 
+                    {correctionCode === "CORRECTION_BREAK_START_REQUIRED" && correctionCategory === "MISSED" && correctionEvent === "BREAK_END" && (
+                      <div className="correction-alternatives">
+                        <button type="button" onClick={() => changeCorrectionInput(() => {
+                          // Keep the explicitly entered end, but never infer the missing start.
+                          setCorrectionEndDate(correctionDate);
+                          setCorrectionEndTime(correctionTime);
+                          setCorrectionDate("");
+                          setCorrectionTime("");
+                          setCorrectionEvent("BREAK_PAIR");
+                        })}>開始・終了をまとめて申請</button>
+                        <button type="button" onClick={() => changeCorrectionInput(() => {
+                          correctionEventSelectRef.current?.focus();
+                        })}>種類を選び直す</button>
+                        <button type="button" onClick={() => changeCorrectionInput(() => {
+                          setCorrectionCategory("OTHER");
+                        })}>時刻が分からないので相談</button>
+                      </div>
+                    )}
+
                     <div className="correction-actions">
-                      <button className="correction-submit" type="submit" disabled={correctionLocked}>
-                        内容を確認
+                      <button className="correction-submit" type="submit" disabled={correctionLocked || correctionValidating}>
+                        {correctionValidating ? "前後の打刻を確認中…" : "内容を確認"}
                       </button>
                     </div>
-                  </>
+                  </fieldset>
                 ) : (
                   <>
                     <div className="correction-review">
@@ -960,15 +1122,21 @@ export default function Home() {
                           <>
                             <div>
                               <dt>種類</dt>
-                              <dd>{eventLabels[correctionEvent]}</dd>
+                              <dd>{correctionEvent === "BREAK_PAIR" ? "休憩開始・終了の両方" : eventLabels[correctionEvent]}</dd>
                             </div>
                             <div>
-                              <dt>日時</dt>
+                              <dt>{correctionEvent === "BREAK_PAIR" ? "休憩開始" : "日時"}</dt>
                               <dd>
                                 {correctionDate.replaceAll("-", "/")}{" "}
                                 {correctionTime}
                               </dd>
                             </div>
+                            {correctionEvent === "BREAK_PAIR" && (
+                              <div>
+                                <dt>休憩終了</dt>
+                                <dd>{correctionEndDate.replaceAll("-", "/")} {correctionEndTime}</dd>
+                              </div>
+                            )}
                           </>
                         )}
                         {correctionCategory === "OTHER" && (
@@ -993,6 +1161,7 @@ export default function Home() {
                         disabled={correctionLocked}
                         onClick={() => {
                           if (punchInFlightRef.current || pendingOperationRef.current) return;
+                          invalidateCorrectionValidation();
                           setCorrectionReview(false);
                           setCorrectionError(null);
                         }}

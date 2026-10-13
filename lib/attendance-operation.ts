@@ -2,6 +2,7 @@ export type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
 export type CorrectionIntent =
   | { category: "MISTAKE"; targetEventId: string; expectedRevisionId: string; eventType: "CHECK_OUT" | "BREAK_START" }
   | { category: "MISSED"; eventType: EventType; occurredAt: string }
+  | { category: "MISSED_BREAK"; eventType: "BREAK_START"; occurredAt: string; breakEndedAt: string }
   | { category: "OTHER"; reason: string };
 
 type OperationIdentity = { clientRequestId: string; staffId: string; storeId: string };
@@ -53,6 +54,15 @@ function parseOperation(raw: string): PendingOperation | null {
     && typeof intent.occurredAt === "string" && Number.isFinite(Date.parse(intent.occurredAt))) {
     return { ...identity, kind: "correction", intent: {
       category: "MISSED", eventType: intent.eventType, occurredAt: new Date(intent.occurredAt).toISOString(),
+    } };
+  }
+  if (intent.category === "MISSED_BREAK" && intent.eventType === "BREAK_START"
+    && typeof intent.occurredAt === "string" && Number.isFinite(Date.parse(intent.occurredAt))
+    && typeof intent.breakEndedAt === "string" && Number.isFinite(Date.parse(intent.breakEndedAt))
+    && Date.parse(intent.breakEndedAt) > Date.parse(intent.occurredAt)) {
+    return { ...identity, kind: "correction", intent: {
+      category: "MISSED_BREAK", eventType: "BREAK_START", occurredAt: new Date(intent.occurredAt).toISOString(),
+      breakEndedAt: new Date(intent.breakEndedAt).toISOString(),
     } };
   }
   if (intent.category === "OTHER" && typeof intent.reason === "string"

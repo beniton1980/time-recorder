@@ -161,6 +161,8 @@ export async function POST(request: Request) {
           cr.operation,
           cr.requested_event_type,
           cr.requested_occurred_at,
+          cr.group_id,
+          paired.requested_occurred_at AS requested_break_ended_at,
           cr.reason,
           cr.requested_at,
           st.legal_name,
@@ -171,6 +173,10 @@ export async function POST(request: Request) {
         JOIN staff st ON st.id = cr.staff_id
         JOIN stores store_settings ON store_settings.id = cr.store_id
         LEFT JOIN punch_events pe ON pe.id = cr.target_event_id
+        LEFT JOIN correction_requests paired
+          ON paired.group_id = cr.group_id AND paired.id <> cr.id
+          AND paired.store_id = cr.store_id AND paired.staff_id = cr.staff_id
+          AND paired.requested_event_type = 'BREAK_END' AND paired.status = 'PENDING'
         LEFT JOIN LATERAL (
           SELECT json_agg(
             json_build_object(
@@ -186,7 +192,7 @@ export async function POST(request: Request) {
           ) AS items
           FROM effective_punch_events epe
           WHERE epe.staff_id = cr.staff_id
-            AND epe.business_date = (
+            AND epe.business_date = COALESCE(cr.requested_business_date, (
               (
                 COALESCE(
                   cr.requested_occurred_at,
@@ -194,10 +200,11 @@ export async function POST(request: Request) {
                   cr.requested_at
                 ) AT TIME ZONE store_settings.timezone
               ) - make_interval(mins => store_settings.business_day_start_minute)
-            )::date
+            )::date)
         ) day_history ON TRUE
         WHERE cr.store_id = ${manager.store_id}
           AND cr.status = 'PENDING'
+          AND (cr.group_id IS NULL OR cr.id = cr.group_id)
         ORDER BY cr.requested_at ASC
       `,
       sql`

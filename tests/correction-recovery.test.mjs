@@ -93,7 +93,10 @@ test("a later punch prevents stale corrections and preserves the new state",asyn
 });
 
 test("ordinary and missed requests are idempotent, including after a decision",async()=>{
- for(const body of [request("OTHER",{reason:"Fixture review"}),request("MISSED",{eventType:"CHECK_OUT",occurredAt:new Date(Date.now()-60000).toISOString()})]){
+ const day = new Date(Date.now()-3*86400000).toISOString().slice(0,10);
+ const checkIn = `${day}T09:00:00+09:00`, checkOut = `${day}T18:00:00+09:00`;
+ await f.db.query("INSERT INTO punch_events(store_id,staff_id,event_type,occurred_at,business_date,client_request_id) VALUES ($1,$2,'CHECK_IN',$3,$4,$5)",[f.store,f.staff,checkIn,day,randomUUID()]);
+ for(const body of [request("OTHER",{reason:"Fixture review"}),request("MISSED",{eventType:"CHECK_OUT",occurredAt:checkOut})]){
   const before=await count();
   const results=await Promise.all([f.call(f.correction,body),f.call(f.correction,body)]);
   assert.equal(results[0].correctionRequest.id,results[1].correctionRequest.id);
