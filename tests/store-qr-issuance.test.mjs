@@ -43,7 +43,8 @@ test("missing replay key never blocks QR issuance", async () => {
 
 test("manager QR API authorizes store membership before display or rotation", async () => {
   const route = await readFile(routePath, "utf8");
-  assert.match(route, /st\.role = 'MANAGER'/);
+  assert.match(route, /public\.app_manager_store_allowed\(st\.store_id\)/);
+  assert.match(route, /st\.line_user_id = \$\{identity\.sub\}/);
   assert.match(route, /st\.store_id = \$\{body\.storeId\}::uuid/);
   assert.match(route, /"STATUS", "DISPLAY", "ROTATE", "REVOKE"/);
 });

@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
-        AND st.role = 'MANAGER'
+        AND public.app_manager_store_allowed(st.store_id)
         AND s.status = 'active'
         AND st.store_id = ${body.storeId}::uuid
       ORDER BY st.created_at ASC
