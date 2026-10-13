@@ -44,7 +44,7 @@ type Membership = {
 
 type ViewState =
   | { kind: "loading" }
-  | { kind: "login_required"; message?: string }
+  | { kind: "login_required"; storeToken: string; message?: string }
   | { kind: "line_auth_error" }
   | { kind: "unregistered"; storeName: string }
   | { kind: "store_required"; message: string }
@@ -247,7 +247,7 @@ export default function Home() {
         }
         storeTokenRef.current = storeToken;
         if (!liff.isLoggedIn()) {
-          setView({ kind: liff.isInClient() ? "line_auth_error" : "login_required" });
+          setView(liff.isInClient() ? { kind: "line_auth_error" } : { kind: "login_required", storeToken });
           return;
         }
         let session = await loadStaffSession(storeToken);
@@ -295,7 +295,7 @@ export default function Home() {
       // Keep login directly inside the user's tap; init already completed.
       liff.login({ redirectUri: redirectUri.toString() });
     } catch {
-      setView({ kind: "login_required", message: "LINEのログイン画面を開けませんでした。もう一度お試しください。" });
+      setView({ ...view, message: "LINEのログイン画面を開けませんでした。もう一度お試しください。" });
     }
   }
 
@@ -577,14 +577,25 @@ export default function Home() {
 
         {view.kind === "login_required" && (
           <div className="message">
-            <p className="status">LINEで本人確認</p>
-            <p className="note">ログインすると、打刻画面に進みます。</p>
+            <p className="status">打刻画面を開く</p>
+            <p className="note">いつものLINEアプリで続けます。</p>
             <div className="punch-actions">
-              <button className="punch-button" type="button" onClick={beginLineLogin}>
-                LINEでログイン
-              </button>
+              {/* A normal, user-tapped LIFF link lets the OS open LINE without first starting web login. */}
+              <a
+                className="punch-button line-app-link"
+                href={`https://liff.line.me/${encodeURIComponent(LIFF_ID)}?${new URLSearchParams({ store_token: view.storeToken })}`}
+                rel="noreferrer"
+              >
+                LINEで開く
+              </a>
             </div>
-            <p className="note">LINEが開かない場合は、Safari／Chromeでこのページを開き直してください。</p>
+            <details className="line-login-help">
+              <summary>LINEが開かない場合</summary>
+              <p className="note">このブラウザーでもLINEアカウントでログインできます。</p>
+              <button className="correction-link" type="button" onClick={beginLineLogin}>
+                このブラウザーで続ける
+              </button>
+            </details>
             {view.message && <p className="correction-error" role="alert">{view.message}</p>}
           </div>
         )}
