@@ -10,6 +10,37 @@ type SqlClient = (
   ...values: unknown[]
 ) => Promise<unknown[]>;
 
+type MonthlyReportReference = { reportId: string } | { periodEnd: string };
+
+export function isMonthlyReportReference<T extends { reportId?: unknown; periodEnd?: unknown }>(value: T): value is T & MonthlyReportReference {
+  if (value.reportId !== undefined) {
+    return typeof value.reportId === "string"
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.reportId);
+  }
+  if (typeof value.periodEnd !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value.periodEnd)) return false;
+  const date = new Date(`${value.periodEnd}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value.periodEnd;
+}
+
+export async function loadSentMonthlyReportPeriod(sql: SqlClient, storeId: string, reference: MonthlyReportReference): Promise<Period | null> {
+  const reportId = "reportId" in reference ? reference.reportId : null;
+  const periodEnd = "reportId" in reference ? null : reference.periodEnd;
+  // Historical periods belong to the sent initial delivery, not today's closing rule.
+  // Older open clients send only periodEnd; never pick arbitrarily if it is ambiguous.
+  const reports = await sql`
+    SELECT period_start::text AS start, period_end::text AS end
+    FROM monthly_attendance_deliveries
+    WHERE store_id = ${storeId}::uuid
+      AND delivery_version = 'initial' AND status = 'SENT'
+      AND (
+        (${reportId}::uuid IS NOT NULL AND id = ${reportId}::uuid)
+        OR (${reportId}::uuid IS NULL AND period_end::text = ${periodEnd})
+      )
+    LIMIT 2
+  ` as Period[];
+  return reports.length === 1 ? reports[0] : null;
+}
+
 export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, period: Period) {
   const [events, pendingCorrections] = await Promise.all([
     sql`

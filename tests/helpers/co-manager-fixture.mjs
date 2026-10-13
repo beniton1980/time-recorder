@@ -12,7 +12,7 @@ export async function coManagerFixture(options) {
   await f.db.query("INSERT INTO staff(id,store_id,line_user_id,legal_name,role) VALUES ($1,$3,'fixture_manager','Fixture owner','MANAGER'),($2,$3,'fixture_delegate','Fixture delegate','STAFF')", [owner,delegate,f.store]);
   await f.db.query("INSERT INTO staff_states(staff_id) VALUES ($1),($2)", [owner,delegate]);
   await f.db.query("INSERT INTO staff_manager_access(store_id,staff_id,granted_by_staff_id) VALUES ($1,$2,$3)",[f.store,delegate,owner]);
-  const emails = [], errors = [];
+  const emails = [], errors = [], pdfReports = [];
   class LineTokenVerificationError extends Error {}
   const modules = {
     "next/server": { NextResponse: { json: (value,options) => Response.json(value,options) } },
@@ -31,7 +31,7 @@ export async function coManagerFixture(options) {
     "@/lib/monthly-attendance-query": loadTs("lib/monthly-attendance-query.ts", { "@/lib/monthly-attendance.mjs": monthly }),
     "@/lib/monthly-report-recipient": loadTs("lib/monthly-report-recipient.ts"),
     "@/lib/monthly-attendance-delivery-error.mjs": deliveryError,
-    "@/lib/monthly-attendance-pdf.mjs": { generateMonthlyAttendancePdf: async () => new Uint8Array([37,80,68,70]) },
+    "@/lib/monthly-attendance-pdf.mjs": { generateMonthlyAttendancePdf: async input => { pdfReports.push(input); return new Uint8Array([37,80,68,70]); } },
     "@/lib/monthly-attendance-email.mjs": { sendMonthlyAttendanceEmail: async input => { emails.push(input); return { sent: true, emailId: "fixture-message" }; } },
     "@/lib/store-entry-token": { hashStoreEntryToken: value => createHash("sha256").update(value).digest("hex") },
     "@/lib/store-qr-encryption": { encryptStoreEntryToken: value => "fixture:" + value, decryptStoreEntryToken: value => value.slice(8) },
@@ -59,5 +59,5 @@ export async function coManagerFixture(options) {
     await f.db.query("UPDATE stores SET monthly_report_email='fixture@example.invalid',monthly_report_email_verified_at=NOW(),monthly_report_email_consented_at=NOW(),monthly_report_email_consent_version='2026-08-21-v1',monthly_report_recipient_version_id=$1 WHERE id=$2",[recipient,f.store]);
     await f.db.query("INSERT INTO monthly_attendance_deliveries(store_id,period_start,period_end,status,recipient,sent_at) VALUES($1,'2026-09-01','2026-09-30','SENT','fixture@example.invalid',NOW())",[f.store]);
   };
-  return {...f,owner,delegate,emails,errors,routes,call,staff,pending,seedReport};
+  return {...f,owner,delegate,emails,errors,pdfReports,routes,call,staff,pending,seedReport};
 }

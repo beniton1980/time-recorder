@@ -2,15 +2,14 @@ import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
 import { verifyLineIdToken, LineTokenVerificationError } from "@/lib/line/verify-id-token";
 import { enforceRateLimit } from "@/lib/api-security";
-import { calculateClosingPeriod } from "@/lib/monthly-attendance.mjs";
-import { loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
+import { isMonthlyReportReference, loadSentMonthlyReportPeriod, loadMonthlyAttendance } from "@/lib/monthly-attendance-query";
 import { buildMonthlyAttendanceReport } from "@/lib/monthly-attendance-report.mjs";
 import { createMonthlyAttendanceCsv } from "@/lib/monthly-attendance-csv.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Body = { idToken?: unknown; storeId?: unknown; periodEnd?: unknown };
+type Body = { idToken?: unknown; storeId?: unknown; reportId?: unknown; periodEnd?: unknown };
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -18,7 +17,7 @@ export async function POST(request: Request) {
   let body: Body;
   try { body = await request.json() as Body; }
   catch { return Response.json({ ok: false, code: "INVALID_JSON" }, { status: 400 }); }
-  if (typeof body.idToken !== "string" || typeof body.storeId !== "string" || !uuidPattern.test(body.storeId) || typeof body.periodEnd !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.periodEnd)) {
+  if (typeof body.idToken !== "string" || typeof body.storeId !== "string" || !uuidPattern.test(body.storeId) || !isMonthlyReportReference(body)) {
     return Response.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
   const limited = await enforceRateLimit(request, { scope: "manager-monthly-csv", limit: 30, windowSeconds: 300 }, body.idToken);
@@ -31,7 +30,7 @@ export async function POST(request: Request) {
       storeId: body.storeId as string,
     });
     const managers = await sql`
-      SELECT s.id, s.name, s.timezone, s.closing_rule
+      SELECT s.id, s.name, s.timezone
       FROM staff st JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.store_id = ${body.storeId}::uuid
@@ -42,13 +41,8 @@ export async function POST(request: Request) {
     `;
     if (managers.length === 0) return Response.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
     const store = managers[0];
-    const period = calculateClosingPeriod(String(store.closing_rule), body.periodEnd);
-    const reports = await sql`
-      SELECT id FROM monthly_attendance_deliveries
-      WHERE store_id = ${store.id}::uuid AND period_start = ${period.start}::date AND period_end = ${period.end}::date
-        AND delivery_version = 'initial' AND status = 'SENT' LIMIT 1
-    `;
-    if (reports.length === 0) return Response.json({ ok: false, code: "MONTHLY_REPORT_NOT_FOUND" }, { status: 404 });
+    const period = await loadSentMonthlyReportPeriod(sql as never, String(store.id), body);
+    if (!period) return Response.json({ ok: false, code: "MONTHLY_REPORT_NOT_FOUND" }, { status: 404 });
     const monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
     const report = buildMonthlyAttendanceReport({
       storeName: String(store.name),

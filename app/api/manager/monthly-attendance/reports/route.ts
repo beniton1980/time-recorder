@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       return Response.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
     }
     const reports = await sql`
-      SELECT d.period_start::text, d.period_end::text, d.sent_at,
+      SELECT d.id, d.period_start::text, d.period_end::text, d.sent_at,
         COUNT(*) FILTER (WHERE all_versions.delivery_version LIKE 'reissue-%' AND all_versions.status = 'SENT')::int AS reissue_count
       FROM monthly_attendance_deliveries d
       LEFT JOIN monthly_attendance_deliveries all_versions ON all_versions.store_id = d.store_id AND all_versions.period_start = d.period_start AND all_versions.period_end = d.period_end
