@@ -94,27 +94,10 @@ type StaffMembership = {
   state: WorkState;
 };
 
-type DirectEdit = {
-  staffId: string;
-  staffName: string;
-  operation: "ADD" | "REPLACE" | "VOID";
-  targetEffectiveId?: string;
-  eventType: EventType;
-  date: string;
-  time: string;
-  reason: string;
-};
-
 type ReviewDraft = {
   eventType: EventType;
   date: string;
   time: string;
-};
-
-const stateLabels: Record<WorkState, string> = {
-  OFF_DUTY: "勤務前・退勤済み",
-  WORKING: "勤務中",
-  ON_BREAK: "休憩中",
 };
 
 const eventLabels: Record<EventType, string> = {
@@ -164,11 +147,8 @@ export default function ManagerPage() {
   const [deciding, setDeciding] = useState<string | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [directEdit, setDirectEdit] = useState<DirectEdit | null>(null);
-  const [directSubmitting, setDirectSubmitting] = useState(false);
-  const [directError, setDirectError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
-  const [selectedStaffId, setSelectedStaffId] = useState("ALL");
+  const [selectedStaffId, setSelectedStaffId] = useState("");
   const [updatingStaffId, setUpdatingStaffId] = useState<string | null>(null);
   const [showDepartedStaff, setShowDepartedStaff] = useState(false);
   const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
@@ -336,7 +316,7 @@ export default function ManagerPage() {
           if (!initialStoreId) {
             throw new Error("管理対象の店舗を確認できませんでした。");
           }
-          const loadedDashboard = await loadDashboard(selectedDate, initialStoreId);
+          const loadedDashboard = await loadDashboard(currentBusinessDate(), initialStoreId);
           await loadMonthlyReports(loadedDashboard.manager.store_id);
         }
       } catch (caught) {
@@ -350,13 +330,12 @@ export default function ManagerPage() {
     return () => {
       active = false;
     };
-  }, [loadDashboard, loadManagerMemberships, loadMonthlyReports, selectedDate]);
+  }, [loadDashboard, loadManagerMemberships, loadMonthlyReports]);
 
   async function changeStore(storeId: string) {
     if (!dashboard || storeId === dashboard.manager.store_id) return;
     setSwitchingStore(true);
     setError(null);
-    setSelectedStaffId("ALL");
     setMonthlyReports([]);
     setReissueMessage(null);
     setStoreLocationMessage(null);
@@ -365,8 +344,9 @@ export default function ManagerPage() {
     try {
       const url = new URL(window.location.href);
       url.searchParams.set("store_id", storeId);
-      window.history.replaceState(null, "", url);
       const loadedDashboard = await loadDashboard(undefined, storeId);
+      setSelectedStaffId("");
+      window.history.replaceState(null, "", url);
       await loadMonthlyReports(loadedDashboard.manager.store_id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "店舗を切り替えられませんでした。");
@@ -454,86 +434,6 @@ export default function ManagerPage() {
         ...values,
       },
     }));
-  }
-
-  function openDirectEdit(
-    staff: Attendance,
-    operation: "ADD" | "REPLACE" | "VOID",
-    target?: DayEvent,
-  ) {
-    const currentParts = inputParts(new Date().toISOString());
-    const parts = target
-      ? inputParts(target.occurred_at)
-      : { date: selectedDate, time: currentParts.time };
-    setDirectEdit({
-      staffId: staff.staff_id,
-      staffName: staff.legal_name,
-      operation,
-      targetEffectiveId: target?.effective_id,
-      eventType: target?.event_type ?? "CHECK_IN",
-      date: parts.date,
-      time: parts.time,
-      reason: "",
-    });
-    setError(null);
-    setDirectError(null);
-  }
-
-  async function submitDirectEdit() {
-    if (!directEdit || !directEdit.reason.trim()) {
-      setDirectError("管理者による修正理由を入力してください。");
-      return;
-    }
-    await dismissKeyboard();
-    if (!window.confirm(`${directEdit.staffName}さんの打刻履歴を修正しますか？`)) return;
-
-    setDirectSubmitting(true);
-    setError(null);
-    setDirectError(null);
-    try {
-      const idToken = liff.getIDToken();
-      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
-      const response = await fetch("/api/manager/punch-corrections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idToken,
-          storeId: dashboard?.manager.store_id,
-          staffId: directEdit.staffId,
-          operation: directEdit.operation,
-          targetEffectiveId: directEdit.targetEffectiveId,
-          eventType: directEdit.operation === "VOID" ? undefined : directEdit.eventType,
-          occurredAt:
-            directEdit.operation === "VOID"
-              ? undefined
-              : managerCorrectionTimestamp(directEdit.date, directEdit.time),
-          reason: directEdit.reason.trim(),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        if (data.code === "DUPLICATE_PUNCH_TIME") {
-          throw new Error("同じ時刻の打刻が既にあります。時刻を確認してください。");
-        }
-        if (data.code === "INVALID_PUNCH_SEQUENCE") {
-          throw new Error("この修正では打刻の順序が正しくなりません。履歴を確認してください。");
-        }
-        const messages: Record<string, string> = {
-          OCCURRED_AT_IN_FUTURE: "未来の日時には修正できません。実際に打刻した日付・時刻を確認してください。",
-          TARGET_NOT_FOUND: "選択した打刻が最新の履歴に見つかりません。画面を更新してください。",
-          INVALID_PUNCH_SEQUENCE: "この修正では打刻の順序が正しくなりません。履歴を確認してください。",
-          DUPLICATE_PUNCH_TIME: "同じ時刻の打刻が既にあります。時刻を確認してください。",
-          REQUEST_NOT_PENDING: "この申請は既に処理されています。",
-        };
-        throw new Error(messages[data.code] ?? `打刻履歴を修正できませんでした（${data.code ?? "不明なエラー"}）`);
-      }
-      setDirectEdit(null);
-      await reloadDashboard(selectedDate);
-    } catch (caught) {
-      setDirectError(caught instanceof Error ? caught.message : "打刻履歴を修正できませんでした。");
-    } finally {
-      setDirectSubmitting(false);
-    }
   }
 
   async function decide(correction: Correction, decision: "APPROVED" | "REJECTED") {
@@ -763,9 +663,11 @@ export default function ManagerPage() {
     }
   }
 
-  const visibleAttendance = dashboard?.attendance.filter(
-    (staff) => selectedStaffId === "ALL" || staff.staff_id === selectedStaffId,
-  ) ?? [];
+  // Derive both the controlled selection and link from the current response.
+  // Preserve a valid selection on refresh, otherwise use the first current staff.
+  const attendanceStaffId = dashboard?.attendance.find(
+    (staff) => staff.staff_id === selectedStaffId,
+  )?.staff_id ?? dashboard?.attendance[0]?.staff_id ?? "";
   const monthlyRecipientConfirmed = Boolean(
     dashboard?.manager.monthly_report_email
     && dashboard.manager.monthly_report_email_verified_at
@@ -947,26 +849,22 @@ export default function ManagerPage() {
               )}
             </section>
 
-            <section className={styles.section}>
+            <section className={styles.section} data-dashboard-key="attendance" aria-busy={switchingStore}>
               <div className={styles.sectionHeading}>
-                <h2>勤務状況</h2>
-                <button type="button" onClick={() => void reloadDashboard(selectedDate)}>更新</button>
+                <h2>勤怠確認</h2>
+                <span>{dashboard.attendance.length}名</span>
               </div>
-              <label className={styles.dateSelector}>
-                表示する営業日
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(event) => setSelectedDate(event.target.value)}
-                />
-              </label>
+              <p className={styles.sectionNote}>
+                スタッフを選択すると、その人の今月の勤怠・要確認・打刻修正をまとめて確認できます。
+              </p>
               <label className={styles.staffSelector}>
                 スタッフを選択
                 <select
-                  value={selectedStaffId}
+                  value={attendanceStaffId}
+                  disabled={switchingStore || !attendanceStaffId}
                   onChange={(event) => setSelectedStaffId(event.target.value)}
                 >
-                  <option value="ALL">全スタッフ</option>
+                  {dashboard.attendance.length === 0 && <option value="">対象のスタッフはいません</option>}
                   {dashboard.attendance.map((staff) => (
                     <option key={staff.staff_id} value={staff.staff_id}>
                       {staff.legal_name}
@@ -974,100 +872,16 @@ export default function ManagerPage() {
                   ))}
                 </select>
               </label>
-              <div className={styles.sectionHeading}>
-                <strong>{selectedDate.replaceAll("-", "/")}</strong>
-                <span>{visibleAttendance.length}名</span>
-              </div>
-              <ul className={styles.attendanceList}>
-                {visibleAttendance.map((staff) => (
-                  <li key={staff.staff_id}>
-                    <div>
-                      <strong>{staff.legal_name}</strong>
-                      <span className={`${styles.state} ${styles[staff.state]}`}>
-                        {stateLabels[staff.state]}
-                      </span>
-                    </div>
-                    {staff.carried_over_active && staff.active_since && (
-                      <p className={styles.fieldError} role="alert">
-                        前営業日から
-                        {staff.current_state === "ON_BREAK" ? "休憩" : "勤務"}が継続中です
-                        （出勤 {formatDateTime(staff.active_since)}）
-                      </p>
-                    )}
-                    <p>
-                      {staff.last_event_at && staff.last_event_type
-                        ? `最終 ${formatTime(staff.last_event_at)} ${eventLabels[staff.last_event_type]}`
-                        : "この日の打刻なし"}
-                      <small>{staff.punch_count}件</small>
-                    </p>
-                    <div className={styles.directHistory}>
-                      <ol>
-                        {staff.day_events.map((dayEvent) => (
-                          <li key={dayEvent.effective_id}>
-                            <time>{formatTime(dayEvent.occurred_at)}</time>
-                            <strong>{eventLabels[dayEvent.event_type]}</strong>
-                            {dayEvent.corrected && <small>訂正</small>}
-                            <button type="button" onClick={() => openDirectEdit(staff, "REPLACE", dayEvent)}>
-                              変更
-                            </button>
-                            <button type="button" onClick={() => openDirectEdit(staff, "VOID", dayEvent)}>
-                              取消
-                            </button>
-                          </li>
-                        ))}
-                      </ol>
-                      <button type="button" className={styles.addPunch} onClick={() => openDirectEdit(staff, "ADD")}>
-                        打刻を追加
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              {attendanceStaffId && !switchingStore && (
+                <a
+                  data-staff-attendance-link="true"
+                  aria-label="選択したスタッフの個人勤怠を開く"
+                  href={"/manager/staff-attendance?store_id=" + encodeURIComponent(dashboard.manager.store_id) + "&staff_id=" + encodeURIComponent(attendanceStaffId)}
+                >
+                  個人の勤怠を開く
+                </a>
+              )}
             </section>
-
-            {directEdit && (
-              <section className={`${styles.section} ${styles.editPanel}`} role="dialog" aria-modal="true" aria-label={`${directEdit.staffName}さんの打刻修正`}>
-                <div className={styles.sectionHeading}>
-                  <h2>{directEdit.staffName}さんの打刻修正</h2>
-                </div>
-                <div className={styles.resolution}>
-                  <p>
-                    {directEdit.operation === "ADD"
-                      ? "打刻を追加"
-                      : directEdit.operation === "REPLACE"
-                        ? "選択した打刻を変更"
-                        : "選択した打刻を取消"}
-                  </p>
-                  {directEdit.operation !== "VOID" && (
-                    <>
-                      <label>
-                        打刻種類
-                        <select value={directEdit.eventType} onChange={(event) => setDirectEdit({ ...directEdit, eventType: event.target.value as EventType })}>
-                          {Object.entries(eventLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
-                      </label>
-                      <div className={styles.resolutionDateTime}>
-                        <label>日付<input type="date" value={directEdit.date} onChange={(event) => setDirectEdit({ ...directEdit, date: event.target.value })} /></label>
-                        <label>時刻<input type="time" value={directEdit.time} onChange={(event) => setDirectEdit({ ...directEdit, time: event.target.value })} /></label>
-                      </div>
-                    </>
-                  )}
-                  <label>
-                    修正理由
-                    <input value={directEdit.reason} onChange={(event) => setDirectEdit({ ...directEdit, reason: event.target.value })} placeholder="例：管理者確認により時刻を修正" />
-                  </label>
-                  {directError && (
-                    <p className={styles.fieldError} role="alert">{directError}</p>
-                  )}
-                  <div className={styles.actions}>
-                    <button type="button" className={styles.reject} onClick={() => { setDirectEdit(null); setDirectError(null); }}>キャンセル</button>
-                    <button type="button" className={styles.approve} disabled={directSubmitting} onClick={() => void submitDirectEdit()}>
-                      {directSubmitting ? "処理中…" : "修正を確定"}
-                    </button>
-                  </div>
-                </div>
-              </section>
-            )}
 
             <section className={styles.section}>
               <div className={styles.sectionHeading}>

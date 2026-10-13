@@ -3,8 +3,7 @@ main section[data-dashboard-renewal="true"] {
   flex-direction: column;
 }
 
-/* Keep the QR anchor in the DOM: the attendance enhancer reads its store_id.
-   Hide unclassified sections too, before the enhancer's first animation frame. */
+/* Hide unclassified sections too, before the enhancer's first animation frame. */
 main[data-manager-attendance-preview="true"] > section > header > a,
 main[data-manager-attendance-preview="true"] > section > section:not([data-dashboard-key="attendance"]) {
   display: none !important;
