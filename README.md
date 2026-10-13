@@ -38,6 +38,12 @@ Previewのメール送信は既定で停止し、安全なテスト送信先を�
 
 スタッフのLINE実機確認では、同じLINE Loginチャネルに検証専用LIFFを作り、そのIDを対象ブランチのPreview限定で`NEXT_PUBLIC_ATTENDANCE_LIFF_ID`へ設定します。Endpointは対象PreviewのルートURL（末尾`/`）、Full、scopeは`openid`だけとし、検証専用店舗のQRを使います。打刻画面と`/liff-entry`がこのIDを使い、未設定時は既存の本番IDを維持します。認証チャネル自体は変わりません。管理画面・オンボーディングの入口はこの設定の対象外です。本番LIFFのEndpointを検証先へ変更しません。
 
+管理者の勤怠修正を実機確認する場合は、同じLINE Loginチャネルに管理者検証専用LIFFを作り、対象ブランチのPreview限定で`NEXT_PUBLIC_MANAGER_LIFF_ID`へ設定します。Endpointは対象Previewの`/manager`（末尾`/`なし）、Full、scopeは`openid`だけとします。入口QRは`https://liff.line.me/{検証用LIFF ID}`とし、末尾に`/manager`を重ねません。管理者トップ、個人勤怠、個人勤怠の編集の3画面がこのIDで初期化され、未設定時は既存の本番IDを維持します。管理者権限は検証DBの所属と既存APIで確認し、認証を迂回しません。
+
+この設定がある場合だけ、3画面に検証用の表示を付け、管理者トップは勤怠確認に絞ります。本番LIFFへ移動し得るQR管理・掲示・店舗設定・給与等の入口は表示せず、共同管理者の案内共有も無効にします。勤怠リンク生成に必要なQRアンカーは非表示でDOMに保持します。未設定時の本番画面は変わりません。
+
+この管理者検証入口から`/liff-entry/manager`は通りません。旧入口や対象外画面をURL指定で開く用途には対応していません。本番のリッチメニューからは従来の本番環境が開きます。検証には専用QRを使い、PreviewへのDB分離・メール停止は引き続き必須です。
+
 ## 本番DBの権限分離
 
 `db/migrations/0017_least_privilege_app_role.sql` は、所有者権限を持たない`onogami_app`権限グループを作成し、ONOGAMI固有関数の`PUBLIC`実行権限を取り消します。アプリ接続の切り替え時は、リポジトリへパスワードを保存せず、Neonで専用LOGINロールを別途作成して`onogami_app`へ所属させ、その接続URLをVercel Productionの`DATABASE_URL`へ設定します。`neondb_owner`はマイグレーション専用としてアプリから分離します。

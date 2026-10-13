@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { managerCorrectionInputParts, managerCorrectionTimestamp } from "@/lib/manager-correction-datetime";
 import styles from "./edit.module.css";
 
-const LIFF_ID = "2010761826-6FNSE1PD";
+const LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || "2010761826-6FNSE1PD";
 type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
 type Operation = "ADD" | "REPLACE" | "VOID";
 type StaffEvent = { effectiveId: string; businessDate: string; eventType: EventType; occurredAt: string; corrected: boolean };
@@ -251,6 +251,7 @@ export default function StaffAttendanceEditPage() {
           <p className={styles.eyebrow}>ONOGAMI 勤怠</p>
           <h1>{payload ? `${payload.staff.legalName}さんの打刻修正` : "打刻修正"}</h1>
           {businessDate && <p className={styles.date}>{dateLabel(businessDate)}の勤務</p>}
+          {process.env.NEXT_PUBLIC_MANAGER_LIFF_ID && <p className="manager-preview-notice">検証用の勤怠画面です。</p>}
         </header>
 
         {message && !routeError && <p className={styles.status}>{message}</p>}

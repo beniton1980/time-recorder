@@ -30,6 +30,7 @@ function screen(businessDate = "2026-04-30", occurredAt = "2026-05-01T02:00:00+0
     "@/lib/manager-correction-datetime": datetime,
     "./edit.module.css": { default: {} },
   }, {
+    process: { env: {} },
     HTMLElement: class {}, document: { activeElement: null },
     window: { requestAnimationFrame: fn => fn(), location: { replace: url => redirects.push(url) } },
     fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok: status < 400, json: async () => result }; },

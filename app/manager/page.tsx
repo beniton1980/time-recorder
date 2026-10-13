@@ -7,6 +7,8 @@ import { managerCorrectionInputParts as inputParts, managerCorrectionTimestamp }
 import styles from "./manager.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
+const MANAGER_SESSION_LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || LIFF_ID;
+const MANAGER_ATTENDANCE_PREVIEW = Boolean(process.env.NEXT_PUBLIC_MANAGER_LIFF_ID);
 const MANAGER_QR_LIFF_URL = `https://liff.line.me/${LIFF_ID}/manager/qr`;
 
 type WorkState = "OFF_DUTY" | "WORKING" | "ON_BREAK";
@@ -233,7 +235,7 @@ export default function ManagerPage() {
   }
 
   async function shareCoManagerGuide() {
-    if (!coManagerShare) return;
+    if (MANAGER_ATTENDANCE_PREVIEW || !coManagerShare) return;
     const guide = `${coManagerShare.legalName}さん\n${coManagerShare.storeName}の勤怠管理者に登録しました。\n次のリンクから管理者画面を開いてください。\nhttps://liff.line.me/${LIFF_ID}/manager`;
     setCoManagerWorking(true);
     try {
@@ -319,7 +321,7 @@ export default function ManagerPage() {
 
     async function start() {
       try {
-        await liff.init({ liffId: LIFF_ID });
+        await liff.init({ liffId: MANAGER_SESSION_LIFF_ID });
         if (!liff.isLoggedIn()) {
           liff.login({ redirectUri: window.location.href });
           return;
@@ -777,11 +779,12 @@ export default function ManagerPage() {
   const departedStaffMemberships = dashboard?.staffMemberships.filter((staff) => staff.status === "departed") ?? [];
 
   return (
-    <main className={styles.page}>
+    <main className={styles.page} data-manager-attendance-preview={MANAGER_ATTENDANCE_PREVIEW ? "true" : undefined}>
       <section className={styles.shell}>
         <header className={styles.header}>
           <p className={styles.eyebrow}>ONOGAMI</p>
           <h1>管理者画面</h1>
+          {MANAGER_ATTENDANCE_PREVIEW && <p className="manager-preview-notice">検証用の勤怠画面です。スタッフを選び、打刻の追加・変更・取消を確認できます。</p>}
           {dashboard && (
             <>
               {managerMemberships.length > 1 ? (
@@ -804,7 +807,7 @@ export default function ManagerPage() {
               )}
               {switchingStore && <p className={styles.switchingStore} role="status">店舗を切り替えています…</p>}
               <p className={styles.manager}>{dashboard.manager.legal_name}さん</p>
-              <a href={`${MANAGER_QR_LIFF_URL}?store_id=${encodeURIComponent(dashboard.manager.store_id)}`}>店舗QRを発行・再発行</a>
+              <a hidden={MANAGER_ATTENDANCE_PREVIEW} href={`${MANAGER_QR_LIFF_URL}?store_id=${encodeURIComponent(dashboard.manager.store_id)}`}>店舗QRを発行・再発行</a>
             </>
           )}
         </header>
@@ -826,7 +829,7 @@ export default function ManagerPage() {
               <div className={styles.coManagerInvite}>
                 <label>登録済みスタッフを選択<select value={selectedCoManagerStaffId} onChange={(event) => setSelectedCoManagerStaffId(event.target.value)}><option value="">選択してください</option>{coManagerCandidates.map((staff) => <option key={staff.staff_id} value={staff.staff_id}>{staff.legal_name}</option>)}</select></label>
                 <button type="button" disabled={coManagerWorking || !selectedCoManagerStaffId} onClick={() => void grantCoManagerAccess()}>共同管理者に登録</button>
-                {coManagerShare && <button type="button" className={styles.shareGuideButton} disabled={coManagerWorking} onClick={() => void shareCoManagerGuide()}>LINEで案内を共有</button>}
+                {coManagerShare && !MANAGER_ATTENDANCE_PREVIEW && <button type="button" className={styles.shareGuideButton} disabled={coManagerWorking} onClick={() => void shareCoManagerGuide()}>LINEで案内を共有</button>}
                 {coManagerMessage && <p className={styles.reissueMessage} role="status">{coManagerMessage}</p>}
               </div>
               {coManagerCandidates.length === 0 && dashboard.staffMemberships.length > 0 && <p className={styles.sectionNote}>追加できる登録済みスタッフはいません。</p>}
