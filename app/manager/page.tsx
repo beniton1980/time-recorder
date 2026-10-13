@@ -3,6 +3,7 @@
 import liff from "@line/liff";
 import { useCallback, useEffect, useState } from "react";
 import { correctionValidationMessage } from "@/lib/correction-validation";
+import { managerCorrectionInputParts as inputParts, managerCorrectionTimestamp } from "@/lib/manager-correction-datetime";
 import styles from "./manager.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -128,19 +129,6 @@ function formatTime(value: string) {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(value));
-}
-
-function inputParts(value: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).formatToParts(new Date(value));
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
-  return {
-    date: `${part("year")}-${part("month")}-${part("day")}`,
-    time: `${part("hour")}:${part("minute")}`,
-  };
 }
 
 function formatDateTime(value: string) {
@@ -516,7 +504,7 @@ export default function ManagerPage() {
           occurredAt:
             directEdit.operation === "VOID"
               ? undefined
-              : new Date(`${directEdit.date}T${directEdit.time}`).toISOString(),
+              : managerCorrectionTimestamp(directEdit.date, directEdit.time),
           reason: directEdit.reason.trim(),
         }),
       });
@@ -529,6 +517,7 @@ export default function ManagerPage() {
           throw new Error("この修正では打刻の順序が正しくなりません。履歴を確認してください。");
         }
         const messages: Record<string, string> = {
+          OCCURRED_AT_IN_FUTURE: "未来の日時には修正できません。実際に打刻した日付・時刻を確認してください。",
           TARGET_NOT_FOUND: "選択した打刻が最新の履歴に見つかりません。画面を更新してください。",
           INVALID_PUNCH_SEQUENCE: "この修正では打刻の順序が正しくなりません。履歴を確認してください。",
           DUPLICATE_PUNCH_TIME: "同じ時刻の打刻が既にあります。時刻を確認してください。",
@@ -586,7 +575,7 @@ export default function ManagerPage() {
             correction.operation === "REVIEW" ? draft?.eventType : undefined,
           resolvedOccurredAt:
             correction.operation === "REVIEW" && draft
-              ? new Date(`${draft.date}T${draft.time}`).toISOString()
+              ? managerCorrectionTimestamp(draft.date, draft.time)
               : undefined,
         }),
       });

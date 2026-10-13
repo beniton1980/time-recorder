@@ -1,7 +1,8 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { managerCorrectionInputParts, managerCorrectionTimestamp } from "@/lib/manager-correction-datetime";
 import styles from "./edit.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -59,17 +60,20 @@ function dateLabel(value: string) {
   }).format(date);
 }
 
-function eventTimeInput(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Tokyo",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(value));
+function eventDateTimeLabel(value: string) {
+  const parts = managerCorrectionInputParts(value);
+  return `${dateLabel(parts.date)} ${parts.time}`;
 }
 
-function readRouteParams(): RouteParams {
-  const params = new URLSearchParams(window.location.search);
+function subscribeLocation(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+}
+const locationSearch = () => window.location.search;
+const serverLocationSearch = () => null;
+
+function readRouteParams(search: string): RouteParams {
+  const params = new URLSearchParams(search);
   return {
     storeId: params.get("store_id") ?? "",
     staffId: params.get("staff_id") ?? "",
@@ -78,7 +82,8 @@ function readRouteParams(): RouteParams {
 }
 
 export default function StaffAttendanceEditPage() {
-  const [routeParams, setRouteParams] = useState<RouteParams | null>(null);
+  const search = useSyncExternalStore(subscribeLocation, locationSearch, serverLocationSearch);
+  const routeParams = useMemo(() => search === null ? null : readRouteParams(search), [search]);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -92,15 +97,12 @@ export default function StaffAttendanceEditPage() {
   const staffId = routeParams?.staffId ?? "";
   const businessDate = routeParams?.businessDate ?? "";
 
-  useEffect(() => { setRouteParams(readRouteParams()); }, []);
+  const routeError = routeParams && (!storeId || !staffId || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate))
+    ? "修正対象の日付を確認できませんでした。" : null;
+  const visibleError = routeError ?? error;
 
   useEffect(() => {
-    if (!routeParams) return;
-    if (!storeId || !staffId || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
-      setMessage("");
-      setError("修正対象の日付を確認できませんでした。");
-      return;
-    }
+    if (!routeParams || routeError) return;
 
     let active = true;
     async function load() {
@@ -125,16 +127,13 @@ export default function StaffAttendanceEditPage() {
     }
     void load();
     return () => { active = false; };
-  }, [businessDate, routeParams, staffId, storeId]);
+  }, [businessDate, routeError, routeParams, staffId, storeId]);
 
   const dayEvents = useMemo(
     () => (payload?.events ?? []).filter((event) => event.businessDate === businessDate),
     [businessDate, payload],
   );
-  const targetEvent = useMemo(
-    () => edit?.targetEffectiveId ? dayEvents.find((event) => event.effectiveId === edit.targetEffectiveId) ?? null : null,
-    [dayEvents, edit?.targetEffectiveId],
-  );
+  const targetEvent = dayEvents.find((event) => event.effectiveId === edit?.targetEffectiveId) ?? null;
 
   function attendanceHref(date = businessDate) {
     return `/manager/staff-attendance?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&month=${encodeURIComponent(date.slice(0, 7))}`;
@@ -160,11 +159,11 @@ export default function StaffAttendanceEditPage() {
   }
 
   function startReplace(event: StaffEvent) {
-    startEdit({ operation: "REPLACE", targetEffectiveId: event.effectiveId, eventType: event.eventType, date: businessDate, time: eventTimeInput(event.occurredAt), reason: "", reasonChoice: "" });
+    startEdit({ operation: "REPLACE", targetEffectiveId: event.effectiveId, eventType: event.eventType, ...managerCorrectionInputParts(event.occurredAt), reason: "", reasonChoice: "" });
   }
 
   function startVoid(event: StaffEvent) {
-    startEdit({ operation: "VOID", targetEffectiveId: event.effectiveId, eventType: event.eventType, date: businessDate, time: eventTimeInput(event.occurredAt), reason: "", reasonChoice: "" });
+    startEdit({ operation: "VOID", targetEffectiveId: event.effectiveId, eventType: event.eventType, ...managerCorrectionInputParts(event.occurredAt), reason: "", reasonChoice: "" });
   }
 
   function finalReason() {
@@ -182,8 +181,8 @@ export default function StaffAttendanceEditPage() {
       setSubmitMessage(edit.operation === "VOID" ? "その他の取消理由を入力してください。" : "その他の修正理由を入力してください。");
       return false;
     }
-    if (edit.operation !== "VOID" && (!edit.eventType || !edit.time)) {
-      setSubmitMessage("打刻種類と時刻を入力してください。");
+    if (edit.operation !== "VOID" && (!edit.eventType || !edit.date || !edit.time)) {
+      setSubmitMessage("打刻種類・日付・時刻を入力してください。");
       return false;
     }
     return true;
@@ -215,20 +214,22 @@ export default function StaffAttendanceEditPage() {
           operation: edit.operation,
           targetEffectiveId: edit.targetEffectiveId,
           eventType: edit.operation === "VOID" ? undefined : edit.eventType,
-          occurredAt: edit.operation === "VOID" ? undefined : new Date(`${edit.date}T${edit.time}:00+09:00`).toISOString(),
+          occurredAt: edit.operation === "VOID" ? undefined : managerCorrectionTimestamp(edit.date, edit.time),
           reason: finalReason(),
         }),
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
         const messages: Record<string, string> = {
+          OCCURRED_AT_IN_FUTURE: "未来の日時には修正できません。実際に打刻した日付・時刻を確認してください。",
           DUPLICATE_PUNCH_TIME: "同じ時刻の打刻が既にあります。時刻を確認してください。",
           INVALID_PUNCH_SEQUENCE: "この修正では打刻の順序が正しくなりません。履歴を確認してください。",
           TARGET_NOT_FOUND: "選択した打刻が最新の履歴に見つかりません。画面を更新してください。",
         };
         throw new Error(messages[data.code] ?? "打刻を修正できませんでした。");
       }
-      window.location.replace(attendanceHref(edit.date));
+      // Return to the attendance month where the manager started this correction.
+      window.location.replace(attendanceHref());
     } catch (caught) {
       setSubmitMessage(caught instanceof Error ? caught.message : "打刻を修正できませんでした。");
     } finally {
@@ -249,20 +250,20 @@ export default function StaffAttendanceEditPage() {
           <button type="button" className={styles.back} onClick={goBackToAttendance}>← 個人勤怠へ戻る</button>
           <p className={styles.eyebrow}>ONOGAMI 勤怠</p>
           <h1>{payload ? `${payload.staff.legalName}さんの打刻修正` : "打刻修正"}</h1>
-          {businessDate && <p className={styles.date}>{dateLabel(businessDate)}</p>}
+          {businessDate && <p className={styles.date}>{dateLabel(businessDate)}の勤務</p>}
         </header>
 
-        {message && <p className={styles.status}>{message}</p>}
-        {error && <p className={styles.error} role="alert">{error}</p>}
+        {message && !routeError && <p className={styles.status}>{message}</p>}
+        {visibleError && <p className={styles.error} role="alert">{visibleError}</p>}
 
-        {payload && !error && (
+        {payload && !visibleError && (
           <>
             <section className={styles.history}>
               <div className={styles.sectionHeading}><h2>この日の打刻</h2><span>{dayEvents.length}件</span></div>
               {dayEvents.length === 0 ? <p className={styles.empty}>打刻記録はありません</p> : (
                 <ol>{dayEvents.map((event) => (
                   <li key={event.effectiveId}>
-                    <div><time>{formatTime(event.occurredAt)}</time><strong>{eventLabels[event.eventType]}</strong>{event.corrected && <small>訂正</small>}</div>
+                    <div><time dateTime={event.occurredAt}>{managerCorrectionInputParts(event.occurredAt).date === businessDate ? formatTime(event.occurredAt) : eventDateTimeLabel(event.occurredAt)}</time><strong>{eventLabels[event.eventType]}</strong>{event.corrected && <small>訂正</small>}</div>
                     <div className={styles.eventActions}><button type="button" onClick={() => startReplace(event)}>変更</button><button type="button" onClick={() => startVoid(event)}>取消</button></div>
                   </li>
                 ))}</ol>
@@ -278,7 +279,9 @@ export default function StaffAttendanceEditPage() {
                     {edit.operation !== "VOID" && (
                       <label>打刻種類<select value={edit.eventType} onChange={(event) => setEdit({ ...edit, eventType: event.target.value as EventType | "" })}><option value="">選択してください</option>{Object.entries(eventLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                     )}
-                    <label>日付<input type="date" value={edit.date} onChange={(event) => setEdit({ ...edit, date: event.target.value })} /></label>
+                    {edit.operation === "VOID" ? (
+                      <p>取り消す打刻：{dateLabel(edit.date)} {edit.time} {edit.eventType && eventLabels[edit.eventType]}</p>
+                    ) : <label>実際の打刻日<input type="date" value={edit.date} onChange={(event) => setEdit({ ...edit, date: event.target.value })} /></label>}
                     {edit.operation !== "VOID" && <label>時刻<input type="time" step="60" value={edit.time} onChange={(event) => setEdit({ ...edit, time: event.target.value })} /></label>}
                     <label>{edit.operation === "VOID" ? "取消理由" : "修正理由"}
                       <select value={edit.reasonChoice} onChange={(event) => setEdit({ ...edit, reasonChoice: event.target.value, reason: event.target.value === "その他" ? edit.reason : "" })}>
@@ -298,7 +301,7 @@ export default function StaffAttendanceEditPage() {
                       <div><dt>日付</dt><dd>{dateLabel(edit.date)}</dd></div>
                       <div><dt>打刻</dt><dd>{edit.eventType ? eventLabels[edit.eventType] : targetEvent ? eventLabels[targetEvent.eventType] : "—"}</dd></div>
                       {edit.operation === "ADD" && <div><dt>追加する時刻</dt><dd>{edit.time}</dd></div>}
-                      {edit.operation === "REPLACE" && <div><dt>時刻</dt><dd>{targetEvent ? formatTime(targetEvent.occurredAt) : "—"} → {edit.time}</dd></div>}
+                      {edit.operation === "REPLACE" && <><div><dt>変更前</dt><dd>{targetEvent ? eventDateTimeLabel(targetEvent.occurredAt) : "—"}</dd></div><div><dt>変更後</dt><dd>{dateLabel(edit.date)} {edit.time}</dd></div></>}
                       {edit.operation === "VOID" && <div><dt>取り消す時刻</dt><dd>{targetEvent ? formatTime(targetEvent.occurredAt) : "—"}</dd></div>}
                       <div><dt>{edit.operation === "VOID" ? "取消理由" : "修正理由"}</dt><dd>{finalReason()}</dd></div>
                     </dl>
