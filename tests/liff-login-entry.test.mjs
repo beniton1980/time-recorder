@@ -14,7 +14,7 @@ function nodes(node, type) {
 
 function screen({path = "app/page.tsx", loggedIn = false, inClient = false,
   href = "https://fixture.example/?store_token=fixture-store-token", delayedInit = false,
-  initError = false, loginError = false} = {}) {
+  initError = false, loginError = false, liffId} = {}) {
   const states = [], refs = [], effects = [], cleanups = [];
   const calls = {init: [], login: [], requests: [], replace: [], close: 0};
   let stateIndex = 0, refIndex = 0, started = false, finishInit;
@@ -53,7 +53,7 @@ function screen({path = "app/page.tsx", loggedIn = false, inClient = false,
   };
   const component = loadTs(path, modules, {
     URL,
-    process: {env: {}},
+    process: {env: {NEXT_PUBLIC_ATTENDANCE_LIFF_ID: liffId}},
     window: {
       location: {href, search: new URL(href).search, replace: url => calls.replace.push(url)},
       setTimeout: () => 0, setInterval: () => 0, clearTimeout() {}, clearInterval() {}, close() {},
@@ -72,13 +72,38 @@ function screen({path = "app/page.tsx", loggedIn = false, inClient = false,
   };
 }
 
-const loginButton = s => nodes(s.render(), "button").find(button => text(button) === "LINEでログイン");
+const loginButton = s => nodes(s.render(), "button").find(button => text(button) === "このブラウザーで続ける");
+const appLink = s => nodes(s.render(), "a").find(link => text(link) === "LINEで開く");
 
-test("external staff entry waits for init and starts login synchronously on the user's tap", async () => {
+for (const [liffId, expected] of [[undefined, "2010761826-6FNSE1PD"], ["fixture-preview-liff", "fixture-preview-liff"]]) {
+  test(`external entry offers a direct ${liffId ? "preview" : "production"} LINE link without starting web login`, async () => {
+    const storeToken = "fixture-token-with-special +/?=&";
+    const params = new URLSearchParams({store_token: storeToken, entry: "manager", redirect_uri: "https://untrusted.example", id_token: "drop"});
+    const s = screen({href: `https://fixture.example/?${params}#drop`, liffId}); await s.start();
+    const link = appLink(s);
+    const url = new URL(link.props.href);
+    assert.equal(url.origin, "https://liff.line.me");
+    assert.equal(url.pathname, `/${expected}`);
+    assert.deepEqual([...url.searchParams], [["store_token", storeToken]]);
+    assert.equal(url.hash, "");
+    assert.equal(link.props.onClick, undefined, "native navigation must not be replaced by SDK or asynchronous JS");
+    assert.equal(link.props.target, undefined, "open in the current context");
+    assert.equal(link.props.rel, "noreferrer");
+    assert.equal(s.calls.login.length, 0);
+    assert.equal(s.calls.requests.length, 0);
+    const help = nodes(s.render(), "details").find(n => n.props.className === "line-login-help");
+    assert.notEqual(help.props.open, true, "keep the main action unambiguous");
+    assert.ok(nodes(help, "button").some(n => text(n) === "このブラウザーで続ける"));
+    assert.equal(appLink(s).props.href, link.props.href, "a blocked app launch still has a usable link on re-render");
+  });
+}
+
+test("external staff entry waits for init and browser fallback starts login synchronously on tap", async () => {
   const href = "https://fixture.example/?store_token=fixture-store-token";
   const s = screen({href, delayedInit: true});
   await s.start();
   assert.equal(loginButton(s), undefined);
+  assert.equal(appLink(s), undefined);
   assert.equal(s.calls.login.length, 0);
   s.releaseInit(); await settle();
   assert.equal(s.calls.login.length, 0, "initialization must not automatically redirect to login");
@@ -123,6 +148,7 @@ test("LINE login returns through liff-entry once and bootstraps only the origina
 test("unauthenticated LIFF browser shows reopening guidance without calling liff.login", async () => {
   const s = screen({inClient: true}); await s.start();
   assert.equal(loginButton(s), undefined);
+  assert.equal(appLink(s), undefined);
   assert.equal(s.calls.login.length, 0);
   assert.equal(s.calls.requests.length, 0);
   assert.match(text(s.render()), /店舗のQRコードを読み直してください/);
@@ -134,6 +160,7 @@ test("missing store QR, failed init and unmounted entry do not start login", asy
   for (const options of [{href: "https://fixture.example/"}, {initError: true}]) {
     const s = screen(options); await s.start();
     assert.equal(loginButton(s), undefined);
+    assert.equal(appLink(s), undefined);
     assert.equal(s.calls.login.length, 0);
     assert.equal(s.calls.requests.length, 0);
     assert.doesNotMatch(text(s.render()), /fixture private error/);
@@ -141,6 +168,7 @@ test("missing store QR, failed init and unmounted entry do not start login", asy
   const s = screen({delayedInit: true}); await s.start();
   s.unmount(); s.releaseInit(); await settle();
   assert.equal(loginButton(s), undefined);
+  assert.equal(appLink(s), undefined);
   assert.equal(s.calls.login.length, 0);
   assert.equal(s.calls.requests.length, 0);
 });
@@ -150,6 +178,7 @@ test("login launch failure keeps a retry and does not expose SDK error details",
   loginButton(s).props.onClick();
   assert.match(text(s.render()), /ログイン画面を開けませんでした/);
   assert.doesNotMatch(text(s.render()), /fixture private error/);
+  assert.equal(new URL(appLink(s).props.href).searchParams.get("store_token"), "fixture-store-token");
   loginButton(s).props.onClick();
   assert.equal(s.calls.login.length, 2);
   assert.equal(s.calls.requests.length, 0);

@@ -504,6 +504,18 @@ h1 {
 .attendance-screen .punch-button { min-height: 84px; padding: 12px 8px; font-size: 22px; line-height: 1.25; }
 .attendance-screen .punch-button:only-child { grid-column: 1 / -1; }
 
+.attendance-screen .line-app-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
+
+.line-login-help { margin-top: 12px; color: #5e6f65; }
+.line-login-help summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.line-login-help .correction-link { min-height: 44px; margin-top: 12px; }
+
 .attendance-screen .location-guide {
   margin-top: 8px;
   padding: 0;
@@ -586,6 +598,7 @@ h1 {
 }
 
 .attendance-screen summary:focus-visible,
+.attendance-screen .line-app-link:focus-visible,
 .attendance-screen button:focus-visible {
   outline: 3px solid #397451;
   outline-offset: 3px;
