@@ -563,14 +563,17 @@
 }
 
 .staffSelector select {
+  box-sizing: border-box;
+  min-width: 0;
   width: 100%;
-  min-height: 44px;
+  min-height: 46px;
   padding: 8px 36px 8px 10px;
   border: 1px solid #aebdb2;
   border-radius: 9px;
   background: #fff;
   color: #173326;
   font: inherit;
+  font-size: 16px;
 }
 
 

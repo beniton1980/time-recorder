@@ -112,16 +112,15 @@ test("multi-store managers can switch stores directly on the dashboard", async (
 });
 
 test("manager date and time correction fields stay inside the mobile card", async () => {
-  const page = await source("app/manager/page.tsx");
   const styles = await source("app/manager/manager.module.css");
+  const editStyles = await source("app/manager/staff-attendance/edit/edit.module.css");
   assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*box-sizing: border-box/);
   assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*width: auto/);
   assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*min-width: 0/);
   assert.match(styles, /\.resolution select,\s*\.resolution input\s*\{[\s\S]*justify-self: stretch/);
   assert.match(styles, /\.resolutionDateTime\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
   assert.match(styles, /\.resolutionDateTime label \{ min-width: 0; \}/);
-  assert.match(page, /styles\.editPanel/);
-  assert.match(page, /role="dialog"/);
-  assert.match(styles, /\.editPanel\s*\{[\s\S]*position: fixed/);
-  assert.match(styles, /max-height: calc\(100dvh - 24px\)/);
+  // Direct editing uses the personal attendance page, not the former hidden dialog.
+  assert.match(editStyles, /\.editor input,\.editor select\{[^}]*width:100%;[^}]*max-width:100%;[^}]*min-width:0;/);
+  assert.match(editStyles, /\.actions\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1.35fr\)/);
 });
