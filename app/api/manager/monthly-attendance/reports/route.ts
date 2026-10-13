@@ -27,18 +27,27 @@ export async function POST(request: Request) {
       lineIdentity: identity.sub,
       storeId: body.storeId as string,
     });
-    const reports = await sql`
-      SELECT d.period_start::text, d.period_end::text, d.sent_at,
-        COUNT(*) FILTER (WHERE all_versions.delivery_version LIKE 'reissue-%' AND all_versions.status = 'SENT')::int AS reissue_count
+    const managers = await sql`
+      SELECT st.id
       FROM staff st
       JOIN stores s ON s.id = st.store_id
-      JOIN monthly_attendance_deliveries d ON d.store_id = s.id AND d.delivery_version = 'initial' AND d.status = 'SENT'
-      LEFT JOIN monthly_attendance_deliveries all_versions ON all_versions.store_id = d.store_id AND all_versions.period_start = d.period_start AND all_versions.period_end = d.period_end
       WHERE st.line_user_id = ${identity.sub}
         AND st.store_id = ${body.storeId}::uuid
         AND st.status = 'active'
-        AND st.role = 'MANAGER'
+        AND public.app_manager_store_allowed(st.store_id)
         AND s.status = 'active'
+      LIMIT 1
+    `;
+    if (managers.length === 0) {
+      return Response.json({ ok: false, code: "MANAGER_ACCESS_REQUIRED" }, { status: 403 });
+    }
+    const reports = await sql`
+      SELECT d.period_start::text, d.period_end::text, d.sent_at,
+        COUNT(*) FILTER (WHERE all_versions.delivery_version LIKE 'reissue-%' AND all_versions.status = 'SENT')::int AS reissue_count
+      FROM monthly_attendance_deliveries d
+      LEFT JOIN monthly_attendance_deliveries all_versions ON all_versions.store_id = d.store_id AND all_versions.period_start = d.period_start AND all_versions.period_end = d.period_end
+      WHERE d.store_id = ${body.storeId}::uuid
+        AND d.delivery_version = 'initial' AND d.status = 'SENT'
       GROUP BY d.id ORDER BY d.period_end DESC LIMIT 12
     `;
     return Response.json({ ok: true, reports });
