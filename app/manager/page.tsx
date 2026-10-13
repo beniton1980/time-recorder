@@ -835,6 +835,7 @@ export default function ManagerPage() {
                         <span>{staff.status === "active" ? "利用中" : "一時停止中"}</span>
                       </div>
                       <div className={styles.staffActions}>
+                        {staff.status === "inactive" && <a className={styles.staffAttendanceLink} href={`/manager/staff-attendance?store_id=${encodeURIComponent(dashboard.manager.store_id)}&staff_id=${encodeURIComponent(staff.staff_id)}`}>過去の勤怠を確認・修正</a>}
                         <button type="button" className={staff.status === "active" ? styles.reject : styles.approve} disabled={updatingStaffId !== null || (staff.status === "active" && staff.state !== "OFF_DUTY")} title={staff.status === "active" && staff.state !== "OFF_DUTY" ? "退勤後に停止できます" : undefined} onClick={() => void updateStaffStatus(staff, staff.status === "active" ? "inactive" : "active")}>{updatingStaffId === staff.staff_id ? "処理中…" : staff.status === "active" ? "一時停止" : "利用再開"}</button>
                         <button type="button" className={styles.departButton} disabled={updatingStaffId !== null || staff.state !== "OFF_DUTY"} title={staff.state !== "OFF_DUTY" ? "退勤後に退社へ変更できます" : undefined} onClick={() => void updateStaffStatus(staff, "departed")}>退社</button>
                       </div>
@@ -845,7 +846,7 @@ export default function ManagerPage() {
               {departedStaffMemberships.length > 0 && (
                 <div className={styles.departedStaff}>
                   <button type="button" className={styles.departedToggle} onClick={() => setShowDepartedStaff((current) => !current)}>{showDepartedStaff ? "退社したスタッフを閉じる" : `退社したスタッフ（${departedStaffMemberships.length}名）`}</button>
-                  {showDepartedStaff && <ul className={styles.staffManagementList}>{departedStaffMemberships.map((staff) => <li key={staff.staff_id}><div><strong>{staff.legal_name}</strong><span>退社</span></div><button type="button" className={styles.approve} disabled={updatingStaffId !== null} onClick={() => void updateStaffStatus(staff, "active")}>{updatingStaffId === staff.staff_id ? "処理中…" : "再雇用"}</button></li>)}</ul>}
+                  {showDepartedStaff && <ul className={styles.staffManagementList}>{departedStaffMemberships.map((staff) => <li key={staff.staff_id}><div><strong>{staff.legal_name}</strong><span>退社</span></div><div className={styles.staffActions}><a className={styles.staffAttendanceLink} href={`/manager/staff-attendance?store_id=${encodeURIComponent(dashboard.manager.store_id)}&staff_id=${encodeURIComponent(staff.staff_id)}`}>過去の勤怠を確認・修正</a><button type="button" className={styles.approve} disabled={updatingStaffId !== null} onClick={() => void updateStaffStatus(staff, "active")}>{updatingStaffId === staff.staff_id ? "処理中…" : "再雇用"}</button></div></li>)}</ul>}
                 </div>
               )}
             </section>
