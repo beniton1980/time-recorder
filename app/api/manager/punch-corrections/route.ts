@@ -222,6 +222,9 @@ export async function POST(request: Request) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }
+    if (error instanceof Error && error.message.includes("OCCURRED_AT_IN_FUTURE")) {
+      return NextResponse.json({ ok: false, code: "OCCURRED_AT_IN_FUTURE" }, { status: 400 });
+    }
     logServerError("manager_direct_correction_failed");
     return NextResponse.json(
       { ok: false, code: "CORRECTION_UNAVAILABLE" },

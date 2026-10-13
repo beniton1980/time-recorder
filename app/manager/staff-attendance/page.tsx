@@ -4,7 +4,7 @@ import liff from "@line/liff";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./staff-attendance.module.css";
 
-const LIFF_ID = "2010761826-6FNSE1PD";
+const LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || "2010761826-6FNSE1PD";
 
 type Day = {
   businessDate: string;
@@ -142,6 +142,7 @@ export default function StaffAttendancePage() {
   return (
     <main className={styles.page}><section className={styles.shell}>
       <header className={styles.header}><a className={styles.back} href="/manager">← 管理画面へ戻る</a><p className={styles.eyebrow}>ONOGAMI 勤怠</p><h1>{selectedStaffName}</h1>{payload && <p className={styles.store}>{payload.store.name}</p>}</header>
+      {process.env.NEXT_PUBLIC_MANAGER_LIFF_ID && <p className="manager-preview-notice">検証用の勤怠画面です。</p>}
       {payload && payload.staffOptions.length > 0 && <label className={styles.staffSelector}>スタッフを選択<select value={staffId} onChange={(event) => changeStaff(event.target.value)}>{payload.staffOptions.map((staff) => <option key={staff.id} value={staff.id}>{staff.legalName}</option>)}</select></label>}
       <label className={styles.monthSelector}>表示する月<input type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label>
       {message && !payload && <p className={styles.loading}>{message}</p>}{error && <p className={styles.error} role="alert">{error}</p>}
