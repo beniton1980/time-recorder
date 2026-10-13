@@ -302,6 +302,8 @@
 .staffManagementList li > div {
   display: grid;
   gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .staffManagementList li > .staffActions {
@@ -324,6 +326,30 @@
 }
 
 .staffManagementList button:disabled { opacity: .45; }
+
+.staffAttendanceLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 520px) {
+  .staffManagementList li:has(.staffAttendanceLink) {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .staffManagementList li:has(.staffAttendanceLink) > .staffActions {
+    justify-content: flex-start;
+  }
+
+  .staffAttendanceLink {
+    flex-basis: 100%;
+  }
+}
 
 .staffManagementList .departButton {
   min-width: 64px;

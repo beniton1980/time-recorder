@@ -61,8 +61,7 @@ export async function POST(request: Request) {
       SELECT id, legal_name, status
       FROM staff
       WHERE store_id = ${body.storeId}::uuid
-        AND status <> 'departed'
-      ORDER BY legal_name ASC, created_at ASC
+      ORDER BY CASE WHEN status = 'departed' THEN 1 ELSE 0 END, legal_name ASC, created_at ASC
     `;
     const target = staffOptions.find((staff) => String(staff.id) === body.staffId);
     if (!target) return Response.json({ ok: false, code: "STAFF_NOT_FOUND" }, { status: 404 });

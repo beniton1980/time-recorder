@@ -133,7 +133,7 @@ export async function POST(request: Request) {
 
     const staff = await sql`
       SELECT id FROM staff
-      WHERE id = ${body.staffId} AND store_id = ${manager.store_id} AND status = 'active'
+      WHERE id = ${body.staffId} AND store_id = ${manager.store_id}
       LIMIT 1
     `;
     if (staff.length === 0) {
