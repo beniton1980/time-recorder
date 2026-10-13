@@ -15,7 +15,8 @@ test("reissue requires the selected manager store and ignores a client recipient
 
 test("only a previously sent initial report can be reissued", async () => {
   const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
-  assert.match(route, /delivery_version = 'initial' AND status = 'SENT'/);
+  assert.match(route, /loadSentMonthlyReportPeriod/);
+  assert.match(await source("lib/monthly-attendance-query.ts"), /delivery_version = 'initial' AND status = 'SENT'/);
   assert.match(route, /MONTHLY_REPORT_NOT_FOUND/);
 });
 

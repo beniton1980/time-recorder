@@ -81,6 +81,7 @@ type ManagerMembership = {
 };
 
 type MonthlyReport = {
+  id: string;
   period_start: string;
   period_end: string;
   sent_at: string;
@@ -553,7 +554,7 @@ export default function ManagerPage() {
   }
 
   async function exportMonthlyCsv(report: MonthlyReport) {
-    setExportingPeriod(report.period_end);
+    setExportingPeriod(report.id);
     setReissueMessage(null);
     try {
       const idToken = liff.getIDToken();
@@ -564,7 +565,7 @@ export default function ManagerPage() {
         body: JSON.stringify({
           idToken,
           storeId: dashboard?.manager.store_id,
-          periodEnd: report.period_end,
+          reportId: report.id,
         }),
       });
       if (!response.ok) throw new Error("CSVを作成できませんでした。");
@@ -587,7 +588,7 @@ export default function ManagerPage() {
 
   async function reissueMonthlyReport(report: MonthlyReport) {
     if (!window.confirm(`${report.period_end.replaceAll("-", "/")}締めの勤怠表を最新データで再発行し、登録メールへ送信しますか？`)) return;
-    setReissuingPeriod(report.period_end);
+    setReissuingPeriod(report.id);
     setReissueMessage(null);
     try {
       const idToken = liff.getIDToken();
@@ -598,7 +599,7 @@ export default function ManagerPage() {
         body: JSON.stringify({
           idToken,
           storeId: dashboard?.manager.store_id,
-          periodEnd: report.period_end,
+          reportId: report.id,
           requestId: crypto.randomUUID(),
         }),
       });
@@ -798,17 +799,17 @@ export default function ManagerPage() {
               ) : (
                 <ul className={styles.monthlyReportList}>
                   {monthlyReports.map((report) => (
-                    <li key={report.period_end}>
+                    <li key={report.id}>
                       <div>
                         <strong>{report.period_end.slice(5, 7)}月度</strong>
                         <span>{report.period_start.replaceAll("-", "/")} - {report.period_end.replaceAll("-", "/")}</span>
                       </div>
                       <div className={styles.monthlyReportActions}>
                         <button type="button" className={styles.csvButton} disabled={exportingPeriod !== null || reissuingPeriod !== null} onClick={() => void exportMonthlyCsv(report)}>
-                          {exportingPeriod === report.period_end ? "CSV作成中…" : "補助CSV"}
+                          {exportingPeriod === report.id ? "CSV作成中…" : "補助CSV"}
                         </button>
                         <button type="button" disabled={!monthlyRecipientConfirmed || reissuingPeriod !== null || exportingPeriod !== null} onClick={() => void reissueMonthlyReport(report)}>
-                          {reissuingPeriod === report.period_end ? "再発行中…" : "再発行して送信"}
+                          {reissuingPeriod === report.id ? "再発行中…" : "再発行して送信"}
                         </button>
                       </div>
                     </li>
