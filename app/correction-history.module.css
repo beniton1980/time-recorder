@@ -1,0 +1,21 @@
+.panel { margin-top: 12px; border: 1px solid #dbe4dc; border-radius: 14px; background: #f8faf8; text-align: left; overflow: hidden; }
+.toggle { display: flex; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 12px 14px; border: 0; background: transparent; color: #40584b; font: inherit; font-size: 14px; font-weight: 700; text-align: left; cursor: pointer; }
+.content { padding: 0 14px 14px; font-size: 14px; overflow-wrap: anywhere; }
+.content p { margin: 8px 0 !important; line-height: 1.6; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 12px; }
+.toolbar p { flex: 1 1 180px; color: #52655a; font-size: 13px; }
+.content button { min-height: 44px; padding: 8px 12px; border: 1px solid #b9cabe; border-radius: 8px; background: white; color: #304d3c; font: inherit; cursor: pointer; }
+.content button:disabled { opacity: .55; cursor: wait; }
+.toggle:focus-visible, .content button:focus-visible { outline: 3px solid #397451; outline-offset: -3px; }
+.list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.list li { min-width: 0; padding: 12px; border: 1px solid #dbe4dc; border-radius: 10px; background: white; }
+.heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.heading span { flex-shrink: 0; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+.PENDING { color: #735316; background: #fff3cd; }
+.APPROVED { color: #286242; background: #e3f0e7; }
+.REJECTED { color: #8f3434; background: #fbe8e8; }
+.date { color: #52655a; font-size: 12px; }
+.reason { white-space: pre-wrap; }
+.guidance { color: #40584b; font-size: 13px; }
+.error { color: #9b3030; }
+.more { width: 100%; margin-top: 12px; }

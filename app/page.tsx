@@ -10,6 +10,7 @@ import { readPendingOperation, savePendingOperation, clearPendingOperation, tabO
 import type { EventType, CorrectionIntent, PendingOperation, OperationResult } from "@/lib/attendance-operation";
 import { withAttendanceDeadline } from "@/lib/attendance-request";
 import { correctionValidationMessage } from "@/lib/correction-validation";
+import CorrectionHistory from "./correction-history";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_ATTENDANCE_LIFF_ID || "2010761826-6FNSE1PD";
 
@@ -196,6 +197,7 @@ export default function Home() {
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const storeTokenRef = useRef<string | null>(null);
+  const [correctionHistoryVersion, setCorrectionHistoryVersion] = useState(0);
   const locationReaderRef = useRef<PunchLocationReader | null>(null);
   const punchInFlightRef = useRef(false);
   const pendingOperationRef = useRef<PendingOperation | null>(null);
@@ -381,6 +383,7 @@ export default function Home() {
       forgetOperation(operation);
       setShowCorrection(false);
       setNotice(operationNotice(operation, session.result));
+      if (operation.kind === "correction") setCorrectionHistoryVersion(version => version + 1);
       if (operation.kind === "punch") setLocationNotice(locationExplanation(session.result));
       return true;
     }
@@ -1200,6 +1203,9 @@ export default function Home() {
                 <p className="punch-history-empty">本日の打刻はありません</p>
               )}
             </details>
+
+            <CorrectionHistory key={`${view.membership.staff_id}:${correctionHistoryVersion}`}
+              getStoreToken={() => storeTokenRef.current} />
 
             {!showCorrection && (
               <div className="attendance-exit">
