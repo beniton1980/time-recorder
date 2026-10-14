@@ -61,7 +61,7 @@ function screen(query = "", sessionStorage = storage(), init = async () => {}) {
     button(label) { return nodes(render(), "button").find(n => text(n) === label); },
     choose(id) { nodes(render(), "select")[0].props.onChange({ target: { value: id } }); render(); },
     month(value) { nodes(render(), "input")[0].props.onChange({ target: { value } }); render(); },
-    edits() { return nodes(render(), "a").filter(n => text(n) === "この日の打刻を修正"); },
+    edits() { return nodes(render(), "a").filter(n => /打刻を修正$/.test(text(n))); },
   };
 }
 
@@ -150,6 +150,8 @@ test("a saved operation and a failed refresh are distinguished; retry is read-on
   assert.match(text(s.render()), /打刻を取消しました/);
   const returned = nodes(s.render(), "li").find(n => n.props["data-returned-day"]);
   assert.match(text(returned), /勤務記録なし/);
+  assert.match(nodes(returned, "a")[0].props["aria-label"], /4\/8.*の打刻を修正/);
+  assert.ok(nodes(returned, "a")[0].props.href.endsWith("date=2026-04-08"));
   assert.ok(s.calls.every(c => c.url === "/api/manager/staff-attendance"));
 });
 
