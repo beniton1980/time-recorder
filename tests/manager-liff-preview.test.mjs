@@ -6,6 +6,7 @@ import { loadTs } from "./helpers/load-ts.mjs";
 
 const datetime = loadTs("lib/manager-correction-datetime.ts");
 const validation = loadTs("lib/correction-validation.ts");
+const attendanceReturn = loadTs("lib/manager-attendance-return.ts");
 const pages = [
   ["app/manager/page.tsx", "/manager"],
   ["app/manager/staff-attendance/page.tsx", "/manager/staff-attendance"],
@@ -22,9 +23,7 @@ async function start(page, path, env, seededStates = {}) {
     react: {
       useState(initial) {
         const index = stateIndex++;
-        const value = index in seededStates ? seededStates[index] : path === "/manager/staff-attendance" && index < 2
-          ? ["fixture-store", "fixture-staff"][index]
-          : typeof initial === "function" ? initial() : initial;
+        const value = index in seededStates ? seededStates[index] : typeof initial === "function" ? initial() : initial;
         return [value, () => {}];
       },
       useEffect: fn => effects.push(fn),
@@ -40,6 +39,7 @@ async function start(page, path, env, seededStates = {}) {
     } },
     "@/lib/manager-correction-datetime": datetime,
     "@/lib/correction-validation": validation,
+    "@/lib/manager-attendance-return": attendanceReturn,
     "./manager.module.css": { default: {} },
     "./past-monthly-report": { default: () => null },
     "./staff-attendance.module.css": { default: {} },
@@ -87,10 +87,10 @@ test("Preview hides other manager tools before enhancement while retaining the Q
 
 test("Preview attendance and edit screens retain only local navigation and identify the test environment", async () => {
   const staff = { id: "fixture-staff", legalName: "架空スタッフ" };
-  const monthly = { staff, staffOptions: [], store: { name: "架空店舗" }, month: "2026-04",
+  const monthly = { staff, staffOptions: [], store: { id: "fixture-store", name: "架空店舗" }, month: "2026-04",
     period: { start: "2026-04-30", end: "2026-04-30", displayThrough: "2026-04-30" },
     summary: { workDays: 0, workDuration: "00:00", breakDuration: "00:00", issueDays: 0 }, days: [] };
-  const attendance = await start(...pages[1], previewEnv, { 3: monthly });
+  const attendance = await start(...pages[1], previewEnv, { 0: monthly, 1: "" });
   const links = nodes(attendance.tree, "a").map(item => item.props.href);
   assert.ok(links.includes("/manager"));
   assert.ok(links.some(href => href.startsWith("/manager/staff-attendance/edit?")));
