@@ -42,6 +42,7 @@ type Membership = {
   last_event_at: string | null;
   last_event_type: EventType | null;
   recent_punches: PunchHistoryItem[];
+  pending_shift_start?: { request_id: string; checkout_at: string; business_date: string } | null;
 };
 
 type ViewState =
@@ -93,6 +94,13 @@ function formatTime(value: Date | string) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+  }).format(new Date(value));
+}
+
+function formatPunchDateTime(value: string) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(value));
 }
 
@@ -438,7 +446,8 @@ export default function Home() {
           method: "POST", signal, headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             idToken, storeToken: storeTokenRef.current, clientRequestId: operation.clientRequestId,
-            ...(operation.kind === "punch" ? { eventType: operation.eventType, expectedStateVersion: operation.expectedStateVersion, location } : operation.intent),
+            ...(operation.kind === "punch" ? { eventType: operation.eventType, expectedStateVersion: operation.expectedStateVersion,
+              previousCheckoutRequestId: operation.previousCheckoutRequestId, location } : operation.intent),
           }),
         });
         responseStatus = response.status;
@@ -668,6 +677,8 @@ export default function Home() {
       kind: "punch", clientRequestId: crypto.randomUUID(), eventType,
       staffId: view.membership.staff_id, storeId: view.membership.store_id,
       expectedStateVersion,
+      ...(eventType === "CHECK_IN" && view.membership.pending_shift_start
+        ? { previousCheckoutRequestId: view.membership.pending_shift_start.request_id } : {}),
     }));
   }
 
@@ -786,22 +797,26 @@ export default function Home() {
 
             <p className="store">{view.membership.store_name}</p>
             <p className="status">{view.membership.legal_name}さん</p>
-            <p className="state">{stateLabels[view.membership.state]}</p>
+            <p className="state">{view.membership.pending_shift_start ? "前回の退勤が確認待ち" : stateLabels[view.membership.state]}</p>
 
             <p className="last-punch">
               {view.membership.last_event_at && view.membership.last_event_type && (
                 <>
-                  {formatTime(view.membership.last_event_at)} に
+                  {formatPunchDateTime(view.membership.last_event_at)} に
                   {eventLabels[view.membership.last_event_type]}
                 </>
               )}
             </p>
 
-            <div className="punch-actions">
-              {actionsByState[view.membership.state].map((eventType) => (
+            {view.membership.pending_shift_start && <div className="operation-recovery">
+              <p>{formatPunchDateTime(view.membership.pending_shift_start.checkout_at)} の退勤を申請済みです。</p>
+              <p className="field-help">次の勤務を始められます。前回分は管理者の承認まで未確定です。</p>
+            </div>}
+            <div className={view.membership.pending_shift_start ? "punch-actions pending-shift-actions" : "punch-actions"}>
+              {(view.membership.pending_shift_start ? ["CHECK_IN" as const, ...actionsByState[view.membership.state]] : actionsByState[view.membership.state]).map((eventType) => (
                 <button
                   className={
-                    eventType === "BREAK_START"
+                    eventType === "BREAK_START" || (view.membership.pending_shift_start && eventType !== "CHECK_IN")
                       ? "punch-button punch-button-secondary"
                       : "punch-button"
                   }
@@ -813,10 +828,11 @@ export default function Home() {
                   {submitting === eventType
                     ? punchPhase === "location" ? "位置確認中…"
                       : punchPhase === "sending" ? "送信中…" : "確認中…"
-                    : eventLabels[eventType]}
+                    : eventType === "CHECK_IN" && view.membership.pending_shift_start ? "次の勤務を開始" : eventLabels[eventType]}
                 </button>
               ))}
             </div>
+            {view.membership.pending_shift_start && <p className="field-help">前回から働き続けている場合は、退勤・休憩開始を使ってください。</p>}
 
             <div className="punch-feedback" role="status">
               {correctionSubmitting
@@ -919,12 +935,12 @@ export default function Home() {
                           <p>前回の打刻を次のように修正します。</p>
                           <div>
                             <span>
-                              {formatTime(view.membership.last_event_at)}{" "}
+                              {formatPunchDateTime(view.membership.last_event_at)}{" "}
                               {eventLabels[view.membership.last_event_type]}
                             </span>
                             <strong aria-hidden="true">→</strong>
                             <span>
-                              {formatTime(view.membership.last_event_at)}{" "}
+                              {formatPunchDateTime(view.membership.last_event_at)}{" "}
                               {
                                 eventLabels[
                                   correctedLastEvent(
@@ -1108,7 +1124,7 @@ export default function Home() {
                             <div>
                               <dt>修正</dt>
                               <dd>
-                                {formatTime(view.membership.last_event_at)}{" "}
+                                {formatPunchDateTime(view.membership.last_event_at)}{" "}
                                 {eventLabels[view.membership.last_event_type]}
                                 {" → "}
                                 {

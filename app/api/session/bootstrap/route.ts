@@ -84,6 +84,7 @@ export async function POST(request: Request) {
         COALESCE(epe.correction_request_id, epe.original_event_id) AS last_event_revision_id,
         COALESCE(epe.occurred_at, ss.last_event_at) AS last_event_at,
         epe.event_type AS last_event_type,
+        (SELECT row_to_json(next_shift) FROM staff_pending_shift_start(st.id) next_shift) AS pending_shift_start,
         COALESCE(history.items, '[]'::json) AS recent_punches,
         CASE
           WHEN ${pending?.kind ?? null}::text = 'punch' THEN (

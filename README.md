@@ -120,6 +120,16 @@ Previewのメール送信は既定で停止し、安全なテスト送信先を�
 
 `node --test tests/monthly-attendance-period.test.mjs tests/monthly-delivery-recovery.test.mjs tests/monthly-attendance-history.test.mjs`で未確認取得・明示送信・境界・訂正・権限・重複防止、0043の失敗再現→0044の移行・古いPROCESSING回復、F09の保存済み期間の互換を検証します。Test Centerの「送信先確認前の過去期間を取得・明示送信」に実画面手順を置いています。
 
+### 退勤申請待ちの次勤務開始（F04・0045）
+
+前回の具体的な退勤漏れ申請が1件特定でき、同じ店舗の翌営業日以降である場合は「次の勤務を開始」から新しい出勤を記録できます。申請はPENDINGのまま、新出勤の`previous_checkout_request_id`で関連を保持します。前回分は未確定、却下後も新出勤を保持します。日付変更だけの勤務終了、休憩未終了や時刻不明相談、同一営業日の連続出勤、他店舗勤務中の出勤は許可しません。夜勤を継続する退勤・休憩操作は残します。
+
+打刻transactionは本人のadvisory lockに続いてstate→申請行の順にロックし、その後の新しいsnapshotで申請・状態版・本人・QR・他店舗勤務を再確認します。開始直前の承認／却下は古い開始操作を拒否して再読込みし、開始後の判断は新出勤を消しません。操作IDの再送は申請IDも照合します。日別集計は既存の営業日単位を使い、前回分が未解決でも新勤務を独立して集計します。
+
+公開は今回のOwner最終承認と07の復旧branchを確保した後、0044適用済みDBへ`db/migrations/0045_pending_shift_start.sql`を単一transactionで先に適用します。追加はnullable列・同スタッフ同店舗FK・CHECK・一意索引・SECURITY INVOKERの読取り関数です。既存イベント／申請／状態、RLSと権限を前後照合し、列追加を除くデータが不変であることを確認します。環境変数変更なし。新アプリは0045が必要で、アプリ切戻し時も0045と記録を保持します。旧アプリは次勤務開始の入口を持ちませんが、保存済み新勤務の通常操作は継続できます。DB復元・関連列の削除は別判断です。
+
+`node --test tests/pending-shift-start.test.mjs tests/punch-screen-flow.test.mjs`で申請→開始→承認／却下、再送・古い状態、夜勤・営業日・店舗境界・集計を確認します。Neon隔離DBでは実PostgreSQLの競合、移行失敗のtransaction rollback、0044アプリと0045 DBの互換も確認します。
+
 ### 回帰確認
 
 `npm test`はPGliteの空DBへ全migrationを適用し、`onogami_app`と実際のRLSでAPI・状態・訂正履歴・店舗境界を確認します。保存前失敗／保存後応答消失／同一ID再送／再読み込み／二重タップは画面の回帰テストにも含めます。LINE本人確認とブラウザーのストレージ・権限挙動は実機で別途確認します。DB変更時はAGENTS.mdに従い、一時Neonブランチの架空データでも移行・同時実行を検証します。

@@ -28,6 +28,7 @@ type PunchRequest = {
   eventType?: unknown;
   clientRequestId?: unknown;
   expectedStateVersion?: unknown;
+  previousCheckoutRequestId?: unknown;
   storeToken?: unknown;
   location?: unknown;
 };
@@ -87,6 +88,9 @@ export async function POST(request: Request) {
     !(body.eventType in transitions) ||
     typeof body.clientRequestId !== "string" ||
     !uuidPattern.test(body.clientRequestId) ||
+    (body.previousCheckoutRequestId !== undefined &&
+      (body.eventType !== 'CHECK_IN' || typeof body.previousCheckoutRequestId !== 'string'
+        || !uuidPattern.test(body.previousCheckoutRequestId))) ||
     (body.expectedStateVersion !== undefined &&
       (typeof body.expectedStateVersion !== "string" || !/^\d{1,12}(?:\.\d{1,6})?$/.test(body.expectedStateVersion))) ||
     location === undefined
@@ -115,6 +119,8 @@ export async function POST(request: Request) {
 
   const eventType = body.eventType as EventType;
   const transition = transitions[eventType];
+  const previousCheckoutRequestId = typeof body.previousCheckoutRequestId === "string"
+    ? body.previousCheckoutRequestId.toLowerCase() : null;
   const latitude = location?.latitude ?? null;
   const longitude = location?.longitude ?? null;
   const accuracy = location?.accuracy ?? null;
@@ -131,6 +137,7 @@ export async function POST(request: Request) {
       SELECT
         pe.id AS event_id,
         pe.event_type,
+        pe.previous_checkout_request_id,
         pe.occurred_at,
         pe.location_status,
         pe.validation_code,
@@ -151,7 +158,8 @@ export async function POST(request: Request) {
     `;
 
     if (existing.length === 1) {
-      if (existing[0].event_type !== eventType) {
+      if (existing[0].event_type !== eventType ||
+        (existing[0].previous_checkout_request_id ?? null) !== previousCheckoutRequestId) {
         return NextResponse.json({ ok: false, code: "CLIENT_REQUEST_CONFLICT" }, { status: 409 });
       }
       return NextResponse.json({
@@ -192,7 +200,13 @@ export async function POST(request: Request) {
           AND setk.active = TRUE
           AND setk.revoked_at IS NULL
           AND (setk.expires_at IS NULL OR setk.expires_at > NOW())
-          AND ss.state = ${transition.from}
+          AND (
+            (${previousCheckoutRequestId}::uuid IS NULL AND ss.state = ${transition.from})
+            OR (${eventType} = 'CHECK_IN' AND EXISTS (
+              SELECT 1 FROM staff_pending_shift_start(st.id) next_shift
+              WHERE next_shift.request_id = ${previousCheckoutRequestId}::uuid
+            ))
+          )
           AND EXTRACT(EPOCH FROM ss.updated_at)::text = ${body.expectedStateVersion}
           AND (
             ${eventType} <> 'CHECK_IN'
@@ -250,6 +264,7 @@ export async function POST(request: Request) {
           occurred_at,
           business_date,
           client_request_id,
+          previous_checkout_request_id,
           location_status,
           validation_status,
           validation_code,
@@ -282,6 +297,7 @@ export async function POST(request: Request) {
             )
           END,
           ${body.clientRequestId},
+          ${previousCheckoutRequestId}::uuid,
           CASE
             WHEN l.client_latitude IS NULL OR l.client_longitude IS NULL
               THEN 'UNAVAILABLE'
@@ -345,11 +361,22 @@ export async function POST(request: Request) {
         ...(eventType === "CHECK_IN"
           ? [transactionSql`SELECT pg_advisory_xact_lock(hashtextextended(${identity.sub}, 0))`]
           : []),
+        // Decisions/submissions lock state before request. Separate statements
+        // give the final eligibility check a fresh snapshot after any wait.
+        ...(previousCheckoutRequestId ? [
+          transactionSql`SELECT ss.staff_id FROM staff_states ss JOIN staff st ON st.id = ss.staff_id
+            WHERE st.line_user_id = ${identity.sub} AND app_token_store_allowed(st.store_id)
+            FOR UPDATE OF ss`,
+          transactionSql`SELECT id FROM correction_requests
+            WHERE id = ${previousCheckoutRequestId}::uuid
+              AND app_actor_owns_staff(staff_id) AND app_token_store_allowed(store_id)
+            FOR UPDATE`,
+        ] : []),
         createPunchQuery(transactionSql),
       ],
       { isolationLevel: "ReadCommitted" },
     );
-    const result = punchTransaction[eventType === "CHECK_IN" ? 1 : 0];
+    const result = punchTransaction[punchTransaction.length - 1];
 
     if (result.length === 1) {
       return NextResponse.json({
