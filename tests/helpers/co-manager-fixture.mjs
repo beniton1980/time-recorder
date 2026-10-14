@@ -36,7 +36,7 @@ export async function coManagerFixture(options) {
     "@/lib/store-entry-token": { hashStoreEntryToken: value => createHash("sha256").update(value).digest("hex") },
     "@/lib/store-qr-encryption": { encryptStoreEntryToken: value => "fixture:" + value, decryptStoreEntryToken: value => value.slice(8) },
   };
-  const routes = Object.fromEntries(["staff-attendance","punch-corrections","corrections/decision","monthly-attendance/reports","monthly-attendance/csv","monthly-attendance/reissue","monthly-attendance/acceptance-test","store-qr"].map(name => [name,loadTs("app/api/manager/"+name+"/route.ts", modules)]));
+  const routes = Object.fromEntries(["staff-attendance","punch-corrections","corrections/decision","monthly-attendance/reports","monthly-attendance/csv","monthly-attendance/reissue","monthly-attendance/period","monthly-attendance/acceptance-test","store-qr"].map(name => [name,loadTs("app/api/manager/"+name+"/route.ts", modules)]));
   const call = async (name, body = {}, actor = "fixture_delegate") => {
     const response = await routes[name].POST(new Request("http://fixture.local/api/manager/"+name,{method:"POST",body:JSON.stringify({idToken:actor,storeId:f.store,...body})}));
     const raw = await response.text();
@@ -60,5 +60,5 @@ export async function coManagerFixture(options) {
     await f.db.query("INSERT INTO monthly_attendance_deliveries(store_id,period_start,period_end,status,recipient,sent_at) VALUES($1,'2026-09-01','2026-09-30','SENT','fixture@example.invalid',NOW())",[f.store]);
   };
   const selfRegister = loadTs("app/api/staff/self-register/route.ts", modules);
-  return {...f,owner,delegate,emails,errors,pdfReports,routes,call,staff,pending,seedReport,selfRegister};
+  return {...f,owner,delegate,emails,errors,pdfReports,routes,call,staff,pending,seedReport,selfRegister,modules};
 }

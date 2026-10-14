@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { correctionValidationMessage } from "@/lib/correction-validation";
 import { managerCorrectionInputParts as inputParts, managerCorrectionTimestamp } from "@/lib/manager-correction-datetime";
 import styles from "./manager.module.css";
+import PastMonthlyReport from "./past-monthly-report";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 const MANAGER_SESSION_LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || LIFF_ID;
@@ -165,6 +166,7 @@ export default function ManagerPage() {
   const [coManagerWorking, setCoManagerWorking] = useState(false);
   const [coManagerMessage, setCoManagerMessage] = useState<string | null>(null);
   const [coManagerShare, setCoManagerShare] = useState<CoManagerShare | null>(null);
+  const [pastPeriodWorking, setPastPeriodWorking] = useState(false);
 
   const loadDashboard = useCallback(async (businessDate: string | undefined, storeId: string) => {
     const idToken = liff.getIDToken();
@@ -695,7 +697,7 @@ export default function ManagerPage() {
                   表示する店舗
                   <select
                     value={dashboard.manager.store_id}
-                    disabled={switchingStore}
+                    disabled={switchingStore || pastPeriodWorking}
                     onChange={(event) => void changeStore(event.target.value)}
                   >
                     {managerMemberships.map((membership) => (
@@ -792,6 +794,15 @@ export default function ManagerPage() {
                 </button>
                 {monthlyRecipientMessage && <p className={styles.reissueMessage} role="status">{monthlyRecipientMessage}</p>}
               </div>
+              <PastMonthlyReport
+                key={dashboard.manager.store_id}
+                storeId={dashboard.manager.store_id}
+                storeName={dashboard.manager.store_name}
+                recipient={monthlyRecipientConfirmed ? dashboard.manager.monthly_report_email : null}
+                disabled={switchingStore || monthlyRecipientWorking || reissuingPeriod !== null || exportingPeriod !== null}
+                onWorkingChange={setPastPeriodWorking}
+                onSent={() => loadMonthlyReports(dashboard.manager.store_id)}
+              />
               <p className={styles.sectionNote}>打刻を修正した後、対象期間の勤怠表を最新データで再発行できます。</p>
               {reissueMessage && <p className={styles.reissueMessage} role="status">{reissueMessage}</p>}
               {monthlyReports.length === 0 ? (
