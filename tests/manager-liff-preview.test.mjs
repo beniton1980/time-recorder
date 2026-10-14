@@ -40,6 +40,7 @@ async function start(page, path, env, seededStates = {}) {
     "@/lib/manager-correction-datetime": datetime,
     "@/lib/correction-validation": validation,
     "@/lib/manager-attendance-return": attendanceReturn,
+    "@/lib/manager-attendance-display": loadTs("lib/manager-attendance-display.ts"),
     "./manager.module.css": { default: {} },
     "./past-monthly-report": { default: () => null },
     "./staff-attendance.module.css": { default: {} },

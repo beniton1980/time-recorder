@@ -105,7 +105,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       ok: true,
-      store: { id: String(store.id), name: String(store.name) },
+      store: { id: String(store.id), name: String(store.name), timezone: String(store.timezone) },
       staff: { id: body.staffId, legalName: String(target.legal_name) },
       staffOptions: staffOptions.map((item) => ({
         id: String(item.id),
