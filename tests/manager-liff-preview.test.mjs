@@ -41,6 +41,7 @@ async function start(page, path, env, seededStates = {}) {
     "@/lib/manager-correction-datetime": datetime,
     "@/lib/correction-validation": validation,
     "./manager.module.css": { default: {} },
+    "./past-monthly-report": { default: () => null },
     "./staff-attendance.module.css": { default: {} },
     "./edit.module.css": { default: {} },
   }, {

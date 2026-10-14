@@ -31,6 +31,7 @@ function screen() {
     "@line/liff": { default: { init: async () => {}, isLoggedIn: () => true, getIDToken: () => "fixture-identity" } },
     "@/lib/manager-correction-datetime": datetime, "@/lib/correction-validation": validation,
     "./manager.module.css": { default: {} },
+    "./past-monthly-report": { default: () => null },
   }, {
     process: { env: {} }, URL,
     window: { location, confirm: () => true, history: { replaceState: (_a, _b, url) => { location.href = String(url); location.search = url.search; } } },

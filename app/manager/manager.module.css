@@ -677,6 +677,26 @@
 
 .storeLocationButton:disabled { opacity: .55; }
 
+.pastMonthlyReport {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid #cbd9cf;
+  border-radius: 12px;
+}
+
+.pastMonthlyReport summary { cursor: pointer; font-weight: 800; line-height: 1.6; }
+.pastPeriodDates, .pastPeriodActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.pastPeriodDates label { display: grid; gap: 6px; min-width: 0; font-size: 14px; font-weight: 700; }
+.pastPeriodDates input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 8px; border: 1px solid #aebdb2; border-radius: 9px; background: #fff; color: #173326; font: inherit; }
+.pastMonthlyReport button { min-height: 44px; padding: 9px 12px; border: 1px solid #347a57; border-radius: 9px; background: #fff; color: #285f44; font: inherit; font-size: 14px; font-weight: 700; }
+.pastMonthlyReport button:disabled { opacity: .5; }
+.pastMonthlyReport .pastPeriodSend { width: 100%; margin-bottom: 12px; background: #347a57; color: #fff; }
+.pastMonthlyReport .reissueMessage { margin-bottom: 0; }
+
+@media (max-width: 400px) {
+  .pastPeriodDates { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 520px) {
   .monthlyReportList li {
     align-items: stretch;
