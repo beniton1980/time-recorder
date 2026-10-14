@@ -3,6 +3,7 @@
 import liff from "@line/liff";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { managerCorrectionInputParts, managerCorrectionTimestamp } from "@/lib/manager-correction-datetime";
+import { attendanceReturnHref, rememberCorrection } from "@/lib/manager-attendance-return";
 import styles from "./edit.module.css";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || "2010761826-6FNSE1PD";
@@ -25,7 +26,7 @@ type EditState = {
   reason: string;
   reasonChoice: string;
 };
-type RouteParams = { storeId: string; staffId: string; businessDate: string };
+type RouteParams = { storeId: string; staffId: string; businessDate: string; reviewOnly: boolean };
 
 const eventLabels: Record<EventType, string> = {
   CHECK_IN: "出勤",
@@ -78,6 +79,7 @@ function readRouteParams(search: string): RouteParams {
     storeId: params.get("store_id") ?? "",
     staffId: params.get("staff_id") ?? "",
     businessDate: params.get("date") ?? "",
+    reviewOnly: params.get("review") === "1",
   };
 }
 
@@ -135,8 +137,8 @@ export default function StaffAttendanceEditPage() {
   );
   const targetEvent = dayEvents.find((event) => event.effectiveId === edit?.targetEffectiveId) ?? null;
 
-  function attendanceHref(date = businessDate) {
-    return `/manager/staff-attendance?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&month=${encodeURIComponent(date.slice(0, 7))}`;
+  function attendanceHref(receiptId?: string) {
+    return attendanceReturnHref({ storeId, staffId, businessDate }, routeParams?.reviewOnly ?? false, receiptId);
   }
 
   function goBackToAttendance() {
@@ -229,7 +231,8 @@ export default function StaffAttendanceEditPage() {
         throw new Error(messages[data.code] ?? "打刻を修正できませんでした。");
       }
       // Return to the attendance month where the manager started this correction.
-      window.location.replace(attendanceHref());
+      const receiptId = rememberCorrection({ storeId, staffId, businessDate, operation: edit.operation });
+      window.location.replace(attendanceHref(receiptId));
     } catch (caught) {
       setSubmitMessage(caught instanceof Error ? caught.message : "打刻を修正できませんでした。");
     } finally {
