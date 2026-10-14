@@ -38,6 +38,7 @@ function screen(query = "", sessionStorage = storage(), init = async () => {}) {
     },
     "@line/liff": { default: { init, isLoggedIn: () => true, getIDToken: () => "fixture-identity" } },
     "@/lib/manager-attendance-return": returnModule(sessionStorage),
+    "@/lib/manager-attendance-display": loadTs("lib/manager-attendance-display.ts"),
     "./staff-attendance.module.css": { default: {} },
   }, {
     process: { env: {} }, URL, PopStateEvent: class {},
@@ -63,6 +64,25 @@ function screen(query = "", sessionStorage = storage(), init = async () => {}) {
     edits() { return nodes(render(), "a").filter(n => text(n) === "この日の打刻を修正"); },
   };
 }
+
+test("returned attendance card shows actual overnight dates without changing durations or correction context", async () => {
+  const s = screen("&focus=2026-04-08&review=1");
+  s.setResponse(async () => {
+    const data = report();
+    data.store.timezone = "Asia/Tokyo";
+    data.days[0].workedDuration = "05:15";
+    data.events = [["CHECK_IN", "2026-04-08T20:00:00+09:00"], ["BREAK_START", "2026-04-08T23:30:00+09:00"], ["BREAK_END", "2026-04-09T00:15:00+09:00"], ["CHECK_OUT", "2026-04-09T02:00:00+09:00"]].map(([eventType, occurredAt]) => ({ businessDate: "2026-04-08", eventType, occurredAt }));
+    return { ok: true, json: async () => data };
+  });
+  await s.settle();
+  const card = nodes(s.render(), "li").find(n => n.props["data-returned-day"] === "2026-04-08");
+  assert.match(text(card), /翌日 02:00（4\/9）/);
+  assert.match(text(card), /休憩 23:30:00-翌日 00:15:00（4\/9）/);
+  assert.match(text(card), /実働05:15/);
+  assert.ok(s.focused.includes("2026-04-08"));
+  assert.equal(s.button("要確認のみ").props["aria-pressed"], true);
+  assert.ok(s.edits()[0].props.href.endsWith("date=2026-04-08&review=1"));
+});
 
 test("switching staff/month removes old edit links immediately and discards late responses", async () => {
   const s = screen(); await s.settle(); assert.equal(s.edits().length, 10);

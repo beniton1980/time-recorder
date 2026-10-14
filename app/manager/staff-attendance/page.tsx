@@ -3,6 +3,7 @@
 import liff from "@line/liff";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { consumeCorrectionReceipt, isAttendanceDate, type CorrectionReceipt } from "@/lib/manager-attendance-return";
+import { attendanceDisplayTimes, type AttendanceDisplayEvent } from "@/lib/manager-attendance-display";
 import styles from "./staff-attendance.module.css";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || "2010761826-6FNSE1PD";
@@ -30,13 +31,14 @@ type StaffOption = { id: string; legalName: string; status: string };
 
 type Payload = {
   ok: true;
-  store: { id: string; name: string };
+  store: { id: string; name: string; timezone?: string };
   staff: { id: string; legalName: string };
   staffOptions: StaffOption[];
   month: string;
   period: { start: string; end: string; displayThrough: string | null };
   summary: { workDays: number; workDuration: string; breakDuration: string; issueDays: number; gpsIssueCount: number };
   days: Day[];
+  events?: AttendanceDisplayEvent[];
 };
 
 const reasonLabels: Record<string, string> = {
@@ -151,6 +153,7 @@ export default function StaffAttendancePage() {
   }, [month, staffId, storeId, focusDate, receiptId, retry]);
 
   const selectedStaffName = useMemo(() => payload?.staffOptions.find((staff) => staff.id === staffId)?.legalName ?? payload?.staff.legalName ?? "個人の勤怠", [payload, staffId]);
+  const displayTimes = useMemo(() => attendanceDisplayTimes(payload?.events, payload?.store.timezone), [payload]);
   const allDays = useMemo<DisplayDay[]>(() => {
     if (!payload) return [];
     const recordedByDate = new Map(payload.days.map((day) => [day.businessDate, day]));
@@ -203,7 +206,8 @@ export default function StaffAttendancePage() {
           const savedMessage = returned && <p className={styles.returnMessage} role="status">{returnMessage}</p>;
           if (!isRecordedDay(day)) return <li key={day.businessDate} {...returnProps} className={styles.noRecordDay}><div className={styles.dayHeader}><strong>{dateLabel(day.businessDate)}</strong></div>{savedMessage}<p className={styles.noRecord}>勤務記録なし</p><a className={styles.editDay} href={editHref(day.businessDate)}>この日の打刻を修正</a></li>;
           const reasons = [...day.attendanceReasons, ...day.reviewReasons]; const needsReview = day.status === "NEEDS_REVIEW" || reasons.length > 0;
-          return <li key={day.businessDate} {...returnProps} className={needsReview ? styles.reviewDay : undefined}><div className={styles.dayHeader}><strong>{dateLabel(day.businessDate)}</strong><div className={styles.badges}>{needsReview && <span className={styles.reviewBadge}>要確認</span>}{day.hasCorrection && <span className={styles.correctionBadge}>訂正あり</span>}{day.gpsIssueCount > 0 && <span className={styles.gpsBadge}>GPS確認</span>}</div></div>{savedMessage}<dl className={styles.times}><div><dt>出勤</dt><dd>{day.checkIn || "—"}</dd></div><div><dt>退勤</dt><dd>{day.checkOut || "—"}</dd></div><div><dt>実働</dt><dd>{day.workedDuration || "—"}</dd></div><div><dt>休憩</dt><dd>{day.breakDuration || "—"}</dd></div></dl>{day.breakPeriods.length > 0 && <p className={styles.breaks}>休憩 {day.breakPeriods.join(" / ")}</p>}{reasons.length > 0 && <ul className={styles.reasons}>{reasons.map((reason, index) => <li key={`${reason}-${index}`}>{displayReason(reason)}</li>)}</ul>}<a className={styles.editDay} href={editHref(day.businessDate)}>この日の打刻を修正</a></li>;
+          const times = displayTimes.get(day.businessDate) ?? day;
+          return <li key={day.businessDate} {...returnProps} className={needsReview ? styles.reviewDay : undefined}><div className={styles.dayHeader}><strong>{dateLabel(day.businessDate)}</strong><div className={styles.badges}>{needsReview && <span className={styles.reviewBadge}>要確認</span>}{day.hasCorrection && <span className={styles.correctionBadge}>訂正あり</span>}{day.gpsIssueCount > 0 && <span className={styles.gpsBadge}>GPS確認</span>}</div></div>{savedMessage}<dl className={styles.times}><div><dt>出勤</dt><dd>{times.checkIn || "—"}</dd></div><div><dt>退勤</dt><dd>{times.checkOut || "—"}</dd></div><div><dt>実働</dt><dd>{day.workedDuration || "—"}</dd></div><div><dt>休憩</dt><dd>{day.breakDuration || "—"}</dd></div></dl>{times.breakPeriods.length > 0 && <div className={styles.breaks}>{times.breakPeriods.map((period, index) => <p key={index}>休憩 {period}</p>)}</div>}{reasons.length > 0 && <ul className={styles.reasons}>{reasons.map((reason, index) => <li key={`${reason}-${index}`}>{displayReason(reason)}</li>)}</ul>}<a className={styles.editDay} href={editHref(day.businessDate)}>この日の打刻を修正</a></li>;
         })}</ol>}
       </>}
     </section></main>
