@@ -3,9 +3,11 @@
 import liff from "@line/liff";
 import { useCallback, useEffect, useState } from "react";
 import { correctionValidationMessage } from "@/lib/correction-validation";
-import { managerCorrectionInputParts as inputParts, managerCorrectionTimestamp } from "@/lib/manager-correction-datetime";
+import { managerCorrectionInputParts as inputParts } from "@/lib/manager-correction-datetime";
 import styles from "./manager.module.css";
 import PastMonthlyReport from "./past-monthly-report";
+import ConsultationHistory from "./consultation-history";
+import { consultationHref } from "@/lib/consultation";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 const MANAGER_SESSION_LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || LIFF_ID;
@@ -96,11 +98,6 @@ type StaffMembership = {
   state: WorkState;
 };
 
-type ReviewDraft = {
-  eventType: EventType;
-  date: string;
-  time: string;
-};
 
 const eventLabels: Record<EventType, string> = {
   CHECK_IN: "出勤",
@@ -147,7 +144,6 @@ export default function ManagerPage() {
   const [message, setMessage] = useState("管理者権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
-  const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
   const [selectedStaffId, setSelectedStaffId] = useState("");
@@ -422,38 +418,8 @@ export default function ManagerPage() {
     }
   }
 
-  function updateReviewDraft(id: string, values: Partial<ReviewDraft>) {
-    setFieldErrors((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
-    setReviewDrafts((current) => ({
-      ...current,
-      [id]: {
-        eventType: current[id]?.eventType ?? "CHECK_IN",
-        date: current[id]?.date ?? "",
-        time: current[id]?.time ?? "",
-        ...values,
-      },
-    }));
-  }
-
   async function decide(correction: Correction, decision: "APPROVED" | "REJECTED") {
-    const draft = reviewDrafts[correction.id];
-
-    if (
-      decision === "APPROVED" &&
-      correction.operation === "REVIEW" &&
-      (!draft?.date || !draft?.time)
-    ) {
-      setFieldErrors((current) => ({
-        ...current,
-        [correction.id]: "追加する打刻の日付と時刻を入力してください。",
-      }));
-      return;
-    }
-
+    if (correction.operation === "REVIEW") return;
     const verb = decision === "APPROVED" ? "承認" : "却下";
     await dismissKeyboard();
     const details = correction.requested_break_ended_at
@@ -476,12 +442,6 @@ export default function ManagerPage() {
           storeId: dashboard?.manager.store_id,
           requestId: correction.id,
           decision,
-          resolvedEventType:
-            correction.operation === "REVIEW" ? draft?.eventType : undefined,
-          resolvedOccurredAt:
-            correction.operation === "REVIEW" && draft
-              ? managerCorrectionTimestamp(draft.date, draft.time)
-              : undefined,
         }),
       });
       const data = await response.json();
@@ -932,7 +892,7 @@ export default function ManagerPage() {
 
                       {correction.reason && <p className={styles.reason}>{correction.reason}</p>}
 
-                      <div className={styles.dayHistory}>
+                      {correction.operation !== "REVIEW" && <div className={styles.dayHistory}>
                         <p>対象日の有効な打刻履歴</p>
                         {correction.day_events.length === 0 ? (
                           <span>打刻履歴はありません</span>
@@ -949,66 +909,14 @@ export default function ManagerPage() {
                             ))}
                           </ol>
                         )}
-                      </div>
-
-                      {correction.operation === "REVIEW" && (
-                        <div className={styles.resolution}>
-                          <p>管理者が確認した内容を入力してください</p>
-                          <label>
-                            追加する打刻
-                            <select
-                              value={reviewDrafts[correction.id]?.eventType ?? "CHECK_IN"}
-                              onChange={(event) =>
-                                updateReviewDraft(correction.id, {
-                                  eventType: event.target.value as EventType,
-                                })
-                              }
-                            >
-                              <option value="CHECK_IN">出勤</option>
-                              <option value="BREAK_START">休憩開始</option>
-                              <option value="BREAK_END">休憩終了</option>
-                              <option value="CHECK_OUT">退勤</option>
-                            </select>
-                          </label>
-                          <div className={styles.resolutionDateTime}>
-                            <label>
-                              日付
-                              <input
-                                type="date"
-                                value={reviewDrafts[correction.id]?.date ?? ""}
-                                onChange={(event) =>
-                                  updateReviewDraft(correction.id, {
-                                    date: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label>
-                              時刻
-                              <input
-                                type="time"
-                                step="60"
-                                value={reviewDrafts[correction.id]?.time ?? ""}
-                                onChange={(event) =>
-                                  updateReviewDraft(correction.id, {
-                                    time: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                          </div>
-                          <small>
-                            承認すると、この打刻が訂正データとして追加されます。
-                          </small>
-                        </div>
-                      )}
+                      </div>}
 
                       {fieldErrors[correction.id] && (
                         <p className={styles.fieldError} role="alert">
                           {fieldErrors[correction.id]}
                         </p>
                       )}
-                      <div className={styles.actions}>
+                      {correction.operation === "REVIEW" ? <a className={styles.consultationLink} href={consultationHref(dashboard.manager.store_id, correction.id)}>相談内容・対象の打刻を確認</a> : <div className={styles.actions}>
                         <button
                           type="button"
                           className={styles.reject}
@@ -1025,12 +933,13 @@ export default function ManagerPage() {
                         >
                           {deciding === correction.id ? "処理中…" : "承認"}
                         </button>
-                      </div>
+                      </div>}
                     </li>
                   ))}
                 </ul>
               )}
             </section>
+            {!switchingStore && <ConsultationHistory key={dashboard.manager.store_id} storeId={dashboard.manager.store_id} />}
           </>
         )}
       </section>

@@ -5,6 +5,7 @@ import { loadTs } from "./helpers/load-ts.mjs";
 
 const datetime = loadTs("lib/manager-correction-datetime.ts");
 const validation = loadTs("lib/correction-validation.ts");
+const ConsultationHistoryMock = () => null;
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
 function nodes(tree, type) {
   if (!tree || typeof tree !== "object") return [];
@@ -24,6 +25,9 @@ function screen() {
   const location = { href: "https://fixture.invalid/manager?store_id=A", search: "?store_id=A" };
   const component = loadTs("app/manager/page.tsx", {
     "react/jsx-runtime": jsxRuntime,
+    "@/lib/consultation": loadTs("lib/consultation.ts"),
+    "@/lib/attendance-request": { withAttendanceDeadline: fn => fn(new AbortController().signal) },
+    "./consultation-history": { default: ConsultationHistoryMock },
     react: {
       useState(initial) { const i = index++; if (!(i in states)) states[i] = typeof initial === "function" ? initial() : initial; return [states[i], v => { states[i] = typeof v === "function" ? v(states[i]) : v; }]; },
       useEffect: fn => effects.push(fn), useCallback: fn => fn,
@@ -54,6 +58,12 @@ const storeSelect = s => nodes(s.render(), "select")[0];
 const choose = (s, id) => select(s).props.onChange({ target: { value: id } });
 const switchTo = (s, id) => storeSelect(s).props.onChange({ target: { value: id } });
 const options = s => nodes(select(s), "option").map(n => n.props.value);
+test('completed history remains outside the collapsed pending panel when no requests remain',async()=>{
+  const s=screen();await s.start();const tree=s.render();
+  const pending=nodes(tree,'section').find(n=>text(nodes(n,'h2')[0])==='未処理の訂正申請');
+  assert.ok(pending);assert.equal(nodes(pending,ConsultationHistoryMock).length,0);
+  assert.equal(nodes(tree,ConsultationHistoryMock)[0].props.storeId,'A');
+});
 function assertTarget(s, store, staff) {
   assert.equal(select(s).props.value, staff);
   const url = new URL(link(s).props.href, "https://fixture.invalid");

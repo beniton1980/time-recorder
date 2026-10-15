@@ -194,7 +194,7 @@ export async function POST(request: Request) {
             AND epe.business_date = public.correction_request_business_date(cr.id)
         ) day_history ON TRUE
         WHERE cr.store_id = ${manager.store_id}
-          AND cr.status = 'PENDING'
+          AND public.correction_request_status(cr.id) = 'PENDING'
           AND (cr.group_id IS NULL OR cr.id = cr.group_id)
         ORDER BY cr.requested_at ASC
       `,

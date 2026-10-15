@@ -30,7 +30,7 @@ const reply = (requests, next = null) => async () => ({ ok: true, json: async ()
 test("history is lazy, displays status and next action, and refresh reflects a manager decision", async () => {
   const s = screen(); s.render(); assert.equal(s.calls.length, 0);
   s.setResponse(reply([item("one", "PENDING")])); await click(s, "修正申請の状況");
-  assert.match(text(s.render()), /承認待ち/); assert.match(text(s.render()), /まだ勤怠には反映されていません/);
+  assert.match(text(s.render()), /確認待ち/); assert.match(text(s.render()), /まだ勤怠には反映されていません/);
   s.setResponse(reply([item("one", "REJECTED"), item("two", "APPROVED")])); await click(s, "最新の状況を確認");
   assert.match(text(s.render()), /却下/); assert.match(text(s.render()), /内容を管理者に確認/); assert.match(text(s.render()), /承認済み/);
   assert.equal(s.calls[0].body.storeToken, "fixture-qr");
@@ -41,11 +41,11 @@ test("failed refresh does not show an empty or stale success; retry and paginati
   const s = screen(), next = { id: "one", requestedAt: "2026-10-01T01:00:00.123456Z" };
   s.setResponse(reply([item("one", "PENDING")], next)); await click(s, "修正申請の状況");
   s.setResponse(async () => { throw Error("offline"); }); await click(s, "以前の記録を見る");
-  assert.match(text(s.render()), /取得できません/); assert.match(text(s.render()), /承認待ち/);
+  assert.match(text(s.render()), /取得できません/); assert.match(text(s.render()), /確認待ち/);
   s.setResponse(reply([item("two", "APPROVED")])); await click(s, "以前の記録を見る");
   assert.deepEqual(s.calls.at(-1).body.before, next); assert.equal(nodes(s.render(), "li").length, 2);
   s.setResponse(async () => ({ ok: false })); await click(s, "最新の状況を確認");
-  assert.match(text(s.render()), /取得できません/); assert.doesNotMatch(text(s.render()), /承認待ち|承認済み|申請はありません/);
+  assert.match(text(s.render()), /取得できません/); assert.doesNotMatch(text(s.render()), /確認待ち|承認済み|申請はありません/);
   s.setResponse(reply([])); await click(s, "最新の状況を確認"); assert.match(text(s.render()), /修正申請はありません/);
 });
 
@@ -55,4 +55,11 @@ test("duplicate clicks share a lookup and an old membership's late response cann
   await click(s, "修正申請の状況"); await click(s, "最新の状況を確認"); assert.equal(s.calls.length, 1);
   s.unmount(); resolve(await reply([item("old", "APPROVED")])()); await settle();
   assert.doesNotMatch(text(s.render()), /承認済み/);
+});
+
+test("consultation progress and no-change completion do not claim an approval or an unreflected saved correction", async () => {
+  const s=screen();s.setResponse(reply([{...item('one','PENDING'),hasSavedCorrections:true}]));await click(s,'修正申請の状況');
+  assert.match(text(s.render()),/修正保存済み・未完了/);assert.doesNotMatch(text(s.render()),/まだ勤怠には反映されていません/);
+  s.setResponse(reply([{...item('one','RESOLVED'),outcome:'NO_CHANGE'}]));await click(s,'最新の状況を確認');
+  assert.match(text(s.render()),/対応済み/);assert.match(text(s.render()),/打刻の変更はありません/);assert.doesNotMatch(text(s.render()),/承認済み|却下/);
 });

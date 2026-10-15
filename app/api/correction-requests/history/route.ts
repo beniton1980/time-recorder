@@ -38,12 +38,14 @@ export async function POST(request: Request) {
           SELECT cr.id, cr.requested_at, jsonb_build_object(
             'id', cr.id,
             'requestedAt', to_char(cr.requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-            'status', cr.status,
+            'status', public.correction_request_status(cr.id),
+            'hasSavedCorrections', EXISTS (SELECT 1 FROM consultation_corrections c WHERE c.request_id = cr.id),
+            'outcome', resolution.outcome,
             'operation', cr.operation,
             'eventType', cr.requested_event_type,
             'occurredAt', cr.requested_occurred_at,
             'breakEndedAt', ending.requested_occurred_at,
-            'decidedAt', COALESCE(cr.approved_at, cr.rejected_at),
+            'decidedAt', COALESCE(resolution.resolved_at, cr.approved_at, cr.rejected_at),
             'automatic', cr.approved_by = 'SELF_SERVICE_RULE',
             'category', cr.client_request_payload->>'category',
             'reason', CASE WHEN cr.client_request_payload->>'category' = 'OTHER'
@@ -53,6 +55,7 @@ export async function POST(request: Request) {
               AND cr.approved_by IS DISTINCT FROM 'SELF_SERVICE_RULE'
           ) AS item
           FROM correction_requests cr
+          LEFT JOIN consultation_resolutions resolution ON resolution.request_id = cr.id
           LEFT JOIN correction_requests ending ON ending.group_id = cr.id AND ending.id <> cr.id
             AND ending.staff_id = st.id AND ending.store_id = s.id
           WHERE cr.staff_id = st.id AND cr.store_id = s.id
