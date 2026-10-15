@@ -13,6 +13,7 @@
 .heading span { flex-shrink: 0; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
 .PENDING { color: #735316; background: #fff3cd; }
 .APPROVED { color: #286242; background: #e3f0e7; }
+.RESOLVED { color: #286242; background: #e3f0e7; }
 .REJECTED { color: #8f3434; background: #fbe8e8; }
 .date { color: #52655a; font-size: 12px; }
 .reason { white-space: pre-wrap; }

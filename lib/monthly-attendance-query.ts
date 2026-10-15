@@ -60,7 +60,7 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
       FROM correction_requests cr
       JOIN staff st ON st.id = cr.staff_id
       WHERE cr.store_id = ${storeId}::uuid
-        AND cr.status = 'PENDING'
+        AND public.correction_request_status(cr.id) = 'PENDING'
         AND public.correction_request_business_date(cr.id) BETWEEN ${period.start}::date AND ${period.end}::date
     `,
   ]);

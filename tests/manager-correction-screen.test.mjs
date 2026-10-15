@@ -13,19 +13,24 @@ function nodes(tree, type) {
 }
 const text = tree => typeof tree === "string" ? tree : Array.isArray(tree) ? tree.map(text).join("") : tree?.props ? text(tree.props.children) : "";
 const button = (screen, label) => nodes(screen.render(), "button").find(item => text(item) === label);
-function screen(businessDate = "2026-04-30", occurredAt = "2026-05-01T02:00:00+09:00", reviewOnly = false) {
+function screen(businessDate = "2026-04-30", occurredAt = "2026-05-01T02:00:00+09:00", reviewOnly = false, consultation = false) {
   const event = { effectiveId: "fixture-event", businessDate, eventType: "CHECK_OUT", occurredAt, corrected: false };
   const states = [
     { ok: true, store: { id: "fixture-store", name: "架空店舗" }, staff: { id: "fixture-staff", legalName: "架空スタッフ" }, month: businessDate.slice(0, 7), events: [event] },
   ];
   const calls = [], redirects = [], receipts = [];
-  let index = 0, result = { ok: true }, status = 200;
+  if (consultation) states[0].consultation = { id: 'fixture-consultation', reason: '架空の相談', version: '1000.123456' };
+  const refs=[];
+  let index = 0, refIndex = 0, result = { ok: true }, status = 200, failure = false;
   const component = loadTs("app/manager/staff-attendance/edit/page.tsx", {
     "react/jsx-runtime": jsxRuntime,
+    "@/lib/consultation": loadTs("lib/consultation.ts"),
+    "@/lib/attendance-request": { withAttendanceDeadline: fn => fn(new AbortController().signal) },
+    "./consultation-history": { default: () => null },
     react: {
       useState(initial) { const i = index++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; },
-      useEffect() {}, useMemo: fn => fn(), useRef: value => ({ current: value }),
-      useSyncExternalStore: () => `?store_id=fixture-store&staff_id=fixture-staff&date=${businessDate}${reviewOnly ? "&review=1" : ""}`,
+      useEffect() {}, useMemo: fn => fn(), useRef: value => { const i=refIndex++; return refs[i] ??= { current: value }; },
+      useSyncExternalStore: () => `?store_id=fixture-store&staff_id=fixture-staff&date=${businessDate}${reviewOnly ? "&review=1" : ""}${consultation ? "&consultation=fixture-consultation" : ""}`,
     },
     "@line/liff": { default: { getIDToken: () => "fixture-identity" } },
     "@/lib/manager-correction-datetime": datetime,
@@ -33,14 +38,25 @@ function screen(businessDate = "2026-04-30", occurredAt = "2026-05-01T02:00:00+0
     "./edit.module.css": { default: {} },
   }, {
     process: { env: {} },
+    crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000002' },
     HTMLElement: class {}, document: { activeElement: null },
     window: { requestAnimationFrame: fn => fn(), location: { replace: url => redirects.push(url) } },
-    fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return { ok: status < 400, json: async () => result }; },
+    fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); if(failure) throw Error('offline after commit'); return { ok: status < 400, json: async () => result }; },
   });
-  return { calls, redirects, receipts, render() { index = 0; return component.default(); }, respond(value, code = 200) { result = value; status = code; } };
+  return { calls, redirects, receipts, render() { index = 0; refIndex = 0; return component.default(); }, respond(value, code = 200) { result = value; status = code; failure = false; }, fail() { failure = true; } };
 }
 const input = (s, type) => nodes(s.render(), "input").find(item => item.props.type === type);
 function reason(s, value) { nodes(s.render(), "select").at(-1).props.onChange({ target: { value } }); }
+
+test('consultation save keeps its operation ID after response loss and returns to the source without claiming completion',async()=>{
+  const s=screen('2026-04-30','2026-05-01T02:00:00+09:00',false,true);
+  button(s,'変更').props.onClick();reason(s,'打刻時刻の誤り');button(s,'修正内容を確認').props.onClick();
+  s.fail();await button(s,'この内容で確定').props.onClick();await settle();
+  assert.match(text(s.render()),/相談へ戻って保存済みの修正を確認/);assert.equal(s.redirects.length,0);
+  s.respond({ok:true});await button(s,'この内容で確定').props.onClick();await settle();
+  assert.equal(s.calls[0].body.clientRequestId,s.calls[1].body.clientRequestId);assert.equal(s.calls[1].body.expectedVersion,'1000.123456');
+  assert.equal(s.calls[1].body.consultationId,'fixture-consultation');assert.match(s.redirects[0],/\/manager\/consultations\?/);assert.equal(s.receipts.length,0);
+});
 
 for (const [businessDate, occurredAt, expectedDate] of [
   ["2026-04-30", "2026-04-30T17:00:00Z", "2026-05-01"],

@@ -96,7 +96,9 @@ export async function POST(request: Request) {
               AND pe.client_request_id = ${pending?.clientRequestId ?? null}::uuid
           )
           WHEN ${pending?.kind ?? null}::text = 'correction' THEN (
-            SELECT json_build_object('id', cr.id, 'status', cr.status,
+            SELECT json_build_object('id', cr.id, 'status', public.correction_request_status(cr.id),
+              'has_saved_corrections', EXISTS (SELECT 1 FROM consultation_corrections c WHERE c.request_id = cr.id),
+              'outcome', (SELECT r.outcome FROM consultation_resolutions r WHERE r.request_id = cr.id),
               'requested_event_type', cr.requested_event_type,
               'requested_occurred_at', cr.requested_occurred_at)
             FROM correction_requests cr

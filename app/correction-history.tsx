@@ -8,7 +8,9 @@ import styles from "./correction-history.module.css";
 
 type Cursor = { id: string; requestedAt: string };
 type Correction = Cursor & {
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "RESOLVED";
+  hasSavedCorrections?: boolean;
+  outcome?: "CORRECTED" | "NO_CHANGE";
   operation: "ADD" | "REPLACE" | "VOID" | "REVIEW";
   category: string | null;
   eventType: EventType | null;
@@ -82,12 +84,12 @@ export default function CorrectionHistory({ getStoreToken }: { getStoreToken: ()
       {requests?.length === 0 && <p>修正申請はありません。</p>}
       {requests && requests.length > 0 && <ol className={styles.list}>{requests.map(item => <li key={item.id}>
         <div className={styles.heading}><strong>{item.unattributed ? "過去の修正記録" : item.category === "MISTAKE" || item.automatic ? "押し間違いの修正" : item.category === "OTHER" || item.operation === "REVIEW" ? "その他の修正申請" : "押し忘れの申請"}</strong>
-          <span className={styles[item.status]}>{item.status === "PENDING" ? "承認待ち" : item.status === "REJECTED" ? "却下" : item.automatic || item.unattributed ? "修正済み" : "承認済み"}</span></div>
+          <span className={styles[item.status]}>{item.status === "RESOLVED" ? "対応済み" : item.status === "PENDING" ? item.hasSavedCorrections ? "修正保存済み・未完了" : item.operation === "REVIEW" ? "確認待ち" : "承認待ち" : item.status === "REJECTED" ? "却下" : item.automatic || item.unattributed ? "修正済み" : "承認済み"}</span></div>
         <p className={styles.date}>{item.unattributed ? "記録" : "申請"}：<time dateTime={item.requestedAt}>{dateTime(item.requestedAt)}</time></p>
         {item.eventType && item.occurredAt && <p>{item.operation === "VOID" ? "取消：" : ""}{events[item.eventType]}：{dateTime(item.occurredAt)}{item.breakEndedAt && <> 〜 {dateTime(item.breakEndedAt)}</>}</p>}
         {item.reason && <p className={styles.reason}>{item.reason}</p>}
-        {item.decidedAt && <p className={styles.date}>{item.status === "REJECTED" ? "却下" : "反映"}：{dateTime(item.decidedAt)}</p>}
-        <p className={styles.guidance}>{item.status === "PENDING" ? "管理者の確認をお待ちください。まだ勤怠には反映されていません。" : item.status === "REJECTED" ? "勤怠には反映されていません。内容を管理者に確認し、必要なら「打刻修正」から申請してください。" : item.unattributed ? "管理者による直接修正など、申請者を区別できない過去の記録も含みます。" : "勤怠への反映が完了しています。"}</p>
+        {item.decidedAt && <p className={styles.date}>{item.status === "RESOLVED" ? "対応完了" : item.status === "REJECTED" ? "却下" : "反映"}：{dateTime(item.decidedAt)}</p>}
+        <p className={styles.guidance}>{item.status === "RESOLVED" ? item.outcome === "NO_CHANGE" ? "確認しました。打刻の変更はありません。" : "打刻を修正しました。" : item.status === "PENDING" ? item.hasSavedCorrections ? "打刻の修正は保存されています。相談の完了までお待ちください。" : "管理者の確認をお待ちください。まだ勤怠には反映されていません。" : item.status === "REJECTED" ? "勤怠には反映されていません。内容を管理者に確認し、必要なら「打刻修正」から申請してください。" : item.unattributed ? "管理者による直接修正など、申請者を区別できない過去の記録も含みます。" : "勤怠への反映が完了しています。"}</p>
       </li>)}</ol>}
       {next && <button className={styles.more} type="button" disabled={loading} onClick={() => void load(next)}>以前の記録を見る</button>}
     </div>}

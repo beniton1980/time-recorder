@@ -30,6 +30,7 @@ type DisplayDay = Day | { businessDate: string; noRecord: true };
 type StaffOption = { id: string; legalName: string; status: string };
 
 type Payload = {
+  consultation?: { id: string; reason: string } | null;
   ok: true;
   store: { id: string; name: string; timezone?: string };
   staff: { id: string; legalName: string };
@@ -96,6 +97,7 @@ export default function StaffAttendancePage() {
   const storeId = params.get("store_id") ?? "";
   const staffId = params.get("staff_id") ?? "";
   const requestedMonth = params.get("month") ?? "";
+  const consultationId = params.get("consultation") ?? "";
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? requestedMonth : currentMonth();
   const reviewOnly = params.get("review") === "1";
   const requestedFocus = params.get("focus") ?? "";
@@ -136,7 +138,7 @@ export default function StaffAttendancePage() {
         if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
         const idToken = liff.getIDToken();
         if (!idToken) throw new Error("対象スタッフを確認できませんでした。");
-        const response = await fetch("/api/manager/staff-attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId, staffId, month }) });
+        const response = await fetch("/api/manager/staff-attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId, staffId, month, ...(consultationId ? { consultationId } : {}) }) });
         const data = await response.json();
         if (!response.ok || !data.ok) {
           if (data.code === "MANAGER_ACCESS_REQUIRED") throw new Error("この店舗の管理者権限を確認できませんでした。");
@@ -150,7 +152,7 @@ export default function StaffAttendancePage() {
     }
     void load();
     return () => { active = false; };
-  }, [month, staffId, storeId, focusDate, receiptId, retry]);
+  }, [month, staffId, storeId, focusDate, receiptId, retry, consultationId]);
 
   const selectedStaffName = useMemo(() => payload?.staffOptions.find((staff) => staff.id === staffId)?.legalName ?? payload?.staff.legalName ?? "個人の勤怠", [payload, staffId]);
   const displayTimes = useMemo(() => attendanceDisplayTimes(payload?.events, payload?.store.timezone), [payload]);
@@ -175,7 +177,7 @@ export default function StaffAttendancePage() {
     returnTarget.current.scrollIntoView({ block: "start", behavior: "instant" });
   }, [ready, focusExists, storeId, staffId, month, focusDate, reviewOnly, retry]);
 
-  function editHref(businessDate: string) { return `/manager/staff-attendance/edit?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&date=${encodeURIComponent(businessDate)}${reviewOnly ? "&review=1" : ""}`; }
+  function editHref(businessDate: string) { return `/manager/staff-attendance/edit?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&date=${encodeURIComponent(businessDate)}${reviewOnly ? "&review=1" : ""}${consultationId ? `&consultation=${encodeURIComponent(consultationId)}` : ""}`; }
   function changeStaff(nextStaffId: string) {
     if (nextStaffId === staffId) return;
     setMessage("スタッフを切り替えています"); setError(null);
@@ -192,7 +194,8 @@ export default function StaffAttendancePage() {
     <main className={styles.page}><section className={styles.shell}>
       <header className={styles.header}><a className={styles.back} href="/manager">← 管理画面へ戻る</a><p className={styles.eyebrow}>ONOGAMI 勤怠</p><h1>{selectedStaffName}</h1>{payload && <p className={styles.store}>{payload.store.name}</p>}</header>
       {process.env.NEXT_PUBLIC_MANAGER_LIFF_ID && <p className="manager-preview-notice">検証用の勤怠画面です。</p>}
-      {payload && payload.staffOptions.length > 0 && <label className={styles.staffSelector}>スタッフを選択<select value={staffId} onChange={(event) => changeStaff(event.target.value)}>{payload.staffOptions.map((staff) => <option key={staff.id} value={staff.id}>{staff.legalName}{staff.status === "departed" ? "（退社）" : staff.status === "inactive" ? "（一時停止中）" : ""}</option>)}</select></label>}
+      {consultationId && <p className={styles.status}><a href={`/manager/consultations?${new URLSearchParams({ store_id: storeId, id: consultationId })}`}>← 相談へ戻る</a>{ready && payload?.consultation && <><br />この相談への対応中：{payload.consultation.reason}<br />対象の勤務を選んでください。受付日と勤務日は異なる場合があります。</>}</p>}
+      {!consultationId && payload && payload.staffOptions.length > 0 && <label className={styles.staffSelector}>スタッフを選択<select value={staffId} onChange={(event) => changeStaff(event.target.value)}>{payload.staffOptions.map((staff) => <option key={staff.id} value={staff.id}>{staff.legalName}{staff.status === "departed" ? "（退社）" : staff.status === "inactive" ? "（一時停止中）" : ""}</option>)}</select></label>}
       <label className={styles.monthSelector}>表示する月<input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></label>
       {!routeError && message && <p className={styles.loading} role="status">{message}</p>}
       {(routeError || error) && <div className={styles.error} role="alert"><p>{notice ? "打刻の保存は完了しましたが、最新の勤怠を読み込めませんでした。" : routeError ?? error}</p>{!routeError && <button type="button" className={styles.retry} onClick={() => { setMessage("勤怠を読み込んでいます"); setError(null); setRetry(value => value + 1); }}>もう一度読み込む</button>}</div>}

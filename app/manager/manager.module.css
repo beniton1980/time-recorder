@@ -710,3 +710,5 @@
     grid-template-columns: 1fr 1.5fr;
   }
 }
+.consultationLink { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border-radius: 8px; background: #285d40; color: white; text-decoration: none; font-weight: 700; margin-top: 12px; }
+.consultationLink:focus-visible { outline: 3px solid #78ac8c; outline-offset: 3px; }

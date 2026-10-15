@@ -168,6 +168,8 @@ function operationNotice(operation: PendingOperation, result: OperationResult) {
     return (result.occurred_at ? formatTime(result.occurred_at) + "の" : "")
       + eventLabels[result.event_type ?? operation.eventType] + "を記録しました";
   }
+  if (result.status === "RESOLVED") return result.outcome === "NO_CHANGE" ? "相談は対応済みです。打刻の変更はありません。" : "相談は対応済みです。打刻の修正内容を確認できます。";
+  if (result.status === "PENDING" && result.has_saved_corrections) return "打刻の修正は保存済みですが、相談はまだ完了していません。";
   if (result.status === "PENDING") return "打刻修正を申請しました（承認待ち）";
   if (result.status === "REJECTED") return "この修正申請は却下されています。現在の記録を確認してください。";
   return "打刻修正が反映されています。現在の記録を表示しています。";

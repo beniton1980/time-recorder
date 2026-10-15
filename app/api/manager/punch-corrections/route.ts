@@ -20,6 +20,9 @@ type Body = {
   eventType?: unknown;
   occurredAt?: unknown;
   reason?: unknown;
+  consultationId?: unknown;
+  clientRequestId?: unknown;
+  expectedVersion?: unknown;
 };
 
 const uuidPattern =
@@ -75,6 +78,11 @@ export async function POST(request: Request) {
   if (parsedOccurredAt && Number.isNaN(parsedOccurredAt.getTime())) {
     return NextResponse.json({ ok: false, code: "INVALID_OCCURRED_AT" }, { status: 400 });
   }
+  if (body.consultationId !== undefined && (typeof body.consultationId !== "string" || !uuidPattern.test(body.consultationId)
+    || typeof body.clientRequestId !== "string" || !uuidPattern.test(body.clientRequestId)
+    || typeof body.expectedVersion !== "string" || !/^\d{1,12}(?:\.\d{1,6})?$/.test(body.expectedVersion))) {
+    return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
+  }
 
   try {
     const identity = await verifyLineIdToken(body.idToken);
@@ -108,6 +116,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, code: "STAFF_NOT_FOUND" }, { status: 404 });
     }
 
+    // Replay precedes target lookup: a successful VOID has already removed its
+    // target, and a successful save may since have been explicitly completed.
+    if (body.consultationId !== undefined) {
+      const rows = await sql`
+        SELECT * FROM public.apply_consultation_correction(
+          ${body.storeId}::uuid, ${body.staffId}::uuid, ${body.consultationId}::uuid,
+          ${body.clientRequestId}::uuid, ${body.expectedVersion}, ${operation},
+          ${operation === "ADD" ? null : body.targetEffectiveId}::uuid,
+          ${operation === "VOID" ? null : eventType},
+          ${operation === "VOID" ? null : parsedOccurredAt!.toISOString()}::timestamptz, ${reason})
+      `;
+      return NextResponse.json({ ok: true, correction: rows[0] }, { headers: { "Cache-Control": "no-store" } });
+    }
     let targetEventId: string | null = null;
     let targetCorrectionId: string | null = null;
 
@@ -146,6 +167,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, correction: inserted[0] });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    for (const code of ["ATTENDANCE_CHANGED", "REQUEST_NOT_PENDING", "CLIENT_REQUEST_CONFLICT", "CONSULTATION_NOT_FOUND"]) {
+      if (message.includes(code)) return NextResponse.json({ ok: false, code }, { status: code === "CONSULTATION_NOT_FOUND" ? 404 : 409 });
+    }
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });
     }

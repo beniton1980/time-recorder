@@ -113,6 +113,8 @@ test("0046 preserves stored records, RLS/ACL and valid shifts while repairing hi
     assert.deepEqual(await snapshot(s,old),before); assert.deepEqual(await acl(),permissions);
     await old.db.exec(migration);
     assert.deepEqual(await snapshot(s,old),before); assert.deepEqual(await acl(),permissions);
+    // The current application additionally requires 0047; 0046 invariants were checked above.
+    await old.db.exec(await readFile(new URL("../db/migrations/0047_consultation_resolution.sql",import.meta.url),"utf8"));
     assert.equal((await month(s,"2026-09",old)).days[0].workedMinutes,421);
     assert.equal((await month(s,"2026-10",old)).days.length,0);
     const foreign=old.getSql({mode:"manager",lineIdentity:"fixture_other",storeId:old.store});

@@ -1,0 +1,33 @@
+.page { min-height: 100vh; padding: 24px 16px 56px; background: #f3f6f4; color: #243b2e; }
+.shell { max-width: 760px; margin: 0 auto; overflow-wrap: anywhere; }
+.shell h1 { margin: 8px 0; font-size: 26px; }
+.shell h2 { margin: 0; font-size: 18px; }
+.shell p { line-height: 1.65; margin: 12px 0; }
+.shell a { color: #285d40; }
+.shell button, .shell textarea { font: inherit; }
+.shell button:disabled { opacity: .55; cursor: wait; }
+.shell a:focus-visible, .shell button:focus-visible, .shell textarea:focus-visible { outline: 3px solid #39825a; outline-offset: 3px; }
+.eyebrow, .muted { color: #607368; font-size: 13px; }
+.eyebrow { letter-spacing: .12em; }
+.card { margin-top: 18px; padding: 20px; background: #fff; border: 1px solid #d9e3dc; border-radius: 14px; }
+.heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.badge { border-radius: 6px; padding: 5px 9px; background: #e6f1e9; color: #285d40; font-size: 13px; }
+.primary, .secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 44px; border-radius: 8px; padding: 10px 16px; border: 1px solid #becfc3; text-decoration: none; font-weight: 700; cursor: pointer; }
+.shell .primary { background: #285d40; color: #fff; border-color: #285d40; }
+.secondary { background: #fff; color: #285d40; }
+.reason { white-space: pre-wrap; }
+.notice { padding: 12px 14px; border-radius: 8px; background: #eaf4ed; }
+.error { padding: 12px; background: #fff0ef; color: #923d34; border-radius: 8px; }
+.changes, .days { list-style: none; padding: 0; margin: 12px 0 0; }
+.changes li + li, .days li + li { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e9e4; }
+.changes dl { margin: 12px 0; display: grid; gap: 10px; }
+.changes dl > div { display: grid; grid-template-columns: 64px minmax(0,1fr); gap: 12px; }
+.changes dt { color: #607368; }
+.changes dd { margin: 0; }
+.changes small { display: block; color: #607368; margin-top: 4px; }
+.days li > span { display: inline-block; margin-left: 12px; font-size: 13px; }
+.days li a { display: inline-block; padding: 10px 0; }
+.closeForm { margin-top: 16px; }
+.closeForm label { display: grid; gap: 8px; }
+.closeForm textarea { box-sizing: border-box; width: 100%; min-height: 96px; border: 1px solid #a5baad; border-radius: 8px; padding: 12px; resize: vertical; }
+@media (max-width: 480px) { .card { padding: 16px; } .primary { width: 100%; box-sizing: border-box; } .changes dl > div { grid-template-columns: 52px minmax(0,1fr); gap: 8px; } }

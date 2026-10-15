@@ -8,7 +8,7 @@ import { logServerError } from "@/lib/safe-log";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Body = { idToken?: unknown; storeId?: unknown; staffId?: unknown; month?: unknown };
+type Body = { idToken?: unknown; storeId?: unknown; staffId?: unknown; month?: unknown; consultationId?: unknown };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function monthPeriod(month: string) {
@@ -26,7 +26,8 @@ export async function POST(request: Request) {
     typeof body.idToken !== "string" ||
     typeof body.storeId !== "string" || !uuidPattern.test(body.storeId) ||
     typeof body.staffId !== "string" || !uuidPattern.test(body.staffId) ||
-    typeof body.month !== "string" || !/^\d{4}-\d{2}$/.test(body.month)
+    typeof body.month !== "string" || !/^\d{4}-\d{2}$/.test(body.month) ||
+    (body.consultationId !== undefined && (typeof body.consultationId !== "string" || !uuidPattern.test(body.consultationId)))
   ) {
     return Response.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
@@ -65,6 +66,16 @@ export async function POST(request: Request) {
     `;
     const target = staffOptions.find((staff) => String(staff.id) === body.staffId);
     if (!target) return Response.json({ ok: false, code: "STAFF_NOT_FOUND" }, { status: 404 });
+
+    let consultation = null;
+    if (body.consultationId !== undefined) {
+      const rows = await sql`SELECT cr.id, cr.reason, extract(epoch FROM ss.updated_at)::text AS version
+        FROM correction_requests cr JOIN staff_states ss ON ss.staff_id = cr.staff_id
+        WHERE cr.id = ${body.consultationId}::uuid AND cr.staff_id = ${body.staffId}::uuid AND cr.store_id = ${body.storeId}::uuid
+          AND cr.operation = 'REVIEW' AND public.correction_request_status(cr.id) = 'PENDING'`;
+      if (!rows[0]) return Response.json({ ok: false, code: "CONSULTATION_NOT_PENDING" }, { status: 409 });
+      consultation = rows[0];
+    }
 
     const store = managers[0];
     const period = monthPeriod(body.month);
@@ -105,6 +116,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       ok: true,
+      consultation,
       store: { id: String(store.id), name: String(store.name), timezone: String(store.timezone) },
       staff: { id: body.staffId, legalName: String(target.legal_name) },
       staffOptions: staffOptions.map((item) => ({
