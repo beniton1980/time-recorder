@@ -56,29 +56,12 @@ export async function loadMonthlyAttendance(sql: SqlClient, storeId: string, per
         cr.store_id,
         cr.staff_id,
         st.legal_name,
-        COALESCE(
-          cr.requested_business_date,
-          target.business_date,
-          ((cr.requested_occurred_at AT TIME ZONE s.timezone)
-            - make_interval(mins => s.business_day_start_minute))::date,
-          ((cr.requested_at AT TIME ZONE s.timezone)
-            - make_interval(mins => s.business_day_start_minute))::date
-        )::text AS business_date
+        public.correction_request_business_date(cr.id)::text AS business_date
       FROM correction_requests cr
-      JOIN stores s ON s.id = cr.store_id
       JOIN staff st ON st.id = cr.staff_id
-      LEFT JOIN effective_punch_events target
-        ON target.original_event_id = cr.target_event_id
       WHERE cr.store_id = ${storeId}::uuid
         AND cr.status = 'PENDING'
-        AND COALESCE(
-          cr.requested_business_date,
-          target.business_date,
-          ((cr.requested_occurred_at AT TIME ZONE s.timezone)
-            - make_interval(mins => s.business_day_start_minute))::date,
-          ((cr.requested_at AT TIME ZONE s.timezone)
-            - make_interval(mins => s.business_day_start_minute))::date
-        ) BETWEEN ${period.start}::date AND ${period.end}::date
+        AND public.correction_request_business_date(cr.id) BETWEEN ${period.start}::date AND ${period.end}::date
     `,
   ]);
   const days = deriveDailyAttendanceRecords(
