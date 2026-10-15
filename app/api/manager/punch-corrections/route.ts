@@ -25,38 +25,6 @@ type Body = {
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-type EventRow = { effective_id: string; event_type: EventType; occurred_at: string };
-
-function normalizeDate(value: unknown) {
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  const text = String(value);
-  const match = text.match(/\d{4}-\d{2}-\d{2}/);
-  if (!match) throw new Error("BUSINESS_DATE_INVALID");
-  return match[0];
-}
-
-function invalidTransitions(events: EventRow[]) {
-  let state: "OFF_DUTY" | "WORKING" | "ON_BREAK" = "OFF_DUTY";
-  let invalid = 0;
-  for (const event of events) {
-    const allowed =
-      (state === "OFF_DUTY" && event.event_type === "CHECK_IN") ||
-      (state === "WORKING" && (event.event_type === "BREAK_START" || event.event_type === "CHECK_OUT")) ||
-      (state === "ON_BREAK" && event.event_type === "BREAK_END");
-    if (!allowed) {
-      invalid += 1;
-      continue;
-    }
-    state =
-      event.event_type === "CHECK_OUT"
-        ? "OFF_DUTY"
-        : event.event_type === "BREAK_START"
-          ? "ON_BREAK"
-          : "WORKING";
-  }
-  return invalid;
-}
-
 export async function POST(request: Request) {
   let body: Body;
   try {
@@ -142,21 +110,13 @@ export async function POST(request: Request) {
 
     let targetEventId: string | null = null;
     let targetCorrectionId: string | null = null;
-    let businessDate: string;
 
-    if (operation === "ADD") {
-      const dates = await sql`
-        SELECT (((${parsedOccurredAt!.toISOString()}::timestamptz AT TIME ZONE timezone)
-          - make_interval(mins => business_day_start_minute)))::date AS business_date
-        FROM stores WHERE id = ${manager.store_id}
-      `;
-      businessDate = normalizeDate(dates[0].business_date);
-    } else {
+    if (operation !== "ADD") {
       if (typeof body.targetEffectiveId !== "string") {
         return NextResponse.json({ ok: false, code: "TARGET_REQUIRED" }, { status: 400 });
       }
       const targets = await sql`
-        SELECT effective_id, original_event_id, origin_correction_id, business_date
+        SELECT effective_id, original_event_id, origin_correction_id
         FROM effective_punch_events
         WHERE effective_id = ${body.targetEffectiveId}
           AND staff_id = ${body.staffId}
@@ -168,39 +128,6 @@ export async function POST(request: Request) {
       }
       targetEventId = targets[0].original_event_id as string | null;
       targetCorrectionId = targets[0].origin_correction_id as string | null;
-      businessDate = normalizeDate(targets[0].business_date);
-    }
-
-    const current = (await sql`
-      SELECT effective_id, event_type, occurred_at
-      FROM effective_punch_events
-      WHERE staff_id = ${body.staffId} AND business_date = ${businessDate}
-      ORDER BY occurred_at ASC, created_at ASC, effective_id ASC
-    `) as EventRow[];
-
-    const beforeInvalid = invalidTransitions(current);
-    let prospective = current.filter((event) => event.effective_id !== body.targetEffectiveId);
-
-    if (operation !== "VOID") {
-      const occurredAt = parsedOccurredAt!.toISOString();
-      if (prospective.some((event) => new Date(event.occurred_at).getTime() === parsedOccurredAt!.getTime())) {
-        return NextResponse.json({ ok: false, code: "DUPLICATE_PUNCH_TIME" }, { status: 422 });
-      }
-      prospective.push({
-        effective_id: operation === "ADD" ? "new" : String(body.targetEffectiveId),
-        event_type: eventType,
-        occurred_at: occurredAt,
-      });
-    }
-
-    prospective.sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime());
-    const afterInvalid = invalidTransitions(prospective);
-
-    if (afterInvalid > 0 && afterInvalid >= beforeInvalid) {
-      return NextResponse.json(
-        { ok: false, code: "INVALID_PUNCH_SEQUENCE", invalidTransitions: afterInvalid },
-        { status: 422 },
-      );
     }
 
     const inserted = await sql`
@@ -224,6 +151,13 @@ export async function POST(request: Request) {
     }
     if (error instanceof Error && error.message.includes("OCCURRED_AT_IN_FUTURE")) {
       return NextResponse.json({ ok: false, code: "OCCURRED_AT_IN_FUTURE" }, { status: 400 });
+    }
+    if (error instanceof Error) {
+      for (const code of ["INVALID_PUNCH_SEQUENCE", "DUPLICATE_PUNCH_TIME", "TARGET_NOT_FOUND"]) {
+        if (error.message.includes(code)) {
+          return NextResponse.json({ ok: false, code }, { status: code === "TARGET_NOT_FOUND" ? 404 : 422 });
+        }
+      }
     }
     logServerError("manager_direct_correction_failed");
     return NextResponse.json(
