@@ -6,6 +6,7 @@ import { loadTs } from "./helpers/load-ts.mjs";
 const datetime = loadTs("lib/manager-correction-datetime.ts");
 const validation = loadTs("lib/correction-validation.ts");
 const ConsultationHistoryMock = () => null;
+const ReportFileMock = () => null;
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
 function nodes(tree, type) {
   if (!tree || typeof tree !== "object") return [];
@@ -21,6 +22,7 @@ function dashboard(store, ids) {
 }
 function screen() {
   const states = [], effects = [], calls = [];
+  let prepared = null, releaseCsv;
   let index = 0, result = dashboard("A", ["A1", "A2"]), hold, release;
   const location = { href: "https://fixture.invalid/manager?store_id=A", search: "?store_id=A" };
   const component = loadTs("app/manager/page.tsx", {
@@ -31,11 +33,15 @@ function screen() {
     react: {
       useState(initial) { const i = index++; if (!(i in states)) states[i] = typeof initial === "function" ? initial() : initial; return [states[i], v => { states[i] = typeof v === "function" ? v(states[i]) : v; }]; },
       useEffect: fn => effects.push(fn), useCallback: fn => fn,
+      useRef(initial) { const i = index++; if (!(i in states)) states[i] = { current: initial }; return states[i]; },
     },
     "@line/liff": { default: { init: async () => {}, isLoggedIn: () => true, getIDToken: () => "fixture-identity" } },
     "@/lib/manager-correction-datetime": datetime, "@/lib/correction-validation": validation,
     "./manager.module.css": { default: {} },
     "./past-monthly-report": { default: () => null },
+    "./report-file": { default: ReportFileMock, useReportFile: () => ({ prepared,
+      clear: () => { prepared = null; }, prepare: (blob, name) => { prepared = { blob, name, url: "blob:fixture" }; },
+    }) },
   }, {
     process: { env: {} }, URL,
     window: { location, confirm: () => true, history: { replaceState: (_a, _b, url) => { location.href = String(url); location.search = url.search; } } },
@@ -43,11 +49,13 @@ function screen() {
       const body = JSON.parse(options.body); calls.push({ url, body });
       if (url.endsWith("/session")) return { ok: true, json: async () => ({ ok: true, manager: { memberships: ["A", "B"].map(store => ({ store_id: store, store_name: `架空店舗${store}` })) } }) };
       if (url.endsWith("/dashboard")) { if (hold) await hold; return { ok: result.ok, json: async () => result }; }
-      return { ok: true, json: async () => ({ ok: true, reports: [] }) };
+      if (url.endsWith("/csv")) return new Promise(resolve => { releaseCsv = () => resolve({ ok: true, blob: async () => new Blob(["fixture"]) }); });
+      return { ok: true, json: async () => ({ ok: true, reports: [{ id: "report", period_start: "2026-09-01", period_end: "2026-09-30" }] }) };
     },
   });
   return { calls, location, render() { index = 0; return component.default(); },
-    async start() { this.render(); effects[0](); await settle(); },
+    async start() { this.render(); effects.forEach(effect => effect()); await settle(); },
+    async releaseCsv() { releaseCsv(); await settle(); },
     respond(value) { result = value; }, hold() { hold = new Promise(resolve => { release = resolve; }); },
     async release() { release(); hold = null; await settle(); } };
 }
@@ -58,6 +66,27 @@ const storeSelect = s => nodes(s.render(), "select")[0];
 const choose = (s, id) => select(s).props.onChange({ target: { value: id } });
 const switchTo = (s, id) => storeSelect(s).props.onChange({ target: { value: id } });
 const options = s => nodes(select(s), "option").map(n => n.props.value);
+
+test("saved-period CSV is prepared for an explicit save and cleared when switching stores", async () => {
+  const s = screen(); await s.start();
+  nodes(s.render(), "button").find(node => text(node) === "補助CSV").props.onClick(); await settle();
+  await s.releaseCsv();
+  const file = nodes(s.render(), ReportFileMock)[0];
+  assert.equal(file.props.storeId, "A");
+  assert.equal(file.props.prepared.name, "架空店舗A-2026-09-01-2026-09-30-勤怠.csv");
+  s.respond(dashboard("B", ["B1"])); switchTo(s, "B");
+  assert.equal(nodes(s.render(), ReportFileMock).length, 0);
+  await settle(); assert.equal(nodes(s.render(), ReportFileMock).length, 0);
+});
+
+test("a late CSV from the previous store never appears after switching", async () => {
+  const s = screen(); await s.start();
+  nodes(s.render(), "button").find(node => text(node) === "補助CSV").props.onClick(); await settle();
+  s.respond(dashboard("B", ["B1"])); switchTo(s, "B"); await settle();
+  await s.releaseCsv();
+  assert.equal(nodes(s.render(), ReportFileMock).length, 0);
+  assertTarget(s, "B", "B1");
+});
 test('completed history remains outside the collapsed pending panel when no requests remain',async()=>{
   const s=screen();await s.start();const tree=s.render();
   const pending=nodes(tree,'section').find(n=>text(nodes(n,'h2')[0])==='未処理の訂正申請');

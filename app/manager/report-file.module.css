@@ -1,0 +1,36 @@
+.file {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid #b9d8c3;
+  border-radius: 10px;
+  background: #f2faf5;
+  color: #183a25;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.file p { margin: 0 0 10px; }
+.file .name { color: #52655a; font-size: 12px; }
+.file button, .download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border: 1px solid #207a45;
+  border-radius: 8px;
+  color: #fff;
+  background: #207a45;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+.file button:disabled { opacity: .65; cursor: wait; }
+.file summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
+.file details p { margin-top: 8px; }
+.file p:last-child { margin-bottom: 0; }

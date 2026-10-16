@@ -1,11 +1,12 @@
 "use client";
 
 import liff from "@line/liff";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { correctionValidationMessage } from "@/lib/correction-validation";
 import { managerCorrectionInputParts as inputParts } from "@/lib/manager-correction-datetime";
 import styles from "./manager.module.css";
 import PastMonthlyReport from "./past-monthly-report";
+import ReportFile, { useReportFile } from "./report-file";
 import ConsultationHistory from "./consultation-history";
 import { consultationHref } from "@/lib/consultation";
 
@@ -156,6 +157,9 @@ export default function ManagerPage() {
   const [reissuingPeriod, setReissuingPeriod] = useState<string | null>(null);
   const [reissueMessage, setReissueMessage] = useState<string | null>(null);
   const [exportingPeriod, setExportingPeriod] = useState<string | null>(null);
+  const monthlyFile = useReportFile();
+  const fileRequest = useRef(0);
+  useEffect(() => () => { fileRequest.current += 1; }, []);
   const [savingStoreLocation, setSavingStoreLocation] = useState(false);
   const [storeLocationMessage, setStoreLocationMessage] = useState<string | null>(null);
   const [selectedCoManagerStaffId, setSelectedCoManagerStaffId] = useState("");
@@ -336,6 +340,9 @@ export default function ManagerPage() {
     setSwitchingStore(true);
     setError(null);
     setMonthlyReports([]);
+    fileRequest.current += 1;
+    monthlyFile.clear();
+    setExportingPeriod(null);
     setReissueMessage(null);
     setStoreLocationMessage(null);
     setCoManagerShare(null);
@@ -516,6 +523,8 @@ export default function ManagerPage() {
   }
 
   async function exportMonthlyCsv(report: MonthlyReport) {
+    const request = ++fileRequest.current;
+    monthlyFile.clear();
     setExportingPeriod(report.id);
     setReissueMessage(null);
     try {
@@ -532,19 +541,12 @@ export default function ManagerPage() {
       });
       if (!response.ok) throw new Error("CSVを作成できませんでした。");
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${dashboard?.manager.store_name ?? "店舗"}-${report.period_end}-勤怠.csv`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      setReissueMessage("補助CSVを保存しました。");
+      if (request !== fileRequest.current) return;
+      monthlyFile.prepare(blob, `${dashboard?.manager.store_name ?? "店舗"}-${report.period_start}-${report.period_end}-勤怠.csv`, "csv");
     } catch (caught) {
-      setReissueMessage(caught instanceof Error ? caught.message : "CSVを作成できませんでした。");
+      if (request === fileRequest.current) setReissueMessage(caught instanceof Error ? caught.message : "CSVを作成できませんでした。");
     } finally {
-      setExportingPeriod(null);
+      if (request === fileRequest.current) setExportingPeriod(null);
     }
   }
 
@@ -765,6 +767,7 @@ export default function ManagerPage() {
               />
               <p className={styles.sectionNote}>打刻を修正した後、対象期間の勤怠表を最新データで再発行できます。</p>
               {reissueMessage && <p className={styles.reissueMessage} role="status">{reissueMessage}</p>}
+              {monthlyFile.prepared && <ReportFile key={monthlyFile.prepared.url} prepared={monthlyFile.prepared} storeId={dashboard.manager.store_id} />}
               {monthlyReports.length === 0 ? (
                 <p className={styles.empty}>再発行できる勤怠表はまだありません</p>
               ) : (

@@ -46,6 +46,7 @@ async function start(page, path, env, seededStates = {}) {
     "@/lib/manager-attendance-display": loadTs("lib/manager-attendance-display.ts"),
     "./manager.module.css": { default: {} },
     "./past-monthly-report": { default: () => null },
+    "./report-file": { default: () => null, useReportFile: () => ({ prepared: null, clear() {} }) },
     "./staff-attendance.module.css": { default: {} },
     "./edit.module.css": { default: {} },
   }, {

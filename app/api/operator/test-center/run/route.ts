@@ -28,6 +28,7 @@ export async function POST(request: Request) {
       check("email", "成果物", "月次メールの模擬生成", scenario.email.subject.includes("受入テスト"), "送信せず件名・HTMLを生成"),
       check("csv", "成果物", "CSVの模擬生成", scenario.csv.startsWith("\uFEFF") && scenario.csv.includes("営業日"), `${scenario.csv.length}文字を生成`),
       check("tenant", "セキュリティ・店舗境界", "店舗別データ分離", storeAOnly && crossStorePresent, "別店舗fixtureを集計対象から除外"),
+      { id: "monthly-file-save", category: "月次帳票", label: "iPhone・LINE内でPDFと補助CSVを保存", status: "MANUAL", detail: "隔離環境の架空データで、過去月のPDF・CSVと送信済み一覧のCSVを取得し、準備完了後の保存・共有からファイルに保存して開く。キャンセル・再操作・非対応時のダウンロードと外部ブラウザへの移動を確認。店舗・期間変更後に旧ファイルが残らず、取得だけでメール・配信履歴が増えないことを照合。PC検証とiPhoneのLINE実機受入は分けて記録" },
       check("gps", "セキュリティ・店舗境界", "Soft GPS判定", scenario.gpsIssues.length === 1, "GPS警告でも勤怠を成立"),
     ];
     const manual = [

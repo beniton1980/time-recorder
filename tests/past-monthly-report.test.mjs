@@ -5,6 +5,7 @@ import * as periods from "../lib/payroll-default-period.mjs";
 import { loadTs } from "./helpers/load-ts.mjs";
 
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
+const ReportFileMock = () => null;
 const text = tree => typeof tree === "string" || typeof tree === "number" ? String(tree) : Array.isArray(tree) ? tree.map(text).join("") : tree?.props ? text(tree.props.children) : "";
 function nodes(tree, type) {
   if (!tree || typeof tree !== "object") return [];
@@ -13,6 +14,7 @@ function nodes(tree, type) {
 }
 function screen() {
   const slots = [], calls = [], working = [], confirmations = [];
+  let prepared = null;
   let index = 0, cleanup, monthResponse = async body => ({ ok: true, reportMonth: body.reportMonth, closingRule: "day_25", today: "2026-10-14", reports: [] });
   let actionResponse = async () => ({ ok: true, blob: async () => new Blob(["fixture"]), json: async () => ({ status: "SENT" }) });
   const component = loadTs("app/manager/past-monthly-report.tsx", {
@@ -25,6 +27,10 @@ function screen() {
     "@line/liff": { default: { getIDToken: () => "fixture" } },
     "@/lib/payroll-default-period.mjs": periods,
     "./manager.module.css": { default: {} },
+    "./report-file": { default: ReportFileMock, useReportFile: () => ({
+      prepared, clear: () => { prepared = null; },
+      prepare: (blob, name, format) => { prepared = { blob, name, format, url: "blob:fixture" }; },
+    }) },
   }, {
     window: { confirm: message => { confirmations.push(message); return true; } },
     URL: { createObjectURL: () => "blob:fixture", revokeObjectURL: () => {} },
@@ -121,4 +127,32 @@ test("response loss retains the chosen month and period while duplicate clicks s
   s.setAction(async () => ({ ok: true, json: async () => ({ status: "ALREADY_SENT" }) }));
   await click(s, "この期間をメール送信");
   assert.match(text(s.render()), /初回送信済みです/);
+});
+
+test("files require an explicit save step, and period changes or failed retrievals discard old files", async () => {
+  const s = screen();
+  const file = () => nodes(s.render(), ReportFileMock)[0]?.props.prepared;
+  await change(s, "対象月", "2026-09"); await click(s, "PDFを取得");
+  assert.equal(file().name, "架空店舗-2026-08-26-2026-09-25-勤怠.pdf");
+  assert.equal(file().format, "pdf");
+  assert.doesNotMatch(text(s.render()), /ダウンロードをご確認|保存しました/);
+  await change(s, "この帳票の締め日", "day_15"); assert.equal(file(), undefined);
+  await click(s, "補助CSVを取得"); assert.equal(file().format, "csv");
+  await click(s, "期間を調整"); assert.equal(file(), undefined);
+  await click(s, "PDFを取得"); await change(s, "開始日", "2026-08-17"); assert.equal(file(), undefined);
+  await click(s, "PDFを取得"); await change(s, "終了日", "2026-09-14"); assert.equal(file(), undefined);
+  await click(s, "PDFを取得"); await change(s, "対象月", "2026-08"); assert.equal(file(), undefined);
+  await click(s, "PDFを取得");
+  s.setAction(async () => { throw new Error("offline"); });
+  await click(s, "補助CSVを取得"); assert.equal(file(), undefined);
+  assert.match(text(s.render()), /帳票を取得できませんでした/);
+  assert.equal(s.calls.some(call => call.body.action === "send"), false);
+});
+
+test("a response arriving after leaving the store cannot prepare a file", async () => {
+  const s = screen(); await change(s, "対象月", "2026-09"); let release;
+  s.setAction(() => new Promise(resolve => { release = resolve; }));
+  button(s, "PDFを取得").props.onClick(); await settle(); s.unmount();
+  release({ ok: true, blob: async () => new Blob(["late"]) }); await settle();
+  assert.equal(nodes(s.render(), ReportFileMock).length, 0);
 });
