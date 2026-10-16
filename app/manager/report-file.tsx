@@ -32,7 +32,7 @@ export function useReportFile() {
   return { prepared, prepare, clear };
 }
 
-export default function ReportFile({ prepared, storeId }: { prepared: PreparedFile; storeId: string }) {
+export default function ReportFile({ prepared, storeId, purpose = "attendance" }: { prepared: PreparedFile; storeId: string; purpose?: "attendance" | "payroll" }) {
   const { file, url } = prepared;
   const [message, setMessage] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
@@ -64,7 +64,7 @@ export default function ReportFile({ prepared, storeId }: { prepared: PreparedFi
 
   function openBrowser() {
     // Carry only the store selection. Never forward LIFF credentials or a blob URL.
-    const destination = new URL("/manager", window.location.origin);
+    const destination = new URL(purpose === "payroll" ? "/manager/payroll/history" : "/manager", window.location.origin);
     destination.searchParams.set("store_id", storeId);
     try {
       liff.openWindow({ url: destination.href, external: true });
@@ -74,7 +74,7 @@ export default function ReportFile({ prepared, storeId }: { prepared: PreparedFi
   }
 
   return <div className={styles.file} ref={panel}>
-    <p role="status">{file.type === "application/pdf" ? "PDF" : "補助CSV"}の準備ができました。次に保存してください。</p>
+    <p role="status">{purpose === "payroll" ? "給与集計CSV" : file.type === "application/pdf" ? "PDF" : "補助CSV"}の準備ができました。次に保存してください。</p>
     <p className={styles.name}>{file.name}</p>
     {canShare ? <>
       <button type="button" disabled={sharing} onClick={() => void share()}>{sharing ? "保存・共有の操作中…" : "保存・共有"}</button>
@@ -87,8 +87,8 @@ export default function ReportFile({ prepared, storeId }: { prepared: PreparedFi
     <details>
       <summary>保存できない場合</summary>
       {canShare && <a className={styles.download} href={url} download={file.name}>ダウンロードを試す</a>}
-      <p>LINE内では保存できない場合があります。Safariなどのブラウザで開き、同じ店舗・対象月を選んで取得し直してください。LINEへのログインを求められる場合があります。</p>
-      <button type="button" onClick={openBrowser}>ブラウザで管理画面を開く</button>
+      <p>LINE内では保存できない場合があります。Safariなどのブラウザで開き、{purpose === "payroll" ? "同じ店舗・対象期間の最新版" : "同じ店舗・対象月"}を選んで取得し直してください。LINEへのログインを求められる場合があります。</p>
+      <button type="button" onClick={openBrowser}>{purpose === "payroll" ? "ブラウザで保存済み給与を開く" : "ブラウザで管理画面を開く"}</button>
     </details>
   </div>;
 }

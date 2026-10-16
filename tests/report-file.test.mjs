@@ -70,3 +70,14 @@ test("cancellation and unavailable native sharing retain a usable download and b
     assert.deepEqual(h.revoked, []);
   }
 });
+
+test("payroll file keeps its bytes and returns to payroll history without credentials", async () => {
+  const p = { ...props("csv"), purpose: "payroll" }, h = harness();
+  const tree = h.render(p);
+  assert.match(text(tree), /給与集計CSVの準備/);
+  assert.match(text(tree), /同じ店舗・対象期間の最新版/);
+  assert.doesNotMatch(text(tree), /補助CSV|対象月/);
+  assert.equal(nodes(tree, "a")[0].props.download, p.prepared.file.name);
+  nodes(tree, "button")[0].props.onClick();
+  assert.deepEqual(h.opened.map(x => ({ ...x })), [{ url: "https://fixture.invalid/manager/payroll/history?store_id=fixture-store", external: true }]);
+});
