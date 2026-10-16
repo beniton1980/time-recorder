@@ -61,6 +61,7 @@ test('both sides of a work-day move remain linked while the request day is separ
  const changed={...consultation,changes:[{id:'correction',operation:'REPLACE',before:{day:'2026-08-31'},after:{day:'2026-09-01'},reason:'架空訂正',at:'2026-10-15T01:00:00Z'}]};
  const days=['2026-08-31','2026-09-01','2026-09-02'].map(businessDate=>({businessDate,status:'NEEDS_REVIEW',reasons:['PENDING_CORRECTION']}));
  const s=screen(changed,days);s.render();await settle();
+ assert.match(text(s.render()),/相談受付時の対象勤務は未指定/);
  assert.deepEqual(nodes(workSection(s),'a').map(a=>new URL(a.props.href,'https://fixture.invalid').searchParams.get('focus')),['2026-08-31','2026-09-01']);
  assert.match(text(requestSection(s)),/2026-09-02/);
  const sameDay=screen({...consultation,targetDay:consultation.requestDay},days);sameDay.render();await settle();

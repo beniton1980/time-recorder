@@ -86,7 +86,7 @@ export default function ConsultationPage() {
     {c && <>
       <section className={styles.card}><div className={styles.heading}><h2>相談内容</h2><span className={styles.badge}>{c.status === "RESOLVED" ? "対応済み" : c.status === "PENDING" ? c.changes.length ? "修正保存済み・未完了" : "確認待ち" : "処理済み"}</span></div>
         <p className={styles.muted}>相談受付：{dateTime(c.requestedAt)}</p><p className={styles.reason}>{c.reason}</p>
-        {c.status === "PENDING" && <><p>{c.targetDay ? `対象勤務：${c.targetDay}` : "対象未指定。相談受付日と勤務日は異なる場合があります。"}</p>
+        {c.status === "PENDING" && <><p>{c.targetDay ? `対象勤務：${c.targetDay}` : c.changes.length ? "相談受付時の対象勤務は未指定です。保存した修正の勤務日は下に表示しています。" : "対象未指定。相談受付日と勤務日は異なる場合があります。"}</p>
           <a className={styles.primary} href={attendanceHref(c.targetDay ?? undefined, true)}>対象の打刻を確認・修正</a></>}
       </section>
       <section className={styles.card}><h2>この相談で保存した修正</h2>
