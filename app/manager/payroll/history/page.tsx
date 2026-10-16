@@ -1,8 +1,9 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { managerApiAuthError } from "@/lib/manager-api-auth-error";
+import ReportFile, { useReportFile } from "../../report-file";
 import styles from "../payroll.module.css";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
@@ -37,6 +38,19 @@ export default function PayrollHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exportingRunId, setExportingRunId] = useState<string | null>(null);
+  const reportFile = useReportFile();
+  const selectionVersion = useRef(0);
+  const exporting = useRef(false);
+
+  function resetSelection() {
+    selectionVersion.current += 1;
+    exporting.current = false;
+    setExportingRunId(null);
+    reportFile.clear();
+    setError(null);
+    setDetail(null);
+    return selectionVersion.current;
+  }
 
   async function historyApi(targetStore: string, runId?: string) {
     const idToken = liff.getIDToken();
@@ -52,21 +66,32 @@ export default function PayrollHistoryPage() {
   }
 
   async function loadRuns(targetStore: string) {
-    setLoading(true); setError(null); setDetail(null);
-    try { const result = await historyApi(targetStore); setRuns(result.runs as PayrollRun[]); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "保存済み給与を読み込めませんでした。"); }
-    finally { setLoading(false); }
+    const version = resetSelection();
+    setLoading(true); setRuns([]);
+    try {
+      const result = await historyApi(targetStore);
+      if (version === selectionVersion.current) setRuns(result.runs as PayrollRun[]);
+    }
+    catch (caught) { if (version === selectionVersion.current) setError(caught instanceof Error ? caught.message : "保存済み給与を読み込めませんでした。"); }
+    finally { if (version === selectionVersion.current) setLoading(false); }
   }
 
   async function loadDetail(runId: string) {
-    setLoading(true); setError(null);
-    try { setDetail(await historyApi(storeId, runId) as RunDetail); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "給与の内訳を読み込めませんでした。"); }
-    finally { setLoading(false); }
+    const version = resetSelection();
+    setLoading(true);
+    try {
+      const result = await historyApi(storeId, runId) as RunDetail;
+      if (version === selectionVersion.current) setDetail(result);
+    }
+    catch (caught) { if (version === selectionVersion.current) setError(caught instanceof Error ? caught.message : "給与の内訳を読み込めませんでした。"); }
+    finally { if (version === selectionVersion.current) setLoading(false); }
   }
 
   async function downloadCsv(run: PayrollRun) {
-    if (!run.is_latest || exportingRunId) return;
+    if (!run.is_latest || exporting.current) return;
+    const version = selectionVersion.current;
+    exporting.current = true;
+    reportFile.clear();
     setExportingRunId(run.id); setError(null);
     try {
       const idToken = liff.getIDToken();
@@ -84,13 +109,10 @@ export default function PayrollHistoryPage() {
         throw new Error("給与CSVを出力できませんでした。");
       }
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `ONOGAMI-控除前給与集計-${run.period_start}-${run.period_end}-第${run.version_number}版.csv`;
-      document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "給与CSVを出力できませんでした。"); }
-    finally { setExportingRunId(null); }
+      if (version !== selectionVersion.current) return;
+      reportFile.prepare(blob, `ONOGAMI-控除前給与集計-${run.period_start}-${run.period_end}-第${run.version_number}版.csv`, "csv");
+    } catch (caught) { if (version === selectionVersion.current) setError(caught instanceof Error ? caught.message : "給与CSVを出力できませんでした。"); }
+    finally { if (version === selectionVersion.current) { exporting.current = false; setExportingRunId(null); } }
   }
 
   useEffect(() => {
@@ -108,13 +130,14 @@ export default function PayrollHistoryPage() {
         }
         if (!active) return;
         const next = session.manager.memberships as Membership[];
-        const first = next[0]?.store_id ?? "";
+        const requestedStore = new URLSearchParams(window.location.search).get("store_id");
+        const first = next.find((membership) => membership.store_id === requestedStore)?.store_id ?? next[0]?.store_id ?? "";
         setMemberships(next); setStoreId(first);
         if (!first) throw new Error("対象店舗がありません。");
         await loadRuns(first);
       } catch (caught) { if (active) { setError(caught instanceof Error ? caught.message : "読み込めませんでした。"); setLoading(false); } }
     })();
-    return () => { active = false; };
+    return () => { active = false; selectionVersion.current += 1; };
   }, []);
 
   return <main className={`${styles.page} ${styles.previewPage}`}>
@@ -123,7 +146,7 @@ export default function PayrollHistoryPage() {
     {memberships.length > 1 && <section className={styles.card}><label className={styles.label}>店舗</label><select className={styles.select} value={storeId} onChange={(e) => { setStoreId(e.target.value); void loadRuns(e.target.value); }}>{memberships.map((m) => <option value={m.store_id} key={m.store_id}>{m.store_name}</option>)}</select></section>}
     {loading && <p className={styles.message}>保存済み給与を読み込んでいます…</p>}
     {!detail && !loading && <section className={styles.card}><h2>保存履歴</h2>{runs.length === 0 ? <p className={styles.revisionNote}>保存済みの給与集計はありません。</p> : <ul className={styles.historyList}>{runs.map((run) => <li key={run.id}><button className={`${styles.secondaryButton} ${styles.fullButton}`} onClick={() => void loadDetail(run.id)}><span>{run.period_start} 〜 {run.period_end}<small>{versionLabel(run)} / 保存 {savedAt(run.saved_at)} / {run.staff_count}名</small></span><strong>{Number(run.gross_pay_yen).toLocaleString("ja-JP")}円</strong></button></li>)}</ul>}</section>}
-    {detail && <><section className={`${styles.card} ${styles.summaryCard}`}><button className={styles.secondaryButton} onClick={() => setDetail(null)}>履歴一覧へ戻る</button><div className={styles.registered}><span>{detail.run.period_start} 〜 {detail.run.period_end}</span><strong>{Number(detail.run.gross_pay_yen).toLocaleString("ja-JP")}円</strong><small>{versionLabel(detail.run)} / 保存 {savedAt(detail.run.saved_at)} / {detail.items.length}名</small></div><p className={styles.revisionNote}>{detail.run.is_latest ? "この期間で最後に保存した結果です。" : "この期間の以前の保存結果です。最新の保存結果と間違えないようご注意ください。"} 計算仕様 {detail.run.calculation_spec_version}</p>{detail.run.is_latest ? <><button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={exportingRunId !== null} onClick={() => void downloadCsv(detail.run)}>{exportingRunId === detail.run.id ? "CSVを作成中…" : "最新版の控除前給与集計をCSV出力"}</button><p className={styles.revisionNote}>税・社会保険等の控除、手取り額、振込情報は含みません。氏名と給与額を含むため、ファイルの取扱いにご注意ください。</p></> : <p className={styles.revisionNote}>以前の保存結果は誤使用を防ぐためCSV出力できません。履歴一覧から最新版を開いてください。</p>}</section>
+    {detail && <><section className={`${styles.card} ${styles.summaryCard}`}><button className={styles.secondaryButton} onClick={() => { resetSelection(); setLoading(false); }}>履歴一覧へ戻る</button><div className={styles.registered}><span>{detail.run.period_start} 〜 {detail.run.period_end}</span><strong>{Number(detail.run.gross_pay_yen).toLocaleString("ja-JP")}円</strong><small>{versionLabel(detail.run)} / 保存 {savedAt(detail.run.saved_at)} / {detail.items.length}名</small></div><p className={styles.revisionNote}>{detail.run.is_latest ? "この期間で最後に保存した結果です。" : "この期間の以前の保存結果です。最新の保存結果と間違えないようご注意ください。"} 計算仕様 {detail.run.calculation_spec_version}</p>{detail.run.is_latest ? <><button className={`${styles.primaryButton} ${styles.fullButton}`} disabled={exportingRunId !== null} onClick={() => void downloadCsv(detail.run)}>{exportingRunId === detail.run.id ? "CSVを作成中…" : "最新版の控除前給与集計をCSV出力"}</button><p className={styles.revisionNote}>税・社会保険等の控除、手取り額、振込情報は含みません。氏名と給与額を含むため、ファイルの取扱いにご注意ください。</p>{reportFile.prepared && <ReportFile key={reportFile.prepared.url} prepared={reportFile.prepared} storeId={storeId} purpose="payroll" />}</> : <p className={styles.revisionNote}>以前の保存結果は誤使用を防ぐためCSV出力できません。履歴一覧から最新版を開いてください。</p>}</section>
     {detail.comparison && <section className={styles.card}><h2>前回保存版からの変更</h2><p className={styles.revisionNote}>第{detail.comparison.previousRun.version_number}版（{savedAt(detail.comparison.previousRun.saved_at)}）→ 第{detail.run.version_number}版（{savedAt(detail.run.saved_at)}）</p><div className={styles.diffSummary}><div><span>控除前総支給額</span><strong>{yen(detail.comparison.summary.previousGrossPayYen)} → {yen(detail.comparison.summary.currentGrossPayYen)}</strong><small>{signedYen(detail.comparison.summary.grossPayDeltaYen)}（{detail.comparison.summary.grossPayDeltaYen > 0 ? "増額" : detail.comparison.summary.grossPayDeltaYen < 0 ? "減額" : "変更なし"}）</small></div><div><span>集計対象</span><strong>{detail.comparison.summary.previousStaffCount}名 → {detail.comparison.summary.currentStaffCount}名</strong><small>変更 {detail.comparison.summary.changedStaffCount}名 / 追加 {detail.comparison.summary.addedStaffCount}名 / 対象外 {detail.comparison.summary.removedStaffCount}名</small></div></div>{detail.comparison.previousRun.calculation_spec_version !== detail.run.calculation_spec_version && <p className={styles.warningNote}>計算仕様が異なる保存版の比較です。差額には勤怠だけでなく、計算仕様変更の影響を含む可能性があります。</p>}<p className={styles.revisionNote}>これは2つの保存済み給与集計結果の比較です。勤怠の変更履歴や、確定・支払済みを示すものではありません。</p><p className={styles.revisionNote}>差額は控除前総支給額の増減です。税・社会保険・手取り・振込額は含みません。</p>{detail.comparison.changes.length === 0 ? <p className={styles.message}>スタッフ別の変更はありません。</p> : <div className={styles.staffGrid}>{detail.comparison.changes.map((change) => <article className={styles.staffResultCard} key={change.staffId}><div className={styles.staffIdentity}><strong>{change.previousName && change.currentName && change.previousName !== change.currentName ? `${change.previousName} → ${change.currentName}` : change.currentName ?? change.previousName}</strong><span className={styles.inactive}>{changeStatus(change)}</span></div><div className={styles.registered}><span>控除前の総支給額</span><strong>{yen(change.previousGrossPayYen)} → {yen(change.currentGrossPayYen)}</strong><small>{signedYen(change.grossPayDeltaYen)}</small></div>{change.minuteChanges.length > 0 && <div className={styles.revisionBox}><strong>時間の変更</strong><ul className={styles.historyList}>{change.minuteChanges.map((item) => <li key={item.key}><span>{minuteLabel(item.key)}</span><strong>{hours(item.previous)} → {hours(item.current)}（{signedMinutes(item.delta)}）</strong></li>)}</ul></div>}{change.componentChanges.length > 0 && <div className={styles.revisionBox}><strong>金額内訳の変更</strong><ul className={styles.historyList}>{change.componentChanges.map((item) => <li key={item.key}><span>{componentLabel(item.key)}</span><strong>{yen(item.previous)} → {yen(item.current)}（{signedYen(item.delta)}）</strong></li>)}</ul></div>}</article>)}</div>}</section>}
     <section className={styles.card}><h2>スタッフ別内訳</h2><div className={styles.staffGrid}>{detail.items.map((item) => <article className={styles.staffResultCard} key={item.staff_id}><div className={styles.staffIdentity}><strong>{item.legal_name_snapshot}</strong><span className={styles.inactive}>{detail.run.is_latest ? "最新版" : "以前の保存"}</span></div><div className={styles.registered}><span>控除前の総支給額</span><strong>{Number(item.gross_pay_yen).toLocaleString("ja-JP")}円</strong><small>実働 {hours(item.minutes_snapshot.worked)}</small></div><div className={styles.revisionBox}><strong>保存時の金額内訳</strong><ul className={styles.historyList}>{Object.entries(item.components_snapshot).map(([name, amount]) => <li key={name}><span>{componentLabel(name)}</span><strong>{Number(amount).toLocaleString("ja-JP")}円</strong></li>)}</ul></div></article>)}</div></section></>}
   </main>;

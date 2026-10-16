@@ -45,5 +45,4 @@ test("payroll history UI explains the CSV boundary and does not export old versi
   assert.match(page, /税・社会保険等の控除、手取り額、振込情報は含みません/);
   assert.match(page, /以前の保存結果は誤使用を防ぐためCSV出力できません/);
   assert.match(page, /\/api\/manager\/payroll\/history\/csv/);
-  assert.match(page, /URL\.revokeObjectURL/);
 });
