@@ -145,6 +145,7 @@ export default function ManagerPage() {
   const [message, setMessage] = useState("管理者権限を確認しています");
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
+  const [correctionNotice, setCorrectionNotice] = useState<{ storeId: string; text: string } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [selectedDate, setSelectedDate] = useState(currentBusinessDate);
   const [selectedStaffId, setSelectedStaffId] = useState("");
@@ -339,6 +340,7 @@ export default function ManagerPage() {
   async function changeStore(storeId: string) {
     if (!dashboard || storeId === dashboard.manager.store_id) return;
     setSwitchingStore(true);
+    setCorrectionNotice(null);
     setError(null);
     setMonthlyReports([]);
     fileRequest.current += 1;
@@ -427,7 +429,8 @@ export default function ManagerPage() {
   }
 
   async function decide(correction: Correction, decision: "APPROVED" | "REJECTED") {
-    if (correction.operation === "REVIEW") return;
+    if (!dashboard || correction.operation === "REVIEW") return;
+    const storeId = dashboard.manager.store_id;
     const verb = decision === "APPROVED" ? "承認" : "却下";
     await dismissKeyboard();
     const details = correction.requested_break_ended_at
@@ -435,6 +438,7 @@ export default function ManagerPage() {
     if (!window.confirm(`${correction.legal_name}さんの申請を${verb}しますか？${details}`)) return;
 
     setDeciding(correction.id);
+    setCorrectionNotice(null);
     setError(null);
     setFieldErrors((current) => { const next = { ...current }; delete next[correction.id]; return next; });
 
@@ -447,7 +451,7 @@ export default function ManagerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           idToken,
-          storeId: dashboard?.manager.store_id,
+          storeId,
           requestId: correction.id,
           decision,
         }),
@@ -476,6 +480,10 @@ export default function ManagerPage() {
         delete next[correction.id];
         return next;
       });
+      const targetTime = correction.requested_occurred_at ?? correction.target_occurred_at;
+      setCorrectionNotice({ storeId, text: `${correction.legal_name}さんの${targetTime ? `${formatDateTime(targetTime)}の` : ""}申請を${verb}しました。${decision === "APPROVED"
+        ? "勤怠への反映が完了しました。個人の勤怠で確認できます。"
+        : "この申請の内容は勤怠に反映していません。内容を本人と確認し、必要なら再申請や打刻修正を行ってください。"}` });
       await reloadDashboard(selectedDate);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "申請を更新できませんでした。");
@@ -967,6 +975,7 @@ export default function ManagerPage() {
                 </ul>
               )}
             </section>
+            {!switchingStore && correctionNotice?.storeId === dashboard.manager.store_id && <p className={styles.reissueMessage} role="status">{correctionNotice.text}</p>}
             {!switchingStore && <ConsultationHistory key={dashboard.manager.store_id} storeId={dashboard.manager.store_id} />}
           </>
         )}

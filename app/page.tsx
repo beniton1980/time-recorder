@@ -194,7 +194,7 @@ export default function Home() {
   const [now, setNow] = useState<Date | null>(null);
   const [showCorrection, setShowCorrection] = useState(false);
   const [correctionCategory, setCorrectionCategory] =
-    useState<"MISTAKE" | "MISSED" | "OTHER">("MISTAKE");
+    useState<"" | "MISTAKE" | "MISSED" | "OTHER">("");
   const [correctionEvent, setCorrectionEvent] =
     useState<EventType | "BREAK_PAIR">("CHECK_IN");
   const [correctionDate, setCorrectionDate] = useState("");
@@ -475,7 +475,7 @@ export default function Home() {
       if (terminalFailure) {
         if (!finishRejectedCorrection(operation)) {
           forgetOperation(operation);
-          setNotice("打刻は追加されていません。最新の勤務状態と履歴を確認してください。");
+          setNotice("勤務状態と履歴を更新しました。打刻は追加されていません。表示を確認し、必要な打刻をもう一度押してください。");
         }
       } else {
         setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
@@ -509,7 +509,7 @@ export default function Home() {
     if (view.kind !== "ready" || pendingOperationRef.current || punchInFlightRef.current) return;
 
     invalidateCorrectionValidation();
-    setCorrectionCategory("MISTAKE");
+    setCorrectionCategory(canCorrectLastPunch(view.membership) ? "MISTAKE" : "");
     setCorrectionEvent("CHECK_IN");
     setCorrectionDate("");
     setCorrectionTime("");
@@ -568,6 +568,10 @@ export default function Home() {
 
   function correctionIntentFromInput(): CorrectionIntent | null {
     if (view.kind !== "ready") return null;
+    if (correctionCategory === "") {
+      setCorrectionError("修正内容を選択してください。");
+      return null;
+    }
     if (correctionCategory === "MISTAKE") {
       const eventType = correctedLastEvent(view.membership);
       if (!canCorrectLastPunch(view.membership) || (eventType !== "CHECK_OUT" && eventType !== "BREAK_START")) {
@@ -915,12 +919,14 @@ export default function Home() {
                         onChange={(event) => changeCorrectionInput(() => {
                           setCorrectionCategory(
                             event.target.value as
+                              | ""
                               | "MISTAKE"
                               | "MISSED"
                               | "OTHER",
                           );
                         })}
                       >
+                        <option value="" disabled>修正内容を選択</option>
                         <option value="MISTAKE">
                           前回の打刻を押し間違えた
                         </option>
