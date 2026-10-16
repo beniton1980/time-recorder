@@ -62,7 +62,18 @@ export async function POST(request: Request) {
         ${store.monthly_report_recipient_version_id}::uuid
       )
     `;
-    if (claimed.length === 0) return Response.json({ ok: true, status: "ALREADY_PROCESSED" });
+    if (claimed.length === 0) {
+      const existing = await sql`
+        SELECT status FROM monthly_attendance_deliveries
+        WHERE store_id = ${store.id}::uuid AND period_start = ${period.start}::date
+          AND period_end = ${period.end}::date AND delivery_version = ${version}
+      `;
+      const deliveryStatus = existing[0]?.status;
+      if (deliveryStatus === "SENT" || deliveryStatus === "PROCESSING") {
+        return Response.json({ ok: true, status: "ALREADY_PROCESSED", deliveryStatus, period });
+      }
+      return Response.json({ ok: false, code: "MONTHLY_REPORT_RECIPIENT_CHANGED" }, { status: 409 });
+    }
     try {
       const monthly = await loadMonthlyAttendance(sql as never, String(store.id), period);
       const report = buildMonthlyAttendanceReport({ storeName: String(store.name), timezone: String(store.timezone), label: `${period.end.slice(5, 7)}月度`, period, generatedAt: new Date(), events: monthly.events as never, days: monthly.days });

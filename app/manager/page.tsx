@@ -156,6 +156,7 @@ export default function ManagerPage() {
   const [monthlyRecipientMessage, setMonthlyRecipientMessage] = useState<string | null>(null);
   const [reissuingPeriod, setReissuingPeriod] = useState<string | null>(null);
   const [reissueMessage, setReissueMessage] = useState<string | null>(null);
+  const reissueBusy = useRef(false);
   const [exportingPeriod, setExportingPeriod] = useState<string | null>(null);
   const monthlyFile = useReportFile();
   const fileRequest = useRef(0);
@@ -551,12 +552,25 @@ export default function ManagerPage() {
   }
 
   async function reissueMonthlyReport(report: MonthlyReport) {
-    if (!window.confirm(`${report.period_end.replaceAll("-", "/")}締めの勤怠表を最新データで再発行し、登録メールへ送信しますか？`)) return;
-    setReissuingPeriod(report.id);
+    if (!dashboard || reissueBusy.current) return;
+    reissueBusy.current = true;
     setReissueMessage(null);
+    let submitted = false;
     try {
+      // Keep an uncertain operation across retries/reloads; never store tokens or report contents.
+      const key = `onogami:monthly-reissue:${dashboard.manager.store_id}:${report.id}`;
+      let requestId = window.sessionStorage.getItem(key);
+      if (!window.confirm(requestId
+        ? `${report.period_end.replaceAll("-", "/")}締めの再発行結果を確認します。送信済みなら追加送信しません。未完了の場合は同じ再発行を再試行しますか？`
+        : `${report.period_end.replaceAll("-", "/")}締めの勤怠表を最新データで再発行し、登録メールへ送信しますか？`)) return;
       const idToken = liff.getIDToken();
-      if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      if (!idToken) { setReissueMessage("LINEの認証情報を取得できませんでした。"); return; }
+      if (!requestId) {
+        requestId = crypto.randomUUID();
+        window.sessionStorage.setItem(key, requestId);
+      }
+      setReissuingPeriod(report.id);
+      submitted = true;
       const response = await fetch("/api/manager/monthly-attendance/reissue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -564,20 +578,31 @@ export default function ManagerPage() {
           idToken,
           storeId: dashboard?.manager.store_id,
           reportId: report.id,
-          requestId: crypto.randomUUID(),
+          requestId,
         }),
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
-        throw new Error(data.code === "MONTHLY_REPORT_RECIPIENT_NOT_CONFIRMED"
-          ? "月次勤怠表の送信先確認と受信同意が完了していません。"
-          : "勤怠表を再発行できませんでした。時間をおいて再度お試しください。");
+        if (data.code === "MONTHLY_REPORT_RECIPIENT_NOT_CONFIRMED" || data.code === "MONTHLY_REPORT_RECIPIENT_CHANGED") {
+          setReissueMessage("送信先の確認状況が変わりました。画面を再読み込みし、確認・同意済みの送信先を確かめてください。");
+          return;
+        }
+        throw new Error("REISSUE_UNAVAILABLE");
       }
-      setReissueMessage("最新の勤怠表を登録メールへ送信しました。");
-      if (dashboard) await loadMonthlyReports(dashboard.manager.store_id);
-    } catch (caught) {
-      setReissueMessage(caught instanceof Error ? caught.message : "勤怠表を再発行できませんでした。");
+      if (data.status !== "SENT" && !(data.status === "ALREADY_PROCESSED" && data.deliveryStatus === "SENT")) {
+        setReissueMessage("再発行は送信処理中です。時間をおいて同じ「再発行して送信」で結果を確認してください。");
+        return;
+      }
+      setReissueMessage(data.status === "SENT" ? "最新の勤怠表を登録メールへ送信しました。" : "この再発行は送信済みです。追加送信はしていません。");
+      // A storage/list refresh failure must not undo a confirmed send result.
+      try { window.sessionStorage.removeItem(key); } catch { /* Retaining the key safely keeps later retries idempotent. */ }
+      await loadMonthlyReports(dashboard.manager.store_id).catch(() => undefined);
+    } catch {
+      setReissueMessage(submitted
+        ? "送信結果を確認できませんでした。時間をおいて同じ「再発行して送信」で結果を確認してください。送信済みなら追加送信しません。"
+        : "再発行の準備ができませんでした。この画面ではまだ送信していません。ブラウザーの保存設定を確認してください。");
     } finally {
+      reissueBusy.current = false;
       setReissuingPeriod(null);
     }
   }
