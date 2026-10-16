@@ -102,6 +102,22 @@ test("history lookup cannot select another store, an unsent initial, or a reissu
   assert.equal((await request("reports")).body.reports.length,3);
 });
 
+test("reissue retry distinguishes a processing attempt from a sent attempt without another email", async () => {
+  const period = histories[0], requestId = randomUUID(), version = `reissue-${requestId}`;
+  const recipient = (await f.db.query("SELECT monthly_report_recipient_version_id id FROM stores WHERE id=$1", [f.store])).rows[0].id;
+  const sql = f.getSql({ mode: "manager", lineIdentity: "fixture_delegate", storeId: f.store });
+  const claim = await sql`SELECT * FROM claim_monthly_attendance_delivery(${f.store}::uuid, ${period.start}::date, ${period.end}::date, ${version}, ${recipient}::uuid)`;
+  const before = f.emails.length;
+  const body = { reportId: period.id, requestId };
+  const pending = await request("reissue", body);
+  assert.equal(pending.body.status, "ALREADY_PROCESSED");
+  assert.equal(pending.body.deliveryStatus, "PROCESSING");
+  await sql`SELECT finish_monthly_attendance_delivery_attempt(${claim[0].attempt_id}::uuid, TRUE, 'fixture', NULL)`;
+  const sent = await request("reissue", body);
+  assert.equal(sent.body.deliveryStatus, "SENT");
+  assert.equal(f.emails.length, before);
+});
+
 test("an ambiguous legacy end date is rejected while each exact history remains selectable", async () => {
   const id = await saved({start:"2026-09-01",end:"2026-09-25"});
   const before = f.emails.length;
