@@ -20,10 +20,10 @@ function dashboard(store, ids) {
     attendance: ids.map(id => ({ staff_id: id, legal_name: `架空${id}` })),
     staffMemberships: ids.map(id => ({ staff_id: id, legal_name: `架空${id}`, status: "active", state: "OFF_DUTY" })) };
 }
-function screen() {
+function screen(initialResult = dashboard("A", ["A1", "A2"])) {
   const states = [], effects = [], calls = [];
   let prepared = null, releaseCsv;
-  let index = 0, result = dashboard("A", ["A1", "A2"]), hold, release;
+  let index = 0, result = initialResult, decisionResult = { ok: true }, hold, release;
   const location = { href: "https://fixture.invalid/manager?store_id=A", search: "?store_id=A" };
   const component = loadTs("app/manager/page.tsx", {
     "react/jsx-runtime": jsxRuntime,
@@ -43,12 +43,13 @@ function screen() {
       clear: () => { prepared = null; }, prepare: (blob, name) => { prepared = { blob, name, url: "blob:fixture" }; },
     }) },
   }, {
-    process: { env: {} }, URL,
+    process: { env: {} }, URL, HTMLElement: class {}, document: { activeElement: null },
     window: { location, confirm: () => true, history: { replaceState: (_a, _b, url) => { location.href = String(url); location.search = url.search; } } },
     fetch: async (url, options) => {
       const body = JSON.parse(options.body); calls.push({ url, body });
       if (url.endsWith("/session")) return { ok: true, json: async () => ({ ok: true, manager: { memberships: ["A", "B"].map(store => ({ store_id: store, store_name: `架空店舗${store}` })) } }) };
       if (url.endsWith("/dashboard")) { if (hold) await hold; return { ok: result.ok, json: async () => result }; }
+      if (url.endsWith("/corrections/decision")) return { ok: decisionResult.ok, json: async () => decisionResult };
       if (url.endsWith("/csv")) return new Promise(resolve => { releaseCsv = () => resolve({ ok: true, blob: async () => new Blob(["fixture"]) }); });
       return { ok: true, json: async () => ({ ok: true, reports: [{ id: "report", period_start: "2026-09-01", period_end: "2026-09-30" }] }) };
     },
@@ -56,7 +57,7 @@ function screen() {
   return { calls, location, render() { index = 0; return component.default(); },
     async start() { this.render(); effects.forEach(effect => effect()); await settle(); },
     async releaseCsv() { releaseCsv(); await settle(); },
-    respond(value) { result = value; }, hold() { hold = new Promise(resolve => { release = resolve; }); },
+    respond(value) { result = value; }, respondDecision(value) { decisionResult = value; }, hold() { hold = new Promise(resolve => { release = resolve; }); },
     async release() { release(); hold = null; await settle(); } };
 }
 const attendance = s => nodes(s.render(), "section").find(n => n.props["data-dashboard-key"] === "attendance");
@@ -66,6 +67,44 @@ const storeSelect = s => nodes(s.render(), "select")[0];
 const choose = (s, id) => select(s).props.onChange({ target: { value: id } });
 const switchTo = (s, id) => storeSelect(s).props.onChange({ target: { value: id } });
 const options = s => nodes(select(s), "option").map(n => n.props.value);
+
+function withPendingCorrection() {
+  return { ...dashboard("A", ["A1"]), corrections: [{ id: "request-A", operation: "ADD",
+    requested_event_type: "CHECK_OUT", requested_occurred_at: "2026-10-12T13:45:00.000Z",
+    requested_at: "2026-10-13T01:00:00.000Z", legal_name: "架空A1", day_events: [] }] };
+}
+const correctionNotice = s => nodes(s.render(), "p").find(n => n.props.role === "status" && text(n).includes("申請を"));
+const decide = (s, label) => nodes(s.render(), "button").find(n => text(n) === label).props.onClick();
+
+for (const [label, decision, expected] of [
+  ["承認", "APPROVED", /勤怠への反映が完了しました/],
+  ["却下", "REJECTED", /勤怠に反映していません.*本人と確認/],
+]) test(`confirmed ${decision} remains visible after the pending list empties, then clears on store switch`, async () => {
+  const s = screen(withPendingCorrection()); await s.start();
+  s.respond(dashboard("A", ["A1"])); decide(s, label); await settle();
+  assert.match(text(correctionNotice(s)), new RegExp(`架空A1さんの.*22:45の申請を${label}しました`));
+  assert.match(text(correctionNotice(s)), expected);
+  const pending = nodes(s.render(), "section").find(n => text(nodes(n, "h2")[0]) === "未処理の訂正申請");
+  assert.ok(pending);
+  assert.equal(nodes(pending, "p").some(n => n.props.role === "status"), false);
+  assert.equal(s.calls.find(c => c.url.endsWith("/corrections/decision")).body.decision, decision);
+  s.respond(dashboard("B", ["B1"])); switchTo(s, "B"); await settle();
+  assert.equal(correctionNotice(s), undefined);
+});
+
+test("failed approval never reports completion", async () => {
+  const s = screen(withPendingCorrection()); await s.start();
+  s.respondDecision({ ok: false }); decide(s, "承認"); await settle();
+  assert.equal(correctionNotice(s), undefined);
+  assert.match(text(s.render()), /申請を更新できませんでした/);
+});
+
+test("confirmed approval and a failed dashboard refresh are reported separately", async () => {
+  const s = screen(withPendingCorrection()); await s.start();
+  s.respond({ ok: false }); decide(s, "承認"); await settle();
+  assert.match(text(correctionNotice(s)), /申請を承認しました.*反映が完了/);
+  assert.match(text(s.render()), /管理者画面を読み込めませんでした/);
+});
 
 test("saved-period CSV is prepared for an explicit save and cleared when switching stores", async () => {
   const s = screen(); await s.start();

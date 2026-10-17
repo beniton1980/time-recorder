@@ -77,7 +77,7 @@ test("Preview hides other manager tools before enhancement while retaining the Q
   const enhancer = readFileSync(new URL("../app/manager/ManagerDashboardEnhancer.tsx", import.meta.url), "utf8");
   assert.match(enhancer, /querySelector<HTMLAnchorElement>\('a\[href\*="\/manager\/qr"\]'\)/, "the hidden QR anchor remains the poster store context source");
   for (const [env, preview] of [[{}, false], [previewEnv, true]]) {
-    const result = await start(...pages[0], env, { 0: dashboard, 23: { legalName: "架空共同管理者", storeName: "架空店舗" } });
+    const result = await start(...pages[0], env, { 0: dashboard, 24: { legalName: "架空共同管理者", storeName: "架空店舗" } });
     const main = nodes(result.tree, "main")[0];
     assert.equal(main.props["data-manager-attendance-preview"], preview ? "true" : undefined);
     const qr = nodes(result.tree, "a").find(item => item.props.href.includes("/manager/qr"));
