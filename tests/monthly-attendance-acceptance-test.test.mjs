@@ -7,7 +7,8 @@ const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8"
 test("acceptance test is manager-scoped and never accepts a client recipient", async () => {
   const route = await source("app/api/manager/monthly-attendance/acceptance-test/route.ts");
   assert.match(route, /verifyLineIdToken\(body\.idToken\)/);
-  assert.match(route, /st\.role = 'MANAGER'/);
+  assert.match(route, /public\.app_manager_store_allowed\(st\.store_id\)/);
+  assert.match(route, /st\.line_user_id = \$\{identity\.sub\}/);
   assert.match(route, /st\.store_id = \$\{body\.storeId\}::uuid/);
   assert.match(route, /recipient: String\(store\.monthly_report_email\)/);
   assert.doesNotMatch(route, /body\.recipient/);

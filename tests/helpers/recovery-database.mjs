@@ -63,5 +63,5 @@ export async function fixture({throughMigration = null} = {}) {
     await db.query("UPDATE staff_states SET state=$1,last_event_id=$2,last_event_at=NOW() WHERE staff_id=$3",[type==="CHECK_OUT"?"OFF_DUTY":type==="BREAK_START"?"ON_BREAK":"WORKING",id,staff]);
     return id;
   };
-  return {db,store,otherStore,staff,otherStaff,getSql,call,correction,bootstrap,punch,validate,decision,dashboard,add};
+  return {db,store,otherStore,staff,otherStaff,getSql,call,correction,bootstrap,punch,validate,decision,dashboard,add,api};
 }

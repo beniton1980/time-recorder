@@ -21,6 +21,7 @@ function screen(initial={kind:"ready",membership:member},storage=memory(),env={}
   useRef(value){const i=ri++;refs[i]??={current:i===0?"fixture-token":i===1?reader:value};return refs[i];}
  },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async options=>{liffInits.push(options);},isLoggedIn:()=>true,
   isInClient:()=>true,closeWindow:()=>{uiCalls.lineClose++;}}},
+ "./correction-history":{default:()=>null},
  "@/lib/correction-validation":loadTs("lib/correction-validation.ts"),
  "@/lib/attendance-request":deadlines,"@/lib/attendance-operation":{...operations,tabOperationStorage:()=>storage},"@/lib/punch-location.mjs":{},"@/lib/punch-performance.mjs":{measurePunchStage:(_stage,task)=>task()}};
  const component=loadTs("app/page.tsx",modules,{Date:clock,process:{env},crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0,close:()=>{uiCalls.browserClose++;}},
@@ -53,6 +54,45 @@ function enterTimes(s,values){
  values.forEach((value,index)=>nodes(s.render(),"input")[index].props.onChange({target:{value}}));
 }
 const review=s=>nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+
+test("an earlier shift's last punch keeps its Japanese calendar date when today's history is empty",()=>{
+ const s=screen({kind:"ready",membership:{...member,state:"WORKING",last_event_id:randomUUID(),
+  last_event_type:"CHECK_IN",last_event_at:"2026-10-13T11:00:00.000Z"}},memory(),{},clockAt("2026-10-14T04:00:00.000Z"));
+ assert.match(text(s.render()),/2026\/10\/13 20:00 に出勤/);
+ assert.match(text(s.render()),/本日の打刻はありません/);
+ assert.equal(button(s,"出勤"),undefined,"display must not allow a new shift on its own");
+});
+
+test("pending checkout offers a separate next shift, keeps continuation controls and recovers a lost response",async()=>{
+ const id=randomUUID(),storage=memory();
+ const pendingMember={...member,state:"WORKING",last_event_id:randomUUID(),last_event_type:"CHECK_IN",
+  last_event_at:"2026-10-13T11:00:00Z",pending_shift_start:{request_id:id,checkout_at:"2026-10-13T14:00:00Z",business_date:"2026-10-13"}};
+ const s=screen({kind:"ready",membership:pendingMember},storage);
+ assert.match(text(s.render()),/前回の退勤が確認待ち/);
+ assert.match(text(s.render()),/2026\/10\/13 23:00 の退勤を申請済み/);
+ assert.match(text(s.render()),/前回分は管理者の承認まで未確定/);
+ assert.ok(button(s,"退勤"));assert.ok(button(s,"休憩開始"));
+ button(s,"次の勤務を開始").props.onClick();button(s,"次の勤務を開始")?.props.onClick();s.locate();await settle();
+ assert.equal(s.calls.length,1);assert.equal(s.calls[0].body.previousCheckoutRequestId,id);
+ assert.equal(operations.readPendingOperation(storage,staff,store).previousCheckoutRequestId,id);
+ s.lose();await settle();s.respond(response({...pendingMember,pending_shift_start:null}));await settle();
+ button(s,"同じ内容で再試行").props.onClick();s.locate();await settle();
+ assert.equal(s.calls[2].body.previousCheckoutRequestId,id,"retry keeps original request even after eligibility changes");
+ assert.equal(s.calls[2].body.clientRequestId,s.calls[0].body.clientRequestId);
+ s.respond({ok:true});await settle();
+ s.respond(response({...member,state:"WORKING",pending_shift_start:null},{id:randomUUID(),event_type:"CHECK_IN"}));await settle();
+ assert.equal(storage.map.size,0);assert.equal(button(s,"次の勤務を開始"),undefined);assert.ok(button(s,"退勤"));
+});
+
+test("rejection before the next shift refreshes the screen without silently resending or clearing the old shift",async()=>{
+ const s=screen({kind:"ready",membership:{...member,state:"WORKING",pending_shift_start:{request_id:randomUUID(),checkout_at:"2026-10-13T14:00:00Z",business_date:"2026-10-13"}}});
+ button(s,"次の勤務を開始").props.onClick();s.locate();await settle();
+ s.respond({ok:false,code:"INVALID_STATE_TRANSITION"},409);await settle();
+ s.respond(response({...member,state:"WORKING",pending_shift_start:null}));await settle();
+ assert.equal(s.calls.filter(c=>c.url==="/api/punch").length,1);assert.equal(s.storage.map.size,0);
+ assert.equal(button(s,"次の勤務を開始"),undefined);assert.ok(button(s,"退勤"));
+ assert.match(text(s.render()),/勤務状態と履歴を更新しました。打刻は追加されていません。表示を確認し、必要な打刻をもう一度押してください/);
+});
 
 for(const [name,env,expected] of [
  ["default",{},"2010761826-6FNSE1PD"],
@@ -153,10 +193,10 @@ for(const [previousType,nextType,previousLabel,nextLabel,state] of [
   assert.equal(nodes(s.render(),"select")[0].props.value,"MISTAKE");
   assert.equal(nodes(s.render(),"input").length,0,"a mistake correction must not ask the user to reconstruct its date or time");
   const preview=nodes(s.render(),"div").find(n=>n.props.className==="last-punch-correction");
-  assert.match(text(preview),new RegExp(`03:47 ${previousLabel}→03:47 ${nextLabel}`));
+  assert.match(text(preview),new RegExp(`2026/10/10 03:47 ${previousLabel}→2026/10/10 03:47 ${nextLabel}`));
   nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
   assert.equal(nodes(s.render(),"input").length,0);
-  assert.match(text(s.render()),new RegExp(`03:47 ${previousLabel} → ${nextLabel}`));
+  assert.match(text(s.render()),new RegExp(`2026/10/10 03:47 ${previousLabel} → ${nextLabel}`));
   button(s,"この内容で申請").props.onClick();await settle();
   assert.equal(s.calls[0].url,"/api/correction-requests");
   assert.equal(s.calls[0].body.category,"MISTAKE");assert.equal(s.calls[0].body.targetEventId,previousId);
@@ -172,6 +212,13 @@ test("an unsupported previous punch does not silently switch a mistake into a mi
  const s=screen({kind:"ready",membership:{...member,state:"WORKING",last_event_id:randomUUID(),
   last_event_revision_id:randomUUID(),last_event_at:"2026-10-09T18:47:00.000Z",last_event_type:"CHECK_IN"}});
  button(s,"打刻修正").props.onClick();
+ assert.equal(nodes(s.render(),"select")[0].props.value,"");
+ assert.equal(nodes(s.render(),"input").length,0,"the user chooses what needs correction before entering a date or time");
+ assert.doesNotMatch(text(s.render()),/前回の打刻は種類の押し間違いとして修正できません/);
+ nodes(s.render(),"form")[0].props.onSubmit({preventDefault(){}});
+ assert.equal(button(s,"この内容で申請"),undefined);assert.equal(s.calls.length,0);
+ assert.match(text(s.render()),/修正内容を選択してください/);
+ nodes(s.render(),"select")[0].props.onChange({target:{value:"MISTAKE"}});
  assert.equal(nodes(s.render(),"select")[0].props.value,"MISTAKE");
  assert.equal(nodes(s.render(),"input").length,0);
  assert.match(text(s.render()),/前回の打刻は種類の押し間違いとして修正できません/);

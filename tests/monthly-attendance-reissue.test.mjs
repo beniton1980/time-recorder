@@ -6,7 +6,8 @@ const source = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8"
 test("reissue requires the selected manager store and ignores a client recipient", async () => {
   const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
   assert.match(route, /verifyLineIdToken\(body\.idToken\)/);
-  assert.match(route, /st\.role = 'MANAGER'/);
+  assert.match(route, /public\.app_manager_store_allowed\(st\.store_id\)/);
+  assert.match(route, /st\.line_user_id = \$\{identity\.sub\}/);
   assert.match(route, /st\.store_id = \$\{body\.storeId\}::uuid/);
   assert.match(route, /recipient: String\(claimed\[0\]\.recipient\)/);
   assert.doesNotMatch(route, /body\.recipient/);
@@ -14,7 +15,8 @@ test("reissue requires the selected manager store and ignores a client recipient
 
 test("only a previously sent initial report can be reissued", async () => {
   const route = await source("app/api/manager/monthly-attendance/reissue/route.ts");
-  assert.match(route, /delivery_version = 'initial' AND status = 'SENT'/);
+  assert.match(route, /loadSentMonthlyReportPeriod/);
+  assert.match(await source("lib/monthly-attendance-query.ts"), /delivery_version = 'initial' AND status = 'SENT'/);
   assert.match(route, /MONTHLY_REPORT_NOT_FOUND/);
 });
 

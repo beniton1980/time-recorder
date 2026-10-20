@@ -12,7 +12,7 @@
   "dependencies": {
     "@line/liff": "2.29.1",
     "@neondatabase/serverless": "^1.0.2",
-    "next": "^16.0.0",
+    "next": "16.3.8",
     "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
@@ -25,7 +25,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^16.0.0",
+    "eslint-config-next": "16.3.8",
     "typescript": "^5.9.0"
   }
 }

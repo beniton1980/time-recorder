@@ -503,6 +503,7 @@ h1 {
 
 .attendance-screen .punch-button { min-height: 84px; padding: 12px 8px; font-size: 22px; line-height: 1.25; }
 .attendance-screen .punch-button:only-child { grid-column: 1 / -1; }
+.attendance-screen .pending-shift-actions .punch-button:first-child { grid-column: 1 / -1; }
 
 .attendance-screen .line-app-link {
   display: flex;

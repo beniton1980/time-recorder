@@ -3,6 +3,9 @@
 import liff from "@line/liff";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { managerCorrectionInputParts, managerCorrectionTimestamp } from "@/lib/manager-correction-datetime";
+import { attendanceReturnHref, rememberCorrection } from "@/lib/manager-attendance-return";
+import { consultationHref } from "@/lib/consultation";
+import { withAttendanceDeadline } from "@/lib/attendance-request";
 import styles from "./edit.module.css";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || "2010761826-6FNSE1PD";
@@ -10,6 +13,7 @@ type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
 type Operation = "ADD" | "REPLACE" | "VOID";
 type StaffEvent = { effectiveId: string; businessDate: string; eventType: EventType; occurredAt: string; corrected: boolean };
 type Payload = {
+  consultation?: { id: string; reason: string; version: string } | null;
   ok: true;
   store: { id: string; name: string };
   staff: { id: string; legalName: string };
@@ -25,7 +29,7 @@ type EditState = {
   reason: string;
   reasonChoice: string;
 };
-type RouteParams = { storeId: string; staffId: string; businessDate: string };
+type RouteParams = { storeId: string; staffId: string; businessDate: string; reviewOnly: boolean; consultationId: string };
 
 const eventLabels: Record<EventType, string> = {
   CHECK_IN: "出勤",
@@ -78,6 +82,8 @@ function readRouteParams(search: string): RouteParams {
     storeId: params.get("store_id") ?? "",
     staffId: params.get("staff_id") ?? "",
     businessDate: params.get("date") ?? "",
+    reviewOnly: params.get("review") === "1",
+    consultationId: params.get("consultation") ?? "",
   };
 }
 
@@ -92,10 +98,12 @@ export default function StaffAttendanceEditPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const editorRef = useRef<HTMLElement | null>(null);
+  const saveRequest = useRef<string | null>(null);
 
   const storeId = routeParams?.storeId ?? "";
   const staffId = routeParams?.staffId ?? "";
   const businessDate = routeParams?.businessDate ?? "";
+  const consultationId = routeParams?.consultationId ?? "";
 
   const routeError = routeParams && (!storeId || !staffId || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate))
     ? "修正対象の日付を確認できませんでした。" : null;
@@ -114,7 +122,7 @@ export default function StaffAttendanceEditPage() {
         const response = await fetch("/api/manager/staff-attendance", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken, storeId, staffId, month: businessDate.slice(0, 7) }),
+          body: JSON.stringify({ idToken, storeId, staffId, month: businessDate.slice(0, 7), ...(consultationId ? { consultationId } : {}) }),
         });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error("この日の打刻を読み込めませんでした。");
@@ -127,7 +135,7 @@ export default function StaffAttendanceEditPage() {
     }
     void load();
     return () => { active = false; };
-  }, [businessDate, routeError, routeParams, staffId, storeId]);
+  }, [businessDate, routeError, routeParams, staffId, storeId, consultationId]);
 
   const dayEvents = useMemo(
     () => (payload?.events ?? []).filter((event) => event.businessDate === businessDate),
@@ -135,8 +143,9 @@ export default function StaffAttendanceEditPage() {
   );
   const targetEvent = dayEvents.find((event) => event.effectiveId === edit?.targetEffectiveId) ?? null;
 
-  function attendanceHref(date = businessDate) {
-    return `/manager/staff-attendance?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&month=${encodeURIComponent(date.slice(0, 7))}`;
+  function attendanceHref(receiptId?: string) {
+    if (consultationId) return consultationHref(storeId, consultationId);
+    return attendanceReturnHref({ storeId, staffId, businessDate }, routeParams?.reviewOnly ?? false, receiptId);
   }
 
   function goBackToAttendance() {
@@ -148,6 +157,7 @@ export default function StaffAttendanceEditPage() {
   }
 
   function startEdit(next: EditState) {
+    saveRequest.current = null;
     setEdit(next);
     setReviewing(false);
     setSubmitMessage(null);
@@ -204,7 +214,11 @@ export default function StaffAttendanceEditPage() {
     try {
       const idToken = liff.getIDToken();
       if (!idToken) throw new Error("LINEの認証情報を取得できませんでした。");
+      if (consultationId && !payload.consultation) throw new Error("相談の最新状態を確認してください。");
+      if (consultationId && !saveRequest.current) saveRequest.current = crypto.randomUUID();
+      const send = async (signal?: AbortSignal) => {
       const response = await fetch("/api/manager/punch-corrections", {
+        signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -216,11 +230,19 @@ export default function StaffAttendanceEditPage() {
           eventType: edit.operation === "VOID" ? undefined : edit.eventType,
           occurredAt: edit.operation === "VOID" ? undefined : managerCorrectionTimestamp(edit.date, edit.time),
           reason: finalReason(),
+          ...(consultationId ? { consultationId, clientRequestId: saveRequest.current, expectedVersion: payload.consultation!.version } : {}),
         }),
       });
-      const data = await response.json();
+      return { response, data: await response.json() };
+      };
+      const { response, data } = consultationId
+        ? await withAttendanceDeadline(send).catch(() => { throw new Error("保存結果を確認できませんでした。相談へ戻って保存済みの修正を確認してください。"); })
+        : await send();
       if (!response.ok || !data.ok) {
         const messages: Record<string, string> = {
+          ATTENDANCE_CHANGED: "打刻が更新されています。相談へ戻り、最新の内容を確認してください。",
+          REQUEST_NOT_PENDING: "この相談は既に処理されています。相談へ戻って結果を確認してください。",
+          CLIENT_REQUEST_CONFLICT: "送信済みの内容と異なります。相談へ戻って保存結果を確認してください。",
           OCCURRED_AT_IN_FUTURE: "未来の日時には修正できません。実際に打刻した日付・時刻を確認してください。",
           DUPLICATE_PUNCH_TIME: "同じ時刻の打刻が既にあります。時刻を確認してください。",
           INVALID_PUNCH_SEQUENCE: "この修正では打刻の順序が正しくなりません。履歴を確認してください。",
@@ -229,7 +251,8 @@ export default function StaffAttendanceEditPage() {
         throw new Error(messages[data.code] ?? "打刻を修正できませんでした。");
       }
       // Return to the attendance month where the manager started this correction.
-      window.location.replace(attendanceHref());
+      const receiptId = consultationId ? undefined : rememberCorrection({ storeId, staffId, businessDate, operation: edit.operation });
+      window.location.replace(attendanceHref(receiptId));
     } catch (caught) {
       setSubmitMessage(caught instanceof Error ? caught.message : "打刻を修正できませんでした。");
     } finally {
@@ -247,7 +270,7 @@ export default function StaffAttendanceEditPage() {
     <main className={styles.page}>
       <section className={styles.shell}>
         <header className={styles.header}>
-          <button type="button" className={styles.back} onClick={goBackToAttendance}>← 個人勤怠へ戻る</button>
+          <button type="button" className={styles.back} onClick={goBackToAttendance}>{consultationId ? "← 相談へ戻る・保存結果を確認" : "← 個人勤怠へ戻る"}</button>
           <p className={styles.eyebrow}>ONOGAMI 勤怠</p>
           <h1>{payload ? `${payload.staff.legalName}さんの打刻修正` : "打刻修正"}</h1>
           {businessDate && <p className={styles.date}>{dateLabel(businessDate)}の勤務</p>}
@@ -255,6 +278,7 @@ export default function StaffAttendanceEditPage() {
         </header>
 
         {message && !routeError && <p className={styles.status}>{message}</p>}
+        {payload?.consultation && <p className={styles.status}>この相談への対応中：{payload.consultation.reason}<br />修正を保存した後、相談へ戻って「対応済み」にします。</p>}
         {visibleError && <p className={styles.error} role="alert">{visibleError}</p>}
 
         {payload && !visibleError && (

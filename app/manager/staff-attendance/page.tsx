@@ -1,7 +1,9 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { consumeCorrectionReceipt, isAttendanceDate, type CorrectionReceipt } from "@/lib/manager-attendance-return";
+import { attendanceDisplayTimes, type AttendanceDisplayEvent } from "@/lib/manager-attendance-display";
 import styles from "./staff-attendance.module.css";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || "2010761826-6FNSE1PD";
@@ -28,14 +30,16 @@ type DisplayDay = Day | { businessDate: string; noRecord: true };
 type StaffOption = { id: string; legalName: string; status: string };
 
 type Payload = {
+  consultation?: { id: string; reason: string } | null;
   ok: true;
-  store: { id: string; name: string };
+  store: { id: string; name: string; timezone?: string };
   staff: { id: string; legalName: string };
   staffOptions: StaffOption[];
   month: string;
   period: { start: string; end: string; displayThrough: string | null };
   summary: { workDays: number; workDuration: string; breakDuration: string; issueDays: number; gpsIssueCount: number };
   days: Day[];
+  events?: AttendanceDisplayEvent[];
 };
 
 const reasonLabels: Record<string, string> = {
@@ -71,57 +75,87 @@ function dateRange(start: string, end: string | null) {
 }
 function isRecordedDay(day: DisplayDay): day is Day { return !("noRecord" in day); }
 
+function subscribeLocation(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+}
+const locationSearch = () => window.location.search;
+const serverLocationSearch = () => null;
+
+function updateView(values: Record<string, string | null>) {
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(values)) {
+    if (value === null) url.searchParams.delete(key); else url.searchParams.set(key, value);
+  }
+  window.history.replaceState(null, "", url);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 export default function StaffAttendancePage() {
-  const [storeId, setStoreId] = useState("");
-  const [staffId, setStaffId] = useState("");
-  const [month, setMonth] = useState(currentMonth);
+  const search = useSyncExternalStore(subscribeLocation, locationSearch, serverLocationSearch);
+  const params = useMemo(() => new URLSearchParams(search ?? ""), [search]);
+  const storeId = params.get("store_id") ?? "";
+  const staffId = params.get("staff_id") ?? "";
+  const requestedMonth = params.get("month") ?? "";
+  const consultationId = params.get("consultation") ?? "";
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? requestedMonth : currentMonth();
+  const reviewOnly = params.get("review") === "1";
+  const requestedFocus = params.get("focus") ?? "";
+  const focusDate = isAttendanceDate(requestedFocus) && requestedFocus.startsWith(`${month}-`) ? requestedFocus : "";
+  const receiptId = params.get("saved") ?? "";
   const [payload, setPayload] = useState<Payload | null>(null);
   const [message, setMessage] = useState("勤怠を読み込んでいます");
   const [error, setError] = useState<string | null>(null);
-  const [reviewOnly, setReviewOnly] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [receipt, setReceipt] = useState<CorrectionReceipt | null>(null);
+  const receiptCache = useRef<{ id: string; value: CorrectionReceipt | null } | null>(null);
   const liffReady = useRef<Promise<void> | null>(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setStoreId(params.get("store_id") ?? "");
-    setStaffId(params.get("staff_id") ?? "");
-    const requestedMonth = params.get("month");
-    if (requestedMonth && /^\d{4}-\d{2}$/.test(requestedMonth)) setMonth(requestedMonth);
-  }, []);
+  const returnTarget = useRef<HTMLElement | null>(null);
+  const lastFocused = useRef("");
+  const payloadMatches = payload?.store.id === storeId && payload?.staff.id === staffId && payload?.month === month;
+  const ready = payloadMatches && !message && !error;
+  const notice = receiptId && receipt?.storeId === storeId && receipt?.staffId === staffId && receipt?.businessDate === focusDate ? receipt : null;
+  const returnMessage = notice
+    ? `${dateLabel(focusDate)}の打刻を${{ ADD: "追加", REPLACE: "変更", VOID: "取消" }[notice.operation]}しました。`
+    : `${focusDate ? dateLabel(focusDate) : ""}の勤怠に戻りました。`;
 
   useEffect(() => {
     if (!storeId || !staffId) return;
     let active = true;
     async function load() {
       try {
-        if (!liffReady.current) liffReady.current = liff.init({ liffId: LIFF_ID });
+        setMessage("勤怠を読み込んでいます"); setError(null);
+        if (receiptCache.current?.id !== receiptId) {
+          receiptCache.current = { id: receiptId, value: consumeCorrectionReceipt(receiptId, { storeId, staffId, businessDate: focusDate }) };
+        }
+        setReceipt(receiptCache.current.value);
+        if (!liffReady.current) liffReady.current = liff.init({ liffId: LIFF_ID }).catch((caught: unknown) => {
+          liffReady.current = null;
+          throw caught;
+        });
         await liffReady.current;
+        if (!active) return;
         if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
         const idToken = liff.getIDToken();
         if (!idToken) throw new Error("対象スタッフを確認できませんでした。");
-        setMessage("勤怠を読み込んでいます"); setError(null);
-        const response = await fetch("/api/manager/staff-attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId, staffId, month }) });
+        const response = await fetch("/api/manager/staff-attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, storeId, staffId, month, ...(consultationId ? { consultationId } : {}) }) });
         const data = await response.json();
         if (!response.ok || !data.ok) {
           if (data.code === "MANAGER_ACCESS_REQUIRED") throw new Error("この店舗の管理者権限を確認できませんでした。");
           if (data.code === "STAFF_NOT_FOUND") throw new Error("この店舗に対象スタッフが見つかりませんでした。");
           throw new Error("個人の勤怠を読み込めませんでした。");
         }
+        if (data.store?.id !== storeId || data.staff?.id !== staffId || data.month !== month) throw new Error("対象の勤怠を確認できませんでした。もう一度読み込んでください。");
         if (active) setPayload(data as Payload);
       } catch (caught) { if (active) setError(caught instanceof Error ? caught.message : "個人の勤怠を読み込めませんでした。"); }
       finally { if (active) setMessage(""); }
     }
     void load();
     return () => { active = false; };
-  }, [month, staffId, storeId]);
-
-  useEffect(() => {
-    if (storeId || staffId) return;
-    const timer = window.setTimeout(() => { if (!storeId || !staffId) { setMessage(""); setError("対象スタッフを確認できませんでした。"); } }, 0);
-    return () => window.clearTimeout(timer);
-  }, [staffId, storeId]);
+  }, [month, staffId, storeId, focusDate, receiptId, retry, consultationId]);
 
   const selectedStaffName = useMemo(() => payload?.staffOptions.find((staff) => staff.id === staffId)?.legalName ?? payload?.staff.legalName ?? "個人の勤怠", [payload, staffId]);
+  const displayTimes = useMemo(() => attendanceDisplayTimes(payload?.events, payload?.store.timezone), [payload]);
   const allDays = useMemo<DisplayDay[]>(() => {
     if (!payload) return [];
     const recordedByDate = new Map(payload.days.map((day) => [day.businessDate, day]));
@@ -132,28 +166,56 @@ export default function StaffAttendancePage() {
     return [...selected].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
   }, [allDays, reviewOnly]);
 
-  function editHref(businessDate: string) { return `/manager/staff-attendance/edit?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&date=${encodeURIComponent(businessDate)}`; }
+  const focusExists = allDays.some(day => day.businessDate === focusDate);
+  const focusHidden = focusExists && !visibleDays.some(day => day.businessDate === focusDate);
+  useEffect(() => {
+    if (!ready || !focusExists || !returnTarget.current) return;
+    const key = `${storeId}:${staffId}:${month}:${focusDate}:${reviewOnly}:${retry}`;
+    if (lastFocused.current === key) return;
+    lastFocused.current = key;
+    returnTarget.current.focus({ preventScroll: true });
+    returnTarget.current.scrollIntoView({ block: "start", behavior: "instant" });
+  }, [ready, focusExists, storeId, staffId, month, focusDate, reviewOnly, retry]);
+
+  function editHref(businessDate: string) { return `/manager/staff-attendance/edit?store_id=${encodeURIComponent(storeId)}&staff_id=${encodeURIComponent(staffId)}&date=${encodeURIComponent(businessDate)}${reviewOnly ? "&review=1" : ""}${consultationId ? `&consultation=${encodeURIComponent(consultationId)}` : ""}`; }
   function changeStaff(nextStaffId: string) {
     if (nextStaffId === staffId) return;
-    setStaffId(nextStaffId); setReviewOnly(false); setMessage("スタッフを切り替えています"); setError(null);
-    const url = new URL(window.location.href); url.searchParams.set("staff_id", nextStaffId); url.searchParams.set("store_id", storeId); url.searchParams.set("month", month); window.history.replaceState(null, "", url);
+    setMessage("スタッフを切り替えています"); setError(null);
+    updateView({ staff_id: nextStaffId, month, review: null, focus: null, saved: null });
   }
+  function changeMonth(nextMonth: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(nextMonth) || nextMonth === month) return;
+    setMessage("勤怠を読み込んでいます"); setError(null);
+    updateView({ month: nextMonth, focus: null, saved: null });
+  }
+  const routeError = search !== null && (!storeId || !staffId) ? "対象スタッフを確認できませんでした。" : null;
 
   return (
     <main className={styles.page}><section className={styles.shell}>
       <header className={styles.header}><a className={styles.back} href="/manager">← 管理画面へ戻る</a><p className={styles.eyebrow}>ONOGAMI 勤怠</p><h1>{selectedStaffName}</h1>{payload && <p className={styles.store}>{payload.store.name}</p>}</header>
       {process.env.NEXT_PUBLIC_MANAGER_LIFF_ID && <p className="manager-preview-notice">検証用の勤怠画面です。</p>}
-      {payload && payload.staffOptions.length > 0 && <label className={styles.staffSelector}>スタッフを選択<select value={staffId} onChange={(event) => changeStaff(event.target.value)}>{payload.staffOptions.map((staff) => <option key={staff.id} value={staff.id}>{staff.legalName}</option>)}</select></label>}
-      <label className={styles.monthSelector}>表示する月<input type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label>
-      {message && !payload && <p className={styles.loading}>{message}</p>}{error && <p className={styles.error} role="alert">{error}</p>}
-      {payload && !error && <>
+      {consultationId && <p className={styles.status}><a href={`/manager/consultations?${new URLSearchParams({ store_id: storeId, id: consultationId })}`}>← 相談へ戻る</a>{ready && payload?.consultation && <><br />この相談への対応中：{payload.consultation.reason}<br />対象の勤務を選んでください。受付日と勤務日は異なる場合があります。</>}</p>}
+      {!consultationId && payload && payload.staffOptions.length > 0 && <label className={styles.staffSelector}>スタッフを選択<select value={staffId} onChange={(event) => changeStaff(event.target.value)}>{payload.staffOptions.map((staff) => <option key={staff.id} value={staff.id}>{staff.legalName}{staff.status === "departed" ? "（退社）" : staff.status === "inactive" ? "（一時停止中）" : ""}</option>)}</select></label>}
+      <label className={styles.monthSelector}>表示する月<input type="month" value={month} onChange={(event) => changeMonth(event.target.value)} /></label>
+      {!routeError && message && <p className={styles.loading} role="status">{message}</p>}
+      {(routeError || error) && <div className={styles.error} role="alert"><p>{notice ? "打刻の保存は完了しましたが、最新の勤怠を読み込めませんでした。" : routeError ?? error}</p>{!routeError && <button type="button" className={styles.retry} onClick={() => { setMessage("勤怠を読み込んでいます"); setError(null); setRetry(value => value + 1); }}>もう一度読み込む</button>}</div>}
+      {payload && ready && <>
         <section className={styles.summary} aria-busy={Boolean(message)}><div><span>出勤日数</span><strong>{payload.summary.workDays}日</strong></div><div><span>実働</span><strong>{payload.summary.workDuration}</strong></div><div><span>休憩</span><strong>{payload.summary.breakDuration}</strong></div><div><span>要確認</span><strong>{payload.summary.issueDays}日</strong></div></section>
-        {message && <p className={styles.loading}>{message}</p>}
-        <div className={styles.toolbar}><strong>{monthLabel(payload.month)}</strong><div role="group" aria-label="表示する勤怠"><button type="button" className={!reviewOnly ? styles.activeFilter : ""} onClick={() => setReviewOnly(false)}>すべて</button><button type="button" className={reviewOnly ? styles.activeFilter : ""} onClick={() => setReviewOnly(true)}>要確認のみ</button></div></div>
+        <p className={styles.summaryNote}>勤務中・休憩中も、終了の打刻が入るまでは「要確認」に含まれます。</p>
+        <div className={styles.toolbar}><strong>{monthLabel(payload.month)}</strong><div role="group" aria-label="表示する勤怠"><button type="button" aria-pressed={!reviewOnly} className={!reviewOnly ? styles.activeFilter : ""} onClick={() => updateView({ review: null, focus: null, saved: null })}>すべて</button><button type="button" aria-pressed={reviewOnly} className={reviewOnly ? styles.activeFilter : ""} onClick={() => updateView({ review: "1", focus: null, saved: null })}>要確認のみ</button></div></div>
+        {focusHidden && <section className={styles.returnNotice} ref={returnTarget} tabIndex={-1} aria-label="戻った日の確認"><p role="status">{returnMessage}</p><p>この日は「要確認のみ」の対象外です。</p><button type="button" className={styles.retry} onClick={() => updateView({ review: null })}>{notice ? "修正した日を確認" : "この日を確認"}</button></section>}
         {visibleDays.length === 0 ? <p className={styles.empty}>{reviewOnly ? "要確認の勤怠はありません" : "表示できる営業日はまだありません"}</p> : <ol className={styles.dayList}>{visibleDays.map((day) => {
-          if (!isRecordedDay(day)) return <li key={day.businessDate} className={styles.noRecordDay}><div className={styles.dayHeader}><strong>{dateLabel(day.businessDate)}</strong></div><p className={styles.noRecord}>勤務記録なし</p><a className={styles.editDay} href={editHref(day.businessDate)}>この日の打刻を修正</a></li>;
+          const returned = day.businessDate === focusDate;
+          const returnProps = returned ? { ref: (element: HTMLLIElement | null) => { returnTarget.current = element; }, tabIndex: -1, "data-returned-day": day.businessDate } : {};
+          const savedMessage = returned && <p className={styles.returnMessage} role="status">{returnMessage}</p>;
+          if (!isRecordedDay(day)) return <li key={day.businessDate} {...returnProps} className={styles.noRecordDay}>
+            <div className={styles.noRecordSummary}><strong>{dateLabel(day.businessDate)}</strong><p className={styles.noRecord}>勤務記録なし</p></div>
+            <a className={styles.editDay} href={editHref(day.businessDate)} aria-label={`${dateLabel(day.businessDate)}の打刻を修正`}>打刻を修正</a>
+            {savedMessage}
+          </li>;
           const reasons = [...day.attendanceReasons, ...day.reviewReasons]; const needsReview = day.status === "NEEDS_REVIEW" || reasons.length > 0;
-          return <li key={day.businessDate} className={needsReview ? styles.reviewDay : undefined}><div className={styles.dayHeader}><strong>{dateLabel(day.businessDate)}</strong><div className={styles.badges}>{needsReview && <span className={styles.reviewBadge}>要確認</span>}{day.hasCorrection && <span className={styles.correctionBadge}>訂正あり</span>}{day.gpsIssueCount > 0 && <span className={styles.gpsBadge}>GPS確認</span>}</div></div><dl className={styles.times}><div><dt>出勤</dt><dd>{day.checkIn || "—"}</dd></div><div><dt>退勤</dt><dd>{day.checkOut || "—"}</dd></div><div><dt>実働</dt><dd>{day.workedDuration || "—"}</dd></div><div><dt>休憩</dt><dd>{day.breakDuration || "—"}</dd></div></dl>{day.breakPeriods.length > 0 && <p className={styles.breaks}>休憩 {day.breakPeriods.join(" / ")}</p>}{reasons.length > 0 && <ul className={styles.reasons}>{reasons.map((reason, index) => <li key={`${reason}-${index}`}>{displayReason(reason)}</li>)}</ul>}<a className={styles.editDay} href={editHref(day.businessDate)}>この日の打刻を修正</a></li>;
+          const times = displayTimes.get(day.businessDate) ?? day;
+          return <li key={day.businessDate} {...returnProps} className={needsReview ? styles.reviewDay : undefined}><div className={styles.dayHeader}><strong>{dateLabel(day.businessDate)}</strong><div className={styles.badges}>{needsReview && <span className={styles.reviewBadge}>要確認</span>}{day.hasCorrection && <span className={styles.correctionBadge}>訂正あり</span>}{day.gpsIssueCount > 0 && <span className={styles.gpsBadge}>GPS確認</span>}</div></div>{savedMessage}<dl className={styles.times}><div><dt>出勤</dt><dd>{times.checkIn || "—"}</dd></div><div><dt>退勤</dt><dd>{times.checkOut || "—"}</dd></div><div><dt>実働</dt><dd>{day.workedDuration || "—"}</dd></div><div><dt>休憩</dt><dd>{day.breakDuration || "—"}</dd></div></dl>{times.breakPeriods.length > 0 && <div className={styles.breaks}>{times.breakPeriods.map((period, index) => <p key={index}>休憩 {period}</p>)}</div>}{reasons.length > 0 && <ul className={styles.reasons}>{reasons.map((reason, index) => <li key={`${reason}-${index}`}>{displayReason(reason)}</li>)}</ul>}<a className={styles.editDay} href={editHref(day.businessDate)}>この日の打刻を修正</a></li>;
         })}</ol>}
       </>}
     </section></main>

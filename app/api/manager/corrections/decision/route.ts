@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       JOIN stores s ON s.id = st.store_id
       WHERE st.line_user_id = ${identity.sub}
         AND st.status = 'active'
-        AND st.role = 'MANAGER'
+        AND public.app_manager_store_allowed(st.store_id)
         AND s.status = 'active'
         AND st.store_id = ${body.storeId}::uuid
       ORDER BY st.created_at ASC
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       FROM correction_requests
       WHERE id = ${body.requestId}
         AND store_id = ${manager.store_id}
-        AND status = 'PENDING'
+        AND public.correction_request_status(id) = 'PENDING'
       LIMIT 1
     `;
 
@@ -143,7 +143,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, code: "OCCURRED_AT_IN_FUTURE" }, { status: 400 });
     }
     for (const code of ["CORRECTION_BREAK_START_REQUIRED", "CORRECTION_SEQUENCE_INVALID",
-      "CORRECTION_TIME_CONFLICT", "CORRECTION_PENDING_CONFLICT", "REQUEST_NOT_PENDING",
+      "CORRECTION_TIME_CONFLICT", "CORRECTION_PENDING_CONFLICT", "REQUEST_NOT_PENDING", "CONSULTATION_FLOW_REQUIRED",
       "REQUEST_ALREADY_DECIDED"]) {
       if (message.includes(code)) return NextResponse.json({ ok: false, code }, { status: 409 });
     }

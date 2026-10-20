@@ -10,6 +10,7 @@ import { readPendingOperation, savePendingOperation, clearPendingOperation, tabO
 import type { EventType, CorrectionIntent, PendingOperation, OperationResult } from "@/lib/attendance-operation";
 import { withAttendanceDeadline } from "@/lib/attendance-request";
 import { correctionValidationMessage } from "@/lib/correction-validation";
+import CorrectionHistory from "./correction-history";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_ATTENDANCE_LIFF_ID || "2010761826-6FNSE1PD";
 
@@ -41,6 +42,7 @@ type Membership = {
   last_event_at: string | null;
   last_event_type: EventType | null;
   recent_punches: PunchHistoryItem[];
+  pending_shift_start?: { request_id: string; checkout_at: string; business_date: string } | null;
 };
 
 type ViewState =
@@ -92,6 +94,13 @@ function formatTime(value: Date | string) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+  }).format(new Date(value));
+}
+
+function formatPunchDateTime(value: string) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(new Date(value));
 }
 
@@ -159,6 +168,8 @@ function operationNotice(operation: PendingOperation, result: OperationResult) {
     return (result.occurred_at ? formatTime(result.occurred_at) + "の" : "")
       + eventLabels[result.event_type ?? operation.eventType] + "を記録しました";
   }
+  if (result.status === "RESOLVED") return result.outcome === "NO_CHANGE" ? "相談は対応済みです。打刻の変更はありません。" : "相談は対応済みです。打刻の修正内容を確認できます。";
+  if (result.status === "PENDING" && result.has_saved_corrections) return "打刻の修正は保存済みですが、相談はまだ完了していません。";
   if (result.status === "PENDING") return "打刻修正を申請しました（承認待ち）";
   if (result.status === "REJECTED") return "この修正申請は却下されています。現在の記録を確認してください。";
   return "打刻修正が反映されています。現在の記録を表示しています。";
@@ -183,7 +194,7 @@ export default function Home() {
   const [now, setNow] = useState<Date | null>(null);
   const [showCorrection, setShowCorrection] = useState(false);
   const [correctionCategory, setCorrectionCategory] =
-    useState<"MISTAKE" | "MISSED" | "OTHER">("MISTAKE");
+    useState<"" | "MISTAKE" | "MISSED" | "OTHER">("");
   const [correctionEvent, setCorrectionEvent] =
     useState<EventType | "BREAK_PAIR">("CHECK_IN");
   const [correctionDate, setCorrectionDate] = useState("");
@@ -196,6 +207,7 @@ export default function Home() {
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const storeTokenRef = useRef<string | null>(null);
+  const [correctionHistoryVersion, setCorrectionHistoryVersion] = useState(0);
   const locationReaderRef = useRef<PunchLocationReader | null>(null);
   const punchInFlightRef = useRef(false);
   const pendingOperationRef = useRef<PendingOperation | null>(null);
@@ -381,6 +393,7 @@ export default function Home() {
       forgetOperation(operation);
       setShowCorrection(false);
       setNotice(operationNotice(operation, session.result));
+      if (operation.kind === "correction") setCorrectionHistoryVersion(version => version + 1);
       if (operation.kind === "punch") setLocationNotice(locationExplanation(session.result));
       return true;
     }
@@ -435,7 +448,8 @@ export default function Home() {
           method: "POST", signal, headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             idToken, storeToken: storeTokenRef.current, clientRequestId: operation.clientRequestId,
-            ...(operation.kind === "punch" ? { eventType: operation.eventType, expectedStateVersion: operation.expectedStateVersion, location } : operation.intent),
+            ...(operation.kind === "punch" ? { eventType: operation.eventType, expectedStateVersion: operation.expectedStateVersion,
+              previousCheckoutRequestId: operation.previousCheckoutRequestId, location } : operation.intent),
           }),
         });
         responseStatus = response.status;
@@ -461,7 +475,7 @@ export default function Home() {
       if (terminalFailure) {
         if (!finishRejectedCorrection(operation)) {
           forgetOperation(operation);
-          setNotice("打刻は追加されていません。最新の勤務状態と履歴を確認してください。");
+          setNotice("勤務状態と履歴を更新しました。打刻は追加されていません。表示を確認し、必要な打刻をもう一度押してください。");
         }
       } else {
         setNotice("送信結果を確認できませんでした。通信を確認して、結果を再確認してください。");
@@ -495,7 +509,7 @@ export default function Home() {
     if (view.kind !== "ready" || pendingOperationRef.current || punchInFlightRef.current) return;
 
     invalidateCorrectionValidation();
-    setCorrectionCategory("MISTAKE");
+    setCorrectionCategory(canCorrectLastPunch(view.membership) ? "MISTAKE" : "");
     setCorrectionEvent("CHECK_IN");
     setCorrectionDate("");
     setCorrectionTime("");
@@ -554,6 +568,10 @@ export default function Home() {
 
   function correctionIntentFromInput(): CorrectionIntent | null {
     if (view.kind !== "ready") return null;
+    if (correctionCategory === "") {
+      setCorrectionError("修正内容を選択してください。");
+      return null;
+    }
     if (correctionCategory === "MISTAKE") {
       const eventType = correctedLastEvent(view.membership);
       if (!canCorrectLastPunch(view.membership) || (eventType !== "CHECK_OUT" && eventType !== "BREAK_START")) {
@@ -665,6 +683,8 @@ export default function Home() {
       kind: "punch", clientRequestId: crypto.randomUUID(), eventType,
       staffId: view.membership.staff_id, storeId: view.membership.store_id,
       expectedStateVersion,
+      ...(eventType === "CHECK_IN" && view.membership.pending_shift_start
+        ? { previousCheckoutRequestId: view.membership.pending_shift_start.request_id } : {}),
     }));
   }
 
@@ -783,22 +803,26 @@ export default function Home() {
 
             <p className="store">{view.membership.store_name}</p>
             <p className="status">{view.membership.legal_name}さん</p>
-            <p className="state">{stateLabels[view.membership.state]}</p>
+            <p className="state">{view.membership.pending_shift_start ? "前回の退勤が確認待ち" : stateLabels[view.membership.state]}</p>
 
             <p className="last-punch">
               {view.membership.last_event_at && view.membership.last_event_type && (
                 <>
-                  {formatTime(view.membership.last_event_at)} に
+                  {formatPunchDateTime(view.membership.last_event_at)} に
                   {eventLabels[view.membership.last_event_type]}
                 </>
               )}
             </p>
 
-            <div className="punch-actions">
-              {actionsByState[view.membership.state].map((eventType) => (
+            {view.membership.pending_shift_start && <div className="operation-recovery">
+              <p>{formatPunchDateTime(view.membership.pending_shift_start.checkout_at)} の退勤を申請済みです。</p>
+              <p className="field-help">次の勤務を始められます。前回分は管理者の承認まで未確定です。</p>
+            </div>}
+            <div className={view.membership.pending_shift_start ? "punch-actions pending-shift-actions" : "punch-actions"}>
+              {(view.membership.pending_shift_start ? ["CHECK_IN" as const, ...actionsByState[view.membership.state]] : actionsByState[view.membership.state]).map((eventType) => (
                 <button
                   className={
-                    eventType === "BREAK_START"
+                    eventType === "BREAK_START" || (view.membership.pending_shift_start && eventType !== "CHECK_IN")
                       ? "punch-button punch-button-secondary"
                       : "punch-button"
                   }
@@ -810,10 +834,11 @@ export default function Home() {
                   {submitting === eventType
                     ? punchPhase === "location" ? "位置確認中…"
                       : punchPhase === "sending" ? "送信中…" : "確認中…"
-                    : eventLabels[eventType]}
+                    : eventType === "CHECK_IN" && view.membership.pending_shift_start ? "次の勤務を開始" : eventLabels[eventType]}
                 </button>
               ))}
             </div>
+            {view.membership.pending_shift_start && <p className="field-help">前回から働き続けている場合は、退勤・休憩開始を使ってください。</p>}
 
             <div className="punch-feedback" role="status">
               {correctionSubmitting
@@ -894,12 +919,14 @@ export default function Home() {
                         onChange={(event) => changeCorrectionInput(() => {
                           setCorrectionCategory(
                             event.target.value as
+                              | ""
                               | "MISTAKE"
                               | "MISSED"
                               | "OTHER",
                           );
                         })}
                       >
+                        <option value="" disabled>修正内容を選択</option>
                         <option value="MISTAKE">
                           前回の打刻を押し間違えた
                         </option>
@@ -916,12 +943,12 @@ export default function Home() {
                           <p>前回の打刻を次のように修正します。</p>
                           <div>
                             <span>
-                              {formatTime(view.membership.last_event_at)}{" "}
+                              {formatPunchDateTime(view.membership.last_event_at)}{" "}
                               {eventLabels[view.membership.last_event_type]}
                             </span>
                             <strong aria-hidden="true">→</strong>
                             <span>
-                              {formatTime(view.membership.last_event_at)}{" "}
+                              {formatPunchDateTime(view.membership.last_event_at)}{" "}
                               {
                                 eventLabels[
                                   correctedLastEvent(
@@ -1105,7 +1132,7 @@ export default function Home() {
                             <div>
                               <dt>修正</dt>
                               <dd>
-                                {formatTime(view.membership.last_event_at)}{" "}
+                                {formatPunchDateTime(view.membership.last_event_at)}{" "}
                                 {eventLabels[view.membership.last_event_type]}
                                 {" → "}
                                 {
@@ -1200,6 +1227,9 @@ export default function Home() {
                 <p className="punch-history-empty">本日の打刻はありません</p>
               )}
             </details>
+
+            <CorrectionHistory key={`${view.membership.staff_id}:${correctionHistoryVersion}`}
+              getStoreToken={() => storeTokenRef.current} />
 
             {!showCorrection && (
               <div className="attendance-exit">

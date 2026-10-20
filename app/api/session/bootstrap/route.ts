@@ -84,6 +84,7 @@ export async function POST(request: Request) {
         COALESCE(epe.correction_request_id, epe.original_event_id) AS last_event_revision_id,
         COALESCE(epe.occurred_at, ss.last_event_at) AS last_event_at,
         epe.event_type AS last_event_type,
+        (SELECT row_to_json(next_shift) FROM staff_pending_shift_start(st.id) next_shift) AS pending_shift_start,
         COALESCE(history.items, '[]'::json) AS recent_punches,
         CASE
           WHEN ${pending?.kind ?? null}::text = 'punch' THEN (
@@ -95,7 +96,9 @@ export async function POST(request: Request) {
               AND pe.client_request_id = ${pending?.clientRequestId ?? null}::uuid
           )
           WHEN ${pending?.kind ?? null}::text = 'correction' THEN (
-            SELECT json_build_object('id', cr.id, 'status', cr.status,
+            SELECT json_build_object('id', cr.id, 'status', public.correction_request_status(cr.id),
+              'has_saved_corrections', EXISTS (SELECT 1 FROM consultation_corrections c WHERE c.request_id = cr.id),
+              'outcome', (SELECT r.outcome FROM consultation_resolutions r WHERE r.request_id = cr.id),
               'requested_event_type', cr.requested_event_type,
               'requested_occurred_at', cr.requested_occurred_at)
             FROM correction_requests cr

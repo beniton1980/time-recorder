@@ -171,7 +171,6 @@ export async function POST(request: Request) {
           COALESCE(day_history.items, '[]'::json) AS day_events
         FROM correction_requests cr
         JOIN staff st ON st.id = cr.staff_id
-        JOIN stores store_settings ON store_settings.id = cr.store_id
         LEFT JOIN punch_events pe ON pe.id = cr.target_event_id
         LEFT JOIN correction_requests paired
           ON paired.group_id = cr.group_id AND paired.id <> cr.id
@@ -192,18 +191,10 @@ export async function POST(request: Request) {
           ) AS items
           FROM effective_punch_events epe
           WHERE epe.staff_id = cr.staff_id
-            AND epe.business_date = COALESCE(cr.requested_business_date, (
-              (
-                COALESCE(
-                  cr.requested_occurred_at,
-                  pe.occurred_at,
-                  cr.requested_at
-                ) AT TIME ZONE store_settings.timezone
-              ) - make_interval(mins => store_settings.business_day_start_minute)
-            )::date)
+            AND epe.business_date = public.correction_request_business_date(cr.id)
         ) day_history ON TRUE
         WHERE cr.store_id = ${manager.store_id}
-          AND cr.status = 'PENDING'
+          AND public.correction_request_status(cr.id) = 'PENDING'
           AND (cr.group_id IS NULL OR cr.id = cr.group_id)
         ORDER BY cr.requested_at ASC
       `,

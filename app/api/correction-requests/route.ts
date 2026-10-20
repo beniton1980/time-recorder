@@ -114,8 +114,13 @@ export async function POST(request: Request) {
         ${eventType}, ${occurredAt}::timestamptz, ${reason}, ${breakEndedAt}::timestamptz
       )
     `;
+    const saved = result[0].correction_request;
+    const current = await sql`SELECT public.correction_request_status(cr.id) AS status,
+      EXISTS (SELECT 1 FROM consultation_corrections c WHERE c.request_id = cr.id) AS has_saved_corrections,
+      (SELECT r.outcome FROM consultation_resolutions r WHERE r.request_id = cr.id) AS outcome
+      FROM correction_requests cr WHERE cr.id = ${saved.id}::uuid`;
     return NextResponse.json({
-      ok: true, status: result[0].result_status, correctionRequest: result[0].correction_request,
+      ok: true, status: result[0].result_status, correctionRequest: { ...saved, ...current[0] },
     });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {

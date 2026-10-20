@@ -37,7 +37,7 @@ test("query uses effective events and does not filter inactive staff", async () 
   const source = await readFile(new URL("../lib/monthly-attendance-query.ts", import.meta.url), "utf8");
   assert.match(source, /FROM effective_punch_events epe/);
   assert.match(source, /epe\.business_date BETWEEN/);
-  assert.match(source, /cr\.status = 'PENDING'/);
+  assert.match(source, /public\.correction_request_status\(cr\.id\) = 'PENDING'/);
   assert.doesNotMatch(source, /st\.status = 'active'/);
 });
 
