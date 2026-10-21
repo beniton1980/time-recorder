@@ -1,0 +1,13 @@
+.panel { margin-top: 20px; padding: 18px; border: 1px solid #d5dfdf; border-radius: 16px; background: #fff; color: #243c3a; text-align: left; }
+.heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.panel h2 { font-size: 1rem; margin: 0; }
+.panel h3 { font-size: .95rem; margin: 20px 0 8px; }
+.panel p { font-size: .85rem; line-height: 1.6; margin: 8px 0; }
+.panel button { min-height: 44px; padding: 9px 12px; border: 1px solid #a9c0ba; border-radius: 8px; background: #f4f8f6; color: #214f45; font: inherit; font-size: .85rem; cursor: pointer; }
+.panel button:disabled { opacity: .55; cursor: default; }
+.panel button:focus-visible { outline: 3px solid #39816c; outline-offset: 3px; }
+.list { list-style: none; padding: 0; margin: 0; }
+.list li { padding: 16px 0; border-bottom: 1px solid #e1e8e5; }
+.list li:last-child { border-bottom: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.muted { color: #566d66; }

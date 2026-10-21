@@ -22,6 +22,7 @@ type CorrectionRequestBody = {
   occurredAt?: unknown;
   breakEndedAt?: unknown;
   reason?: unknown;
+  attentionSource?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -36,6 +37,12 @@ export async function POST(request: Request) {
   }
   const tokenHash = hashStoreEntryToken(body.storeToken);
   const category = body.category;
+  const source = body.attentionSource as { eventId?: unknown; revision?: unknown } | undefined;
+  if (source != null && (typeof source !== "object" || typeof source.eventId !== "string" || !uuidPattern.test(source.eventId)
+    || typeof source.revision !== "string" || !/^[a-f0-9]{32}$/.test(source.revision)
+    || Object.keys(source).some(key => key !== "eventId" && key !== "revision"))) {
+    return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
+  }
   if (typeof body.idToken !== "string" || !tokenHash
     || (category !== "MISTAKE" && category !== "MISSED" && category !== "MISSED_BREAK" && category !== "OTHER")) {
     return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
@@ -107,14 +114,18 @@ export async function POST(request: Request) {
     }
     const member = membership[0];
     const result = await sql`
-      SELECT * FROM public.submit_staff_correction(
+      SELECT * FROM public.submit_staff_correction_with_source(
         ${String(member.store_id)}::uuid, ${String(member.staff_id)}::uuid,
         ${body.clientRequestId}::uuid, ${category},
         ${targetEventId}::uuid, ${expectedRevisionId}::uuid,
-        ${eventType}, ${occurredAt}::timestamptz, ${reason}, ${breakEndedAt}::timestamptz
+        ${eventType}, ${occurredAt}::timestamptz, ${reason}, ${breakEndedAt}::timestamptz,
+        ${source == null ? null : JSON.stringify(source)}::jsonb
       )
     `;
     const saved = result[0].correction_request;
+    if (result[0].result_status === "existing") return NextResponse.json({
+      ok: false, code: "ATTENTION_ALREADY_PENDING", requestId: saved.id,
+    }, { status: 409, headers: { "Cache-Control": "no-store, private" } });
     const current = await sql`SELECT public.correction_request_status(cr.id) AS status,
       EXISTS (SELECT 1 FROM consultation_corrections c WHERE c.request_id = cr.id) AS has_saved_corrections,
       (SELECT r.outcome FROM consultation_resolutions r WHERE r.request_id = cr.id) AS outcome
@@ -129,6 +140,7 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "";
     const knownErrors: Record<string, number> = {
       LAST_PUNCH_CHANGED: 409,
+      ATTENTION_CHANGED: 409,
       CLIENT_REQUEST_CONFLICT: 409,
       ACTIVE_AT_OTHER_STORE: 409,
       STAFF_OR_STORE_NOT_FOUND: 404,

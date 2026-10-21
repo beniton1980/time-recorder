@@ -38,6 +38,7 @@ export type AttendanceDayAssessment = {
 };
 
 export declare const ATTENDANCE_CALCULATION_SPEC_VERSION: string;
+export function deriveAttendanceAttentionRecords(events: EffectivePunch[]): (AttendanceDayAssessment & { openState: string; sequenceConflict: boolean })[];
 export function closingDay(closingRule: string, year: number, monthIndex: number): number;
 export function calculateClosingPeriod(closingRule: string, closingDate: string): ClosingPeriod;
 export function classifyGps(event: EffectivePunch): string | null;

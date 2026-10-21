@@ -51,6 +51,7 @@ export async function POST(request: Request) {
         public.correction_request_business_date(cr.id)::text AS "requestDay",
         extract(epoch FROM ss.updated_at)::text AS version,
         target.business_date::text AS "targetDay", target.effective_id AS "targetId",
+        (SELECT link.snapshot FROM correction_attention_sources link WHERE link.request_id = cr.id) AS source,
         r.resolved_at AS "resolvedAt", r.outcome, r.reason AS "resolutionReason",
         COALESCE((SELECT jsonb_agg(jsonb_build_object('id', c.correction_id, 'operation', correction.operation,
           'before', c.before_event, 'after', c.after_event, 'reason', correction.reason, 'at', c.created_at)
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
     `;
     if (!rows[0]) return json({ ok: false, code: "CONSULTATION_NOT_FOUND" }, 404);
     const consultation = rows[0] as unknown as Consultation;
-    const dates = [...new Set([consultation.requestDay, consultation.targetDay,
+    const dates = [...new Set([consultation.requestDay, consultation.targetDay, consultation.source?.businessDate,
       ...consultation.changes.flatMap(c => [c.before?.day, c.after?.day])].filter((d): d is string => Boolean(d)))].sort();
     const monthly = await loadMonthlyAttendance(sql, body.storeId, { start: dates[0], end: dates.at(-1)! });
     const days = dates.map(businessDate => {

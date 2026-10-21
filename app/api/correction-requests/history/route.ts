@@ -19,6 +19,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
   }
   const cursor = body.before;
+  const requestId = body.requestId;
+  if (requestId != null && (typeof requestId !== "string" || !uuid.test(requestId))) {
+    return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
+  }
   if (cursor != null && (typeof cursor !== "object" || typeof cursor.id !== "string" || !uuid.test(cursor.id)
     || typeof cursor.requestedAt !== "string" || cursor.requestedAt.length > 40
     || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(cursor.requestedAt)
@@ -37,6 +41,7 @@ export async function POST(request: Request) {
         SELECT jsonb_agg(item ORDER BY requested_at DESC, id DESC) FROM (
           SELECT cr.id, cr.requested_at, jsonb_build_object(
             'id', cr.id,
+            'source', (SELECT link.snapshot FROM correction_attention_sources link WHERE link.request_id = cr.id),
             'requestedAt', to_char(cr.requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
             'status', public.correction_request_status(cr.id),
             'hasSavedCorrections', EXISTS (SELECT 1 FROM consultation_corrections c WHERE c.request_id = cr.id),
@@ -59,6 +64,7 @@ export async function POST(request: Request) {
           LEFT JOIN correction_requests ending ON ending.group_id = cr.id AND ending.id <> cr.id
             AND ending.staff_id = st.id AND ending.store_id = s.id
           WHERE cr.staff_id = st.id AND cr.store_id = s.id
+            AND (${requestId ?? null}::uuid IS NULL OR cr.id = ${requestId ?? null}::uuid)
             AND (cr.group_id IS NULL OR cr.group_id = cr.id)
             AND (${cursor?.id ?? null}::uuid IS NULL
               OR (cr.requested_at, cr.id) < (${cursor?.requestedAt ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
@@ -80,7 +86,7 @@ export async function POST(request: Request) {
     const last = requests.at(-1);
     return NextResponse.json({ ok: true, requests,
       next: rows.length > 20 && last ? { id: last.id, requestedAt: last.requestedAt } : null,
-    }, { headers: { "Cache-Control": "no-store" } });
+    }, { headers: { "Cache-Control": "no-store, private" } });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });

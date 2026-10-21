@@ -47,7 +47,7 @@ export default function ConsultationPage() {
   }, [id, storeId]);
   useEffect(() => { const state = generation.current; if (id && storeId) void load(); return () => { state.value++; }; }, [id, storeId, load]);
   const c = data?.consultation.id === id && data.consultation.storeId === storeId ? data.consultation : null;
-  const workDates = new Set([c?.targetDay, ...(c?.changes.flatMap(change => [change.before?.day, change.after?.day]) ?? [])].filter(Boolean));
+  const workDates = new Set([c?.targetDay, c?.source?.businessDate, ...(c?.changes.flatMap(change => [change.before?.day, change.after?.day]) ?? [])].filter(Boolean));
   const workDays = data?.days.filter(day => workDates.has(day.businessDate)) ?? [];
   const requestDisplayDay = data?.days.find(day => day.businessDate === c?.requestDay && !workDates.has(day.businessDate)
     && (c.status === "PENDING" || day.status === "NEEDS_REVIEW"));
@@ -86,8 +86,9 @@ export default function ConsultationPage() {
     {c && <>
       <section className={styles.card}><div className={styles.heading}><h2>相談内容</h2><span className={styles.badge}>{c.status === "RESOLVED" ? "対応済み" : c.status === "PENDING" ? c.changes.length ? "修正保存済み・未完了" : "確認待ち" : "処理済み"}</span></div>
         <p className={styles.muted}>相談受付：{dateTime(c.requestedAt)}</p><p className={styles.reason}>{c.reason}</p>
-        {c.status === "PENDING" && <><p>{c.targetDay ? `対象勤務：${c.targetDay}` : c.changes.length ? "相談受付時の対象勤務は未指定です。保存した修正の勤務日は下に表示しています。" : "対象未指定。相談受付日と勤務日は異なる場合があります。"}</p>
-          <a className={styles.primary} href={attendanceHref(c.targetDay ?? undefined, true)}>対象の打刻を確認・修正</a></>}
+        {c.source && <p>通知の対象：{c.source.businessDate}の勤務（記録：{dateTime(c.source.startedAt)}）{c.source.breakStartedAt && <> ／ 休憩開始：{dateTime(c.source.breakStartedAt)}</>}。申請時点の記録です。</p>}
+        {c.status === "PENDING" && <><p>{c.source ? "通知の対象勤務を開いて、現在の記録を確認できます。" : c.targetDay ? `対象勤務：${c.targetDay}` : c.changes.length ? "相談受付時の対象勤務は未指定です。保存した修正の勤務日は下に表示しています。" : "対象未指定。相談受付日と勤務日は異なる場合があります。"}</p>
+          <a className={styles.primary} href={attendanceHref(c.source?.businessDate ?? c.targetDay ?? undefined, true)}>対象の打刻を確認・修正</a></>}
       </section>
       <section className={styles.card}><h2>この相談で保存した修正</h2>
         {c.changes.length === 0 ? <p className={styles.muted}>{c.status === "RESOLVED" ? "この相談では打刻を変更していません。" : "この相談に結び付いた修正はまだありません。"}</p> : <>

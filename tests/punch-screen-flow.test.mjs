@@ -16,12 +16,14 @@ function screen(initial={kind:"ready",membership:member},storage=memory(),env={}
  const deadlines=loadTs("lib/attendance-request.ts",{}, {AbortController,
   setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);}});
  const modules={"react/jsx-runtime":jsxRuntime,react:{
+  useCallback:fn=>fn,
   useEffect(fn,deps){if(deps.length===0)effects.push(fn);},
   useState(value){const i=si++;if(!(i in states))states[i]=i===0?initial:value;return[states[i],v=>{states[i]=typeof v==="function"?v(states[i]):v;}];},
   useRef(value){const i=ri++;refs[i]??={current:i===0?"fixture-token":i===1?reader:value};return refs[i];}
  },"@line/liff":{default:{getIDToken:()=>"fixture-identity",init:async options=>{liffInits.push(options);},isLoggedIn:()=>true,
   isInClient:()=>true,closeWindow:()=>{uiCalls.lineClose++;}}},
  "./correction-history":{default:()=>null},
+ "./attendance-attention":{default:()=>null},
  "@/lib/correction-validation":loadTs("lib/correction-validation.ts"),
  "@/lib/attendance-request":deadlines,"@/lib/attendance-operation":{...operations,tabOperationStorage:()=>storage},"@/lib/punch-location.mjs":{},"@/lib/punch-performance.mjs":{measurePunchStage:(_stage,task)=>task()}};
  const component=loadTs("app/page.tsx",modules,{Date:clock,process:{env},crypto:{randomUUID},window:{location:{search:"?store_token=fixture-token"},setTimeout:()=>0,setInterval:()=>0,close:()=>{uiCalls.browserClose++;}},
@@ -32,10 +34,11 @@ function screen(initial={kind:"ready",membership:member},storage=memory(),env={}
  hangBody(){requests.shift().resolve({status:200,ok:true,json:()=>new Promise(()=>{})});},
  respond(value,status=200){requests.shift().resolve({status,ok:status<400,json:async()=>value});},lose(){requests.shift().reject(new Error("fixture network"));},boot(){effects.forEach(fn=>fn());}};
 }
-function nodes(t,type){if(!t||typeof t!=="object")return[];if(Array.isArray(t))return t.flatMap(x=>nodes(x,type));return[...(t.type===type?[t]:[]),...nodes(t.props?.children,type)];}
+function nodes(t,type){if(!t||typeof t!=="object")return[];if(Array.isArray(t))return t.flatMap(x=>nodes(x,type));return[...(type===undefined||t.type===type?[t]:[]),...nodes(t.props?.children,type)];}
 const text=t=>typeof t==="string"?t:Array.isArray(t)?t.map(text).join(""):t?.props?text(t.props.children):"";
 const button=(s,label)=>nodes(s.render(),"button").find(b=>text(b)===label);
 const punch=s=>nodes(s.render(),"button").find(b=>b.props.className==="punch-button");
+const attentionComponent=s=>nodes(s.render(),undefined).find(n=>n.props?.onCorrect && n.props?.onHistory);
 const response=(membership=member,operationResult=null)=>({ok:true,registered:true,memberships:[membership],operationResult});
 function clockAt(instant){
  let now=Date.parse(instant);
@@ -521,4 +524,27 @@ test("pending storage is scoped, validated and excludes credentials and GPS",()=
  assert.equal(operations.readPendingOperation(storage,randomUUID(),store),null);assert.equal(operations.readPendingOperation(storage,staff,store).clientRequestId,pending.clientRequestId);
  storage.map.set([...storage.map.keys()][0],"{");assert.equal(operations.readPendingOperation(storage,staff,store),null);
  operations.savePendingOperation(null,pending);operations.clearPendingOperation(null,pending);
+});
+
+test("attention opens the existing form with a source, empty actual timestamps, and preserves source and draft on conflict",async()=>{
+ const s=screen(), source={eventId:randomUUID(),revision:'a'.repeat(32),businessDate:'2026-10-19',startedAt:'2026-10-19T13:00:00Z'};
+ const item={id:'work',bucket:'check',source,eventType:'BREAK_END',continuing:true,requestId:null};
+ attentionComponent(s).props.onCorrect(item,false);
+ assert.equal(nodes(s.render(),'select')[0].props.value,'MISSED');assert.equal(nodes(s.render(),'select')[1].props.value,'BREAK_END');
+ assert.deepEqual(nodes(s.render(),'input').map(n=>n.props.value),['','']);
+ button(s,'キャンセル').props.onClick();attentionComponent(s).props.onCorrect(item,true);
+ assert.equal(nodes(s.render(),'select')[0].props.value,'OTHER');
+ nodes(s.render(),'textarea')[0].props.onChange({target:{value:'Fixture unknown time'}});
+ nodes(s.render(),'form')[0].props.onSubmit({preventDefault(){}});
+ button(s,'この内容で申請').props.onClick();await settle();
+ const body=s.calls[0].body;assert.deepEqual({...body.attentionSource},{eventId:source.eventId,revision:source.revision});
+ assert.equal([...s.storage.map.values()][0].includes(source.revision),true);
+ s.respond({ok:false,code:'ATTENTION_CHANGED'},409);await settle();s.respond(response());await settle();
+ assert.equal(nodes(s.render(),'textarea')[0].props.value,'Fixture unknown time');assert.match(text(s.render()),/入力は保持しています/);
+ button(s,'入力を保持して対象勤務を再確認').props.onClick();await settle();
+ assert.equal(s.calls.at(-1).body.sourceEventId,source.eventId);
+ s.respond({ok:true,items:[{...item,source:{...source,revision:'b'.repeat(32)}}]});await settle();
+ assert.equal(nodes(s.render(),'textarea')[0].props.value,'Fixture unknown time');
+ nodes(s.render(),'form')[0].props.onSubmit({preventDefault(){}});button(s,'この内容で申請').props.onClick();await settle();
+ assert.equal(s.calls.at(-1).body.attentionSource.revision,'b'.repeat(32));
 });

@@ -5,12 +5,13 @@ import { loadTs } from "./helpers/load-ts.mjs";
 const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
 const text = t => typeof t === "string" ? t : Array.isArray(t) ? t.map(text).join("") : t?.props ? text(t.props.children) : "";
 const nodes = (t, type) => !t || typeof t !== "object" ? [] : Array.isArray(t) ? t.flatMap(n => nodes(n, type)) : [...(t.type === type ? [t] : []), ...nodes(t.props?.children, type)];
-function screen() {
+function screen(initialRequestId) {
   const slots = [], calls = []; let index = 0, mounted = false, cleanup;
   let response = async () => ({ ok: true, json: async () => ({ ok: true, requests: [], next: null }) });
   const component = loadTs("app/correction-history.tsx", {
     "react/jsx-runtime": jsxRuntime,
     react: {
+      useCallback: fn => fn,
       useState(initial) { const i = index++; if (!(i in slots)) slots[i] = initial; return [slots[i], v => { slots[i] = typeof v === "function" ? v(slots[i]) : v; }]; },
       useRef(initial) { const i = index++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
       useEffect(fn) { if (!mounted) { cleanup = fn(); mounted = true; } },
@@ -19,7 +20,7 @@ function screen() {
     "@/lib/attendance-request": { withAttendanceDeadline: fn => fn(new AbortController().signal) },
     "./correction-history.module.css": { default: {} },
   }, { fetch: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return response(); } });
-  return { calls, render() { index = 0; return component.default({ getStoreToken: () => "fixture-qr" }); },
+  return { calls, render() { index = 0; return component.default({ getStoreToken: () => "fixture-qr", initialRequestId }); },
     setResponse(fn) { response = fn; }, unmount() { cleanup(); } };
 }
 const button = (s, label) => nodes(s.render(), "button").find(n => text(n).startsWith(label));
@@ -35,6 +36,13 @@ test("history is lazy, displays status and next action, and refresh reflects a m
   assert.match(text(s.render()), /却下/); assert.match(text(s.render()), /内容を管理者に確認/); assert.match(text(s.render()), /承認済み/);
   assert.equal(s.calls[0].body.storeToken, "fixture-qr");
   await click(s, "修正申請の状況"); await click(s, "修正申請の状況"); assert.equal(s.calls.length, 3);
+});
+
+test('direct result lookup selects its request without depending on the latest page, then returns to all history',async()=>{
+  const s=screen('older-request');s.setResponse(reply([{...item('older-request','RESOLVED'),outcome:'NO_CHANGE'}]));
+  s.render();await settle();assert.equal(s.calls[0].body.requestId,'older-request');assert.match(text(s.render()),/打刻の変更はありません/);
+  s.setResponse(reply([item('newer','PENDING')]));await click(s,'すべての申請を見る');assert.equal(s.calls.at(-1).body.requestId,null);
+  assert.match(text(s.render()),/確認待ち/);
 });
 
 test("failed refresh does not show an empty or stale success; retry and pagination preserve the appropriate page", async () => {

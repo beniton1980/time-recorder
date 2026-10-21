@@ -1,4 +1,6 @@
 const messages: Record<string, string> = {
+  ATTENTION_CHANGED: "対象の勤務記録が更新されています。入力は保持しています。勤務の確認を更新し、対象を確認してください。",
+  ATTENTION_ALREADY_PENDING: "この勤務には確認待ちの申請があります。既存の申請の状況を確認してください。",
   CORRECTION_BREAK_START_REQUIRED: "休憩開始の記録がありません。",
   CORRECTION_SEQUENCE_INVALID: "前後の打刻とつながりません。種類と日時を確認してください。",
   CORRECTION_TIME_CONFLICT: "同じ時刻の打刻がすでにあります。日時を確認してください。",
