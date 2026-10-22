@@ -28,7 +28,7 @@ export default function ConsultationHistory({ storeId }: { storeId: string }) {
     } catch { if (state.active) setError("対応済みの相談を取得できませんでした。"); }
     finally { state.pending = false; if (state.active) setLoading(false); }
   }
-  return <div className={styles.shell}>
+  return <div className={`${styles.shell} ${styles.history}`}>
     <button className={styles.secondary} aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void load(); }}>対応済みの相談を見る</button>
     {open && <div className={styles.card}>
       {error && <p className={styles.error} role="alert">{error}<button className={styles.secondary} onClick={() => void load()} disabled={loading}>再読込み</button></p>}
