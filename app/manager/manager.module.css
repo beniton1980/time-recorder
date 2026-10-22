@@ -654,6 +654,15 @@
 
 .correctionNotice { margin: 18px 0 0; }
 
+.decisionConfirmation {
+  padding: 12px;
+  border: 1px solid #aabcb0;
+  border-radius: 10px;
+  background: #eef4f0;
+}
+
+.decisionConfirmation p { margin: 0 0 12px; }
+
 .monthlyReportActions {
   display: flex;
   gap: 8px;

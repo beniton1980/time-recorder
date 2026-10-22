@@ -127,13 +127,6 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-async function dismissKeyboard() {
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 180));
-  }
-}
-
 function currentBusinessDate() {
   return inputParts(new Date().toISOString()).date;
 }
@@ -169,6 +162,22 @@ export default function ManagerPage() {
   const [coManagerMessage, setCoManagerMessage] = useState<string | null>(null);
   const [coManagerShare, setCoManagerShare] = useState<CoManagerShare | null>(null);
   const [pastPeriodWorking, setPastPeriodWorking] = useState(false);
+  type DecisionConfirmation = { storeId: string; requestId: string; decision: "APPROVED" | "REJECTED" };
+  const [decisionConfirmation, setDecisionConfirmation] = useState<DecisionConfirmation | null>(null);
+  const decisionFlow = useRef<{ confirmation: DecisionConfirmation | null; busy: boolean }>({ confirmation: null, busy: false });
+
+  function cancelDecision() {
+    if (decisionFlow.current.busy) return;
+    decisionFlow.current.confirmation = null;
+    setDecisionConfirmation(null);
+  }
+
+  function requestDecision(correction: Correction, decision: "APPROVED" | "REJECTED") {
+    if (!dashboard || switchingStore || decisionFlow.current.busy || correction.operation === "REVIEW") return;
+    const confirmation = { storeId: dashboard.manager.store_id, requestId: correction.id, decision };
+    decisionFlow.current.confirmation = confirmation;
+    setDecisionConfirmation(confirmation);
+  }
 
   const loadDashboard = useCallback(async (businessDate: string | undefined, storeId: string) => {
     const idToken = liff.getIDToken();
@@ -338,7 +347,8 @@ export default function ManagerPage() {
   }, [loadDashboard, loadManagerMemberships, loadMonthlyReports]);
 
   async function changeStore(storeId: string) {
-    if (!dashboard || storeId === dashboard.manager.store_id) return;
+    if (!dashboard || decisionFlow.current.busy || storeId === dashboard.manager.store_id) return;
+    cancelDecision();
     setSwitchingStore(true);
     setCorrectionNotice(null);
     setError(null);
@@ -429,14 +439,13 @@ export default function ManagerPage() {
   }
 
   async function decide(correction: Correction, decision: "APPROVED" | "REJECTED") {
-    if (!dashboard || correction.operation === "REVIEW") return;
+    const confirmation = decisionFlow.current.confirmation;
+    if (!dashboard || switchingStore || decisionFlow.current.busy || correction.operation === "REVIEW"
+      || confirmation?.storeId !== dashboard.manager.store_id || confirmation.requestId !== correction.id
+      || confirmation.decision !== decision) return;
+    decisionFlow.current.busy = true;
     const storeId = dashboard.manager.store_id;
     const verb = decision === "APPROVED" ? "承認" : "却下";
-    await dismissKeyboard();
-    const details = correction.requested_break_ended_at
-      ? "\n\n休憩開始と終了をまとめて処理します。" : "";
-    if (!window.confirm(`${correction.legal_name}さんの申請を${verb}しますか？${details}`)) return;
-
     setDeciding(correction.id);
     setCorrectionNotice(null);
     setError(null);
@@ -488,6 +497,9 @@ export default function ManagerPage() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "申請を更新できませんでした。");
     } finally {
+      decisionFlow.current.busy = false;
+      decisionFlow.current.confirmation = null;
+      setDecisionConfirmation(null);
       setDeciding(null);
     }
   }
@@ -692,7 +704,7 @@ export default function ManagerPage() {
                   表示する店舗
                   <select
                     value={dashboard.manager.store_id}
-                    disabled={switchingStore || pastPeriodWorking}
+                    disabled={switchingStore || pastPeriodWorking || deciding !== null}
                     onChange={(event) => void changeStore(event.target.value)}
                   >
                     {managerMemberships.map((membership) => (
@@ -952,20 +964,31 @@ export default function ManagerPage() {
                           {fieldErrors[correction.id]}
                         </p>
                       )}
-                      {correction.operation === "REVIEW" ? <a className={styles.consultationLink} href={consultationHref(dashboard.manager.store_id, correction.id)}>相談内容・対象の打刻を確認</a> : <div className={styles.actions}>
+                      {correction.operation === "REVIEW" ? <a className={styles.consultationLink} href={consultationHref(dashboard.manager.store_id, correction.id)}>相談内容・対象の打刻を確認</a> : decisionConfirmation?.storeId === dashboard.manager.store_id && decisionConfirmation.requestId === correction.id ? (
+                        <div className={styles.decisionConfirmation} role="group" aria-label={decisionConfirmation.decision === "APPROVED" ? "承認の確認" : "却下の確認"}>
+                          <p role="status">{correction.legal_name}さんの申請を{decisionConfirmation.decision === "APPROVED" ? "承認して勤怠に反映しますか？" : "却下しますか？勤怠には反映しません。"}</p>
+                          {correction.requested_break_ended_at && <p>休憩開始と終了をまとめて処理します。</p>}
+                          <div className={styles.actions}>
+                            <button type="button" className={styles.reject} disabled={deciding !== null} onClick={cancelDecision}>戻る</button>
+                            <button type="button" className={decisionConfirmation.decision === "APPROVED" ? styles.approve : styles.reject} disabled={deciding !== null} onClick={() => void decide(correction, decisionConfirmation.decision)}>
+                              {deciding === correction.id ? "処理中…" : decisionConfirmation.decision === "APPROVED" ? "承認を確定" : "却下を確定"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : <div className={styles.actions}>
                         <button
                           type="button"
                           className={styles.reject}
-                          disabled={deciding !== null}
-                          onClick={() => void decide(correction, "REJECTED")}
+                          disabled={switchingStore || deciding !== null || decisionConfirmation !== null}
+                          onClick={() => requestDecision(correction, "REJECTED")}
                         >
                           却下
                         </button>
                         <button
                           type="button"
                           className={styles.approve}
-                          disabled={deciding !== null}
-                          onClick={() => void decide(correction, "APPROVED")}
+                          disabled={switchingStore || deciding !== null || decisionConfirmation !== null}
+                          onClick={() => requestDecision(correction, "APPROVED")}
                         >
                           {deciding === correction.id ? "処理中…" : "承認"}
                         </button>

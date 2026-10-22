@@ -21,9 +21,9 @@ function dashboard(store, ids) {
     staffMemberships: ids.map(id => ({ staff_id: id, legal_name: `架空${id}`, status: "active", state: "OFF_DUTY" })) };
 }
 function screen(initialResult = dashboard("A", ["A1", "A2"])) {
-  const states = [], effects = [], calls = [];
+  const states = [], effects = [], calls = [], nativeConfirmations = [], windowClosures = [];
   let prepared = null, releaseCsv;
-  let index = 0, result = initialResult, decisionResult = { ok: true }, hold, release;
+  let index = 0, result = initialResult, decisionResult = { ok: true }, hold, release, decisionHold, releaseDecision;
   const location = { href: "https://fixture.invalid/manager?store_id=A", search: "?store_id=A" };
   const component = loadTs("app/manager/page.tsx", {
     "react/jsx-runtime": jsxRuntime,
@@ -35,7 +35,7 @@ function screen(initialResult = dashboard("A", ["A1", "A2"])) {
       useEffect: fn => effects.push(fn), useCallback: fn => fn,
       useRef(initial) { const i = index++; if (!(i in states)) states[i] = { current: initial }; return states[i]; },
     },
-    "@line/liff": { default: { init: async () => {}, isLoggedIn: () => true, getIDToken: () => "fixture-identity" } },
+    "@line/liff": { default: { init: async () => {}, isLoggedIn: () => true, getIDToken: () => "fixture-identity", closeWindow: () => windowClosures.push("liff") } },
     "@/lib/manager-correction-datetime": datetime, "@/lib/correction-validation": validation,
     "./manager.module.css": { default: {} },
     "./past-monthly-report": { default: () => null },
@@ -44,20 +44,22 @@ function screen(initialResult = dashboard("A", ["A1", "A2"])) {
     }) },
   }, {
     process: { env: {} }, URL, HTMLElement: class {}, document: { activeElement: null },
-    window: { location, confirm: () => true, history: { replaceState: (_a, _b, url) => { location.href = String(url); location.search = url.search; } } },
+    window: { location, close: () => windowClosures.push("window"), confirm: message => { nativeConfirmations.push(message); return true; }, history: { replaceState: (_a, _b, url) => { location.href = String(url); location.search = url.search; } } },
     fetch: async (url, options) => {
       const body = JSON.parse(options.body); calls.push({ url, body });
       if (url.endsWith("/session")) return { ok: true, json: async () => ({ ok: true, manager: { memberships: ["A", "B"].map(store => ({ store_id: store, store_name: `架空店舗${store}` })) } }) };
       if (url.endsWith("/dashboard")) { if (hold) await hold; return { ok: result.ok, json: async () => result }; }
-      if (url.endsWith("/corrections/decision")) return { ok: decisionResult.ok, json: async () => decisionResult };
+      if (url.endsWith("/corrections/decision")) { if (decisionHold) await decisionHold; return { ok: decisionResult.ok, json: async () => decisionResult }; }
       if (url.endsWith("/csv")) return new Promise(resolve => { releaseCsv = () => resolve({ ok: true, blob: async () => new Blob(["fixture"]) }); });
       return { ok: true, json: async () => ({ ok: true, reports: [{ id: "report", period_start: "2026-09-01", period_end: "2026-09-30" }] }) };
     },
   });
-  return { calls, location, render() { index = 0; return component.default(); },
+  return { calls, location, nativeConfirmations, windowClosures, render() { index = 0; return component.default(); },
     async start() { this.render(); effects.forEach(effect => effect()); await settle(); },
     async releaseCsv() { releaseCsv(); await settle(); },
     respond(value) { result = value; }, respondDecision(value) { decisionResult = value; }, hold() { hold = new Promise(resolve => { release = resolve; }); },
+    holdDecision() { decisionHold = new Promise(resolve => { releaseDecision = resolve; }); },
+    async releaseDecision() { releaseDecision(); decisionHold = null; await settle(); },
     async release() { release(); hold = null; await settle(); } };
 }
 const attendance = s => nodes(s.render(), "section").find(n => n.props["data-dashboard-key"] === "attendance");
@@ -74,7 +76,63 @@ function withPendingCorrection() {
     requested_at: "2026-10-13T01:00:00.000Z", legal_name: "架空A1", day_events: [] }] };
 }
 const correctionNotice = s => nodes(s.render(), "p").find(n => n.props.role === "status" && text(n).includes("申請を"));
-const decide = (s, label) => nodes(s.render(), "button").find(n => text(n) === label).props.onClick();
+const press = (s, label) => nodes(s.render(), "button").find(n => text(n) === label).props.onClick();
+const decide = (s, label) => { press(s, label); return press(s, `${label}を確定`); };
+const decisions = s => s.calls.filter(c => c.url.endsWith("/corrections/decision"));
+
+test("decision confirmation stays in the page and cancel never sends a decision", async () => {
+  const s = screen(withPendingCorrection()); await s.start();
+  for (const verb of ["承認", "却下"]) {
+    press(s, verb);
+    assert.ok(nodes(s.render(), "div").some(n => n.props.role === "group" && n.props["aria-label"] === `${verb}の確認`));
+    assert.equal(decisions(s).length, 0);
+    press(s, "戻る");
+    assert.equal(decisions(s).length, 0);
+  }
+  assert.deepEqual(s.nativeConfirmations, []);
+  assert.deepEqual(s.windowClosures, []);
+  assert.equal(s.location.href, "https://fixture.invalid/manager?store_id=A");
+});
+
+test("double confirmation submits once and prevents store changes until completion", async () => {
+  const s = screen(withPendingCorrection()); await s.start();
+  s.holdDecision(); press(s, "承認");
+  const confirm = nodes(s.render(), "button").find(n => text(n) === "承認を確定").props.onClick;
+  confirm(); confirm(); await settle();
+  assert.equal(decisions(s).length, 1);
+  assert.equal(storeSelect(s).props.disabled, true);
+  assert.ok(nodes(s.render(), "button").find(n => text(n) === "戻る").props.disabled);
+  switchTo(s, "B"); await settle();
+  assert.equal(s.calls.filter(c => c.url.endsWith("/dashboard") && c.body.storeId === "B").length, 0);
+  s.respond(dashboard("A", ["A1"])); await s.releaseDecision();
+  assert.equal(storeSelect(s).props.disabled, false);
+  assert.deepEqual(s.nativeConfirmations, []);
+  assert.deepEqual(s.windowClosures, []);
+  assert.match(text(correctionNotice(s)), /承認しました/);
+});
+
+test("switching stores cancels confirmation, including a stale confirmation handler", async () => {
+  const s = screen(withPendingCorrection()); await s.start();
+  press(s, "承認");
+  const confirm = nodes(s.render(), "button").find(n => text(n) === "承認を確定").props.onClick;
+  s.respond(dashboard("B", ["B1"])); switchTo(s, "B"); await settle(); confirm(); await settle();
+  assert.equal(decisions(s).length, 0);
+  assert.equal(nodes(s.render(), "div").some(n => n.props["aria-label"] === "承認の確認"), false);
+});
+
+test("two requests can be decided consecutively without native dialogs or navigation", async () => {
+  const data = withPendingCorrection();
+  const second = { ...data.corrections[0], id: "request-A2", requested_occurred_at: "2026-10-11T10:00:00Z" };
+  const s = screen({ ...data, corrections: [...data.corrections, second] }); await s.start();
+  s.respond({ ...data, corrections: [second] }); decide(s, "承認"); await settle();
+  assert.match(text(correctionNotice(s)), /承認しました/);
+  s.respond(dashboard("A", ["A1"])); decide(s, "却下"); await settle();
+  assert.match(text(correctionNotice(s)), /却下しました/);
+  assert.deepEqual(decisions(s).map(c => [c.body.requestId, c.body.decision]), [["request-A", "APPROVED"], ["request-A2", "REJECTED"]]);
+  assert.deepEqual(s.nativeConfirmations, []);
+  assert.deepEqual(s.windowClosures, []);
+  assert.equal(s.location.href, "https://fixture.invalid/manager?store_id=A");
+});
 
 for (const [label, decision, expected] of [
   ["承認", "APPROVED", /勤怠への反映が完了しました/],
