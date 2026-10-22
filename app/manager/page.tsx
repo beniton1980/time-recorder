@@ -975,7 +975,7 @@ export default function ManagerPage() {
                 </ul>
               )}
             </section>
-            {!switchingStore && correctionNotice?.storeId === dashboard.manager.store_id && <p className={styles.reissueMessage} role="status">{correctionNotice.text}</p>}
+            {!switchingStore && correctionNotice?.storeId === dashboard.manager.store_id && <p className={`${styles.reissueMessage} ${styles.correctionNotice}`} role="status">{correctionNotice.text}</p>}
             {!switchingStore && <ConsultationHistory key={dashboard.manager.store_id} storeId={dashboard.manager.store_id} />}
           </>
         )}

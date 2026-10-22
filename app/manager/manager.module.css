@@ -652,6 +652,8 @@
   font-weight: 700;
 }
 
+.correctionNotice { margin: 18px 0 0; }
+
 .monthlyReportActions {
   display: flex;
   gap: 8px;
