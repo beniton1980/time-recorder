@@ -59,7 +59,10 @@ export default function AttendanceAttention({ getStoreToken, refreshKey, disable
         {bucket === "waiting" && <h3>管理者確認待ち</h3>}
         <ul className={styles.list}>{group.map(item => <li key={item.id}>
           {item.source && <p className={styles.muted}>{item.source.businessDate}の勤務 ／ {item.source.fromRequest ? "申請時点の記録" : "記録"}：{time(item.source.startedAt)}</p>}
-          {folded.includes(item.id) && item.continuing ? <button type="button" onClick={() => setFolded(previous => previous.filter(id => id !== item.id))}>勤務継続中として閉じた確認を開く</button> : <>
+          {folded.includes(item.id) && item.continuing ? <>
+            <p role="status">勤務継続中として確認を閉じました。通常どおり打刻できます。</p>
+            <button type="button" onClick={() => setFolded(previous => previous.filter(id => id !== item.id))}>申請・相談のボタンを表示</button>
+          </> : <>
             <strong>{item.message}</strong>
             {item.source?.breakStartedAt && <p>休憩開始：{time(item.source.breakStartedAt)}</p>}
             {item.continuing && <p>まだ勤務中なら、通常どおり打刻できます。</p>}

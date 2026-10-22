@@ -684,7 +684,7 @@ export default function ManagerPage() {
         <header className={styles.header}>
           <p className={styles.eyebrow}>ONOGAMI</p>
           <h1>管理者画面</h1>
-          {MANAGER_ATTENDANCE_PREVIEW && <p className="manager-preview-notice">検証用の勤怠画面です。スタッフを選び、打刻の追加・変更・取消を確認できます。</p>}
+          {MANAGER_ATTENDANCE_PREVIEW && <p className="manager-preview-notice">検証用の管理画面です。申請・相談への対応と、勤怠の確認・修正を試せます。</p>}
           {dashboard && (
             <>
               {managerMemberships.length > 1 ? (
@@ -892,7 +892,7 @@ export default function ManagerPage() {
               )}
             </section>
 
-            <section className={styles.section}>
+            <section className={styles.section} data-dashboard-key="review">
               <div className={styles.sectionHeading}>
                 <h2>未処理の訂正申請</h2>
                 <span>{dashboard.corrections.length}件</span>
