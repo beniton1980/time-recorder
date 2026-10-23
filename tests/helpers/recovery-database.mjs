@@ -3,6 +3,7 @@ import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { readdir, readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { loadTs } from "./load-ts.mjs";
+import * as attendance from "../../lib/monthly-attendance.mjs";
 
 export const token = "FICTITIOUS_FIXTURE_QR_ONLY_20261010";
 export const tokenHash = createHash("sha256").update(token).digest("hex");
@@ -41,6 +42,7 @@ export async function fixture({throughMigration = null} = {}) {
   }
   class LineTokenVerificationError extends Error {}
   const modules={
+    "@/lib/attendance-attention": loadTs("lib/attendance-attention.ts", {"./monthly-attendance.mjs": attendance}),
     "next/server":{NextResponse:{json:(value,options)=>Response.json(value,options)}},
     "@/lib/db":{getSql}, "@/lib/safe-log":{logServerError(){},logServerInfo(){}},
     "@/lib/line/verify-id-token":{LineTokenVerificationError,verifyLineIdToken:async id=>{

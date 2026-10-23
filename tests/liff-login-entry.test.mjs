@@ -37,6 +37,7 @@ function screen({path = "app/page.tsx", loggedIn = false, inClient = false,
   const modules = {
     "react/jsx-runtime": jsxRuntime,
     react: {
+      useCallback: fn => fn,
       useState(initial) {
         const index = stateIndex++;
         if (!(index in states)) states[index] = initial;
@@ -47,6 +48,7 @@ function screen({path = "app/page.tsx", loggedIn = false, inClient = false,
     },
     "@line/liff": {default: liff},
     "./correction-history": {default: () => null},
+    "./attendance-attention": {default: () => null},
     "@/lib/punch-location.mjs": {},
     "@/lib/punch-performance.mjs": {measurePunchStage: (_stage, task) => task()},
     "@/lib/attendance-request": {withAttendanceDeadline: task => task(new AbortController().signal)},

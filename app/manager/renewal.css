@@ -5,7 +5,7 @@ main section[data-dashboard-renewal="true"] {
 
 /* Hide unclassified sections too, before the enhancer's first animation frame. */
 main[data-manager-attendance-preview="true"] > section > header > a,
-main[data-manager-attendance-preview="true"] > section > section:not([data-dashboard-key="attendance"]) {
+main[data-manager-attendance-preview="true"] > section > section:not([data-dashboard-key="attendance"]):not([data-dashboard-key="review"]) {
   display: none !important;
 }
 

@@ -1,9 +1,10 @@
 export type EventType = "CHECK_IN" | "BREAK_START" | "BREAK_END" | "CHECK_OUT";
-export type CorrectionIntent =
+import type { AttentionReference } from "./attendance-attention";
+export type CorrectionIntent = (
   | { category: "MISTAKE"; targetEventId: string; expectedRevisionId: string; eventType: "CHECK_OUT" | "BREAK_START" }
   | { category: "MISSED"; eventType: EventType; occurredAt: string }
   | { category: "MISSED_BREAK"; eventType: "BREAK_START"; occurredAt: string; breakEndedAt: string }
-  | { category: "OTHER"; reason: string };
+  | { category: "OTHER"; reason: string }) & { attentionSource?: AttentionReference };
 
 type OperationIdentity = { clientRequestId: string; staffId: string; storeId: string };
 export type PendingOperation = OperationIdentity & (
@@ -48,6 +49,10 @@ function parseOperation(raw: string): PendingOperation | null {
   }
   if (value.kind !== "correction" || !value.intent) return null;
   const intent = value.intent;
+  const source = intent.attentionSource;
+  if (source !== undefined && (!source || !isUuid(source.eventId) || typeof source.revision !== "string"
+    || !/^[a-f0-9]{32}$/.test(source.revision) || !["MISSED", "OTHER"].includes(intent.category))) return null;
+  const provenance = source ? { attentionSource: { eventId: source.eventId, revision: source.revision } } : {};
   if (intent.category === "MISTAKE" && isUuid(intent.targetEventId) && isUuid(intent.expectedRevisionId)
     && (intent.eventType === "CHECK_OUT" || intent.eventType === "BREAK_START")) {
     return { ...identity, kind: "correction", intent: {
@@ -58,7 +63,7 @@ function parseOperation(raw: string): PendingOperation | null {
   if (intent.category === "MISSED" && isEvent(intent.eventType)
     && typeof intent.occurredAt === "string" && Number.isFinite(Date.parse(intent.occurredAt))) {
     return { ...identity, kind: "correction", intent: {
-      category: "MISSED", eventType: intent.eventType, occurredAt: new Date(intent.occurredAt).toISOString(),
+      category: "MISSED", eventType: intent.eventType, occurredAt: new Date(intent.occurredAt).toISOString(), ...provenance,
     } };
   }
   if (intent.category === "MISSED_BREAK" && intent.eventType === "BREAK_START"
@@ -72,7 +77,7 @@ function parseOperation(raw: string): PendingOperation | null {
   }
   if (intent.category === "OTHER" && typeof intent.reason === "string"
     && intent.reason.trim().length > 0 && intent.reason.length <= 500) {
-    return { ...identity, kind: "correction", intent: { category: "OTHER", reason: intent.reason } };
+    return { ...identity, kind: "correction", intent: { category: "OTHER", reason: intent.reason, ...provenance } };
   }
   return null;
 }

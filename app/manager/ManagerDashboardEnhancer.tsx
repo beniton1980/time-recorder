@@ -142,8 +142,13 @@ function enhanceDashboard() {
     section.dataset.dashboardCollapsible = "true";
     const count = config.collapseWhenEmpty ? reviewCount(section) : null;
     if (config.collapseWhenEmpty && count !== null) {
+      const hadNoRequests = section.dataset.dashboardReviewEmpty === "true";
       section.dataset.dashboardReviewEmpty = count === 0 ? "true" : "false";
-      setCollapsed(section, headingRow, count === 0);
+      // Keep the list open after the final decision and respect manual toggles.
+      // New pending requests still open the section so they are not overlooked.
+      if (!section.dataset.dashboardInitialized || (hadNoRequests && count > 0)) {
+        setCollapsed(section, headingRow, count === 0);
+      }
     }
     if (!section.dataset.dashboardInitialized) {
       section.dataset.dashboardInitialized = "true";

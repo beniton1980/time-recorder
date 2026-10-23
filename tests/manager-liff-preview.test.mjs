@@ -66,14 +66,14 @@ function nodes(tree, type) {
   if (Array.isArray(tree)) return tree.flatMap(item => nodes(item, type));
   return [...(tree.type === type ? [tree] : []), ...nodes(tree.props?.children, type)];
 }
-const text = tree => typeof tree === "string" ? tree : Array.isArray(tree) ? tree.map(text).join("") : tree?.props ? text(tree.props.children) : "";
+const text = tree => typeof tree === "string" || typeof tree === "number" ? String(tree) : Array.isArray(tree) ? tree.map(text).join("") : tree?.props ? text(tree.props.children) : "";
 const previewEnv = { NEXT_PUBLIC_MANAGER_LIFF_ID: "2010761826-fixture-manager" };
 const manager = { legal_name: "架空管理者", store_id: "fixture-store", store_name: "架空店舗", store_latitude: null, store_longitude: null, monthly_report_email: null };
 const dashboard = { manager, attendance: [], corrections: [], staffMemberships: [], coManagers: [], businessDate: "2026-04-30" };
 
-test("Preview hides other manager tools before enhancement while retaining the QR store context", async () => {
+test("Preview retains review and attendance before enhancement, hiding unrelated manager tools", async () => {
   const css = readFileSync(new URL("../app/manager/renewal.css", import.meta.url), "utf8");
-  assert.match(css, /main\[data-manager-attendance-preview="true"\] > section > header > a,[\s\S]*?main\[data-manager-attendance-preview="true"\] > section > section:not\(\[data-dashboard-key="attendance"\]\)\s*\{\s*display: none !important;/);
+  assert.match(css, /main\[data-manager-attendance-preview="true"\] > section > header > a,[\s\S]*?main\[data-manager-attendance-preview="true"\] > section > section:not\(\[data-dashboard-key="attendance"\]\):not\(\[data-dashboard-key="review"\]\)\s*\{\s*display: none !important;/);
   const enhancer = readFileSync(new URL("../app/manager/ManagerDashboardEnhancer.tsx", import.meta.url), "utf8");
   assert.match(enhancer, /querySelector<HTMLAnchorElement>\('a\[href\*="\/manager\/qr"\]'\)/, "the hidden QR anchor remains the poster store context source");
   for (const [env, preview] of [[{}, false], [previewEnv, true]]) {
@@ -86,8 +86,27 @@ test("Preview hides other manager tools before enhancement while retaining the Q
     assert.equal(qr.props.hidden, preview);
     const share = nodes(result.tree, "button").filter(item => text(item) === "LINEで案内を共有");
     assert.equal(share.length, preview ? 0 : 1);
-    assert.equal(text(result.tree).includes("検証用の勤怠画面です。"), preview);
+    assert.equal(text(result.tree).includes("検証用の管理画面です。"), preview);
   }
+});
+
+test("Preview review contains pending checkout decisions and the existing consultation route", async () => {
+  const common = { legal_name: "架空スタッフ", requested_at: "2026-10-21T01:00:00Z", day_events: [] };
+  const result = await start(...pages[0], previewEnv, { 0: { ...dashboard, corrections: [
+    { ...common, id: "checkout-request", operation: "ADD", requested_event_type: "CHECK_OUT", requested_occurred_at: "2026-10-20T10:00:00Z" },
+    { ...common, id: "consultation-request", operation: "REVIEW" },
+  ] } });
+  const review = nodes(result.tree, "section").find(node => node.props["data-dashboard-key"] === "review");
+  assert.ok(review, "review is classified before client enhancement so Preview CSS can display it");
+  assert.match(text(review), /未処理の訂正申請2件/);
+  assert.match(text(review), /打刻漏れを追加：.*退勤/);
+  assert.ok(nodes(review, "button").some(node => text(node) === "承認" && !node.props.disabled));
+  assert.ok(nodes(review, "button").some(node => text(node) === "却下" && !node.props.disabled));
+  const consultation = nodes(review, "a").find(node => text(node) === "相談内容・対象の打刻を確認");
+  const target = new URL(consultation.props.href, "https://fixture.invalid");
+  assert.equal(target.pathname, "/manager/consultations");
+  assert.equal(target.searchParams.get("store_id"), "fixture-store");
+  assert.equal(target.searchParams.get("id"), "consultation-request");
 });
 
 test("Preview attendance and edit screens retain only local navigation and identify the test environment", async () => {

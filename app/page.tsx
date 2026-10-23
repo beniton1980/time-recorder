@@ -1,7 +1,7 @@
 "use client";
 
 import liff from "@line/liff";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createPunchLocationReader } from "@/lib/punch-location.mjs";
 import type { PunchLocationReader } from "@/lib/punch-location.mjs";
@@ -11,6 +11,8 @@ import type { EventType, CorrectionIntent, PendingOperation, OperationResult } f
 import { withAttendanceDeadline } from "@/lib/attendance-request";
 import { correctionValidationMessage } from "@/lib/correction-validation";
 import CorrectionHistory from "./correction-history";
+import AttendanceAttention from "./attendance-attention";
+import type { AttentionItem, AttentionReference } from "@/lib/attendance-attention";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_ATTENDANCE_LIFF_ID || "2010761826-6FNSE1PD";
 
@@ -170,6 +172,7 @@ function operationNotice(operation: PendingOperation, result: OperationResult) {
   }
   if (result.status === "RESOLVED") return result.outcome === "NO_CHANGE" ? "相談は対応済みです。打刻の変更はありません。" : "相談は対応済みです。打刻の修正内容を確認できます。";
   if (result.status === "PENDING" && result.has_saved_corrections) return "打刻の修正は保存済みですが、相談はまだ完了していません。";
+  if (result.status === "PENDING" && operation.intent.category === "OTHER") return "管理者に相談しました（確認待ち）";
   if (result.status === "PENDING") return "打刻修正を申請しました（承認待ち）";
   if (result.status === "REJECTED") return "この修正申請は却下されています。現在の記録を確認してください。";
   return "打刻修正が反映されています。現在の記録を表示しています。";
@@ -193,6 +196,11 @@ export default function Home() {
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [showCorrection, setShowCorrection] = useState(false);
+  const [correctionSource, setCorrectionSource] = useState<AttentionReference | undefined>();
+  const [correctionContext, setCorrectionContext] = useState<AttentionItem | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<{ id: string; sequence: number } | null>(null);
+  const [attentionVersion, setAttentionVersion] = useState(0);
+  const refreshAttention = useCallback(() => setAttentionVersion(version => version + 1), []);
   const [correctionCategory, setCorrectionCategory] =
     useState<"" | "MISTAKE" | "MISSED" | "OTHER">("");
   const [correctionEvent, setCorrectionEvent] =
@@ -207,8 +215,13 @@ export default function Home() {
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const storeTokenRef = useRef<string | null>(null);
+  const getStoreToken = useCallback(() => storeTokenRef.current, []);
   const [correctionHistoryVersion, setCorrectionHistoryVersion] = useState(0);
   const locationReaderRef = useRef<PunchLocationReader | null>(null);
+  const correctionFormRef = useRef<HTMLFormElement | null>(null);
+  useEffect(() => {
+    if (showCorrection) { correctionFormRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }); correctionFormRef.current?.focus({ preventScroll: true }); }
+  }, [showCorrection]);
   const punchInFlightRef = useRef(false);
   const pendingOperationRef = useRef<PendingOperation | null>(null);
   const registrationInFlightRef = useRef(false);
@@ -394,6 +407,7 @@ export default function Home() {
       setShowCorrection(false);
       setNotice(operationNotice(operation, session.result));
       if (operation.kind === "correction") setCorrectionHistoryVersion(version => version + 1);
+      if (operation.kind === "correction") setHistoryTarget(previous => ({ id: session.result!.id, sequence: (previous?.sequence ?? 0) + 1 }));
       if (operation.kind === "punch") setLocationNotice(locationExplanation(session.result));
       return true;
     }
@@ -456,6 +470,9 @@ export default function Home() {
         if (operation.kind === "correction" && !response.ok) {
           const data = await response.json();
           responseCode = data?.code;
+          if (data?.code === "ATTENTION_ALREADY_PENDING" && typeof data.requestId === "string") {
+            setHistoryTarget(previous => ({ id: data.requestId, sequence: (previous?.sequence ?? 0) + 1 }));
+          }
         }
         return response;
       }));
@@ -505,12 +522,14 @@ export default function Home() {
     return null;
   }
 
-  function openCorrectionForm() {
+  function openCorrectionForm(item?: AttentionItem, consult = false) {
     if (view.kind !== "ready" || pendingOperationRef.current || punchInFlightRef.current) return;
 
     invalidateCorrectionValidation();
-    setCorrectionCategory(canCorrectLastPunch(view.membership) ? "MISTAKE" : "");
-    setCorrectionEvent("CHECK_IN");
+    setCorrectionSource(item?.source ? { eventId: item.source.eventId, revision: item.source.revision } : undefined);
+    setCorrectionContext(item ?? null);
+    setCorrectionCategory(item ? consult || !item.eventType ? "OTHER" : "MISSED" : canCorrectLastPunch(view.membership) ? "MISTAKE" : "");
+    setCorrectionEvent(item?.eventType ?? "CHECK_IN");
     setCorrectionDate("");
     setCorrectionTime("");
     setCorrectionEndDate("");
@@ -530,6 +549,35 @@ export default function Home() {
     reviewedIntentRef.current = null;
   }
 
+  async function refreshCorrectionSource() {
+    if (!correctionSource || correctionLocked || correctionValidationRef.current.pending) return;
+    const source = correctionSource;
+    const sequence = ++correctionValidationRef.current.sequence;
+    correctionValidationRef.current.pending = true;
+    setCorrectionValidating(true); setCorrectionError(null);
+    try {
+      const data = await withAttendanceDeadline(async signal => {
+        const response = await fetch("/api/attendance-attention", { method: "POST", signal, headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken: liff.getIDToken(), storeToken: storeTokenRef.current, sourceEventId: source.eventId }) });
+        if (!response.ok) throw new Error("ATTENTION_UNAVAILABLE");
+        return response.json();
+      });
+      if (sequence !== correctionValidationRef.current.sequence) return;
+      const item = (data.items as AttentionItem[]).find(item => item.source?.eventId === source.eventId);
+      if (item?.bucket === "waiting" && item.requestId) {
+        setHistoryTarget(previous => ({ id: item.requestId!, sequence: (previous?.sequence ?? 0) + 1 }));
+        setCorrectionError("この勤務の申請・相談は確認待ちです。下の申請状況を確認してください。入力は保持しています。");
+      } else if (item?.source && (correctionCategory === "OTHER" || item.eventType === correctionEvent)) {
+        setCorrectionSource({ eventId: item.source.eventId, revision: item.source.revision });
+        setCorrectionContext(item); setCorrectionCode(null); setCorrectionReview(false); reviewedIntentRef.current = null;
+        setCorrectionError("対象勤務を更新しました。保持した入力と現在の記録を見比べてから、内容を確認してください。");
+      } else {
+        setCorrectionError("対象の確認事項が変わりました。入力は保持しています。現在の記録を確認し、必要なら「その他」から相談してください。");
+      }
+    } catch { if (sequence === correctionValidationRef.current.sequence) setCorrectionError("対象勤務を取得できませんでした。入力は保持しています。もう一度確認してください。"); }
+    finally { if (sequence === correctionValidationRef.current.sequence) { correctionValidationRef.current.pending = false; setCorrectionValidating(false); } }
+  }
+
   function changeCorrectionInput(update: () => void) {
     if (correctionValidationRef.current.pending || punchInFlightRef.current || pendingOperationRef.current) return;
     update();
@@ -540,6 +588,7 @@ export default function Home() {
 
   function restoreCorrectionIntent(intent: CorrectionIntent) {
     invalidateCorrectionValidation();
+    setCorrectionSource(intent.attentionSource);
     setCorrectionCategory(intent.category === "MISSED_BREAK" ? "MISSED" : intent.category);
     setCorrectionReview(false);
     setShowCorrection(true);
@@ -608,13 +657,13 @@ export default function Home() {
         }
         return { category: "MISSED_BREAK", eventType: "BREAK_START", occurredAt: start.toISOString(), breakEndedAt: end.toISOString() };
       }
-      return { category: "MISSED", eventType: correctionEvent, occurredAt: start.toISOString() };
+      return { category: "MISSED", eventType: correctionEvent, occurredAt: start.toISOString(), ...(correctionSource ? { attentionSource: correctionSource } : {}) };
     }
     if (!correctionReason.trim()) {
       setCorrectionError("管理者に確認してほしい内容を入力してください。");
       return null;
     }
-    return { category: "OTHER", reason: correctionReason.trim() };
+    return { category: "OTHER", reason: correctionReason.trim(), ...(correctionSource ? { attentionSource: correctionSource } : {}) };
   }
 
   async function reviewCorrectionRequest(event: FormEvent<HTMLFormElement>) {
@@ -886,7 +935,7 @@ export default function Home() {
                 className="correction-link"
                 type="button"
                 disabled={submitting !== null || correctionSubmitting || recovering || pendingOperation !== null || showCorrection}
-                onClick={openCorrectionForm}
+                onClick={() => openCorrectionForm()}
               >
                 打刻修正
               </button>
@@ -894,6 +943,8 @@ export default function Home() {
 
             {showCorrection && (
               <form
+                ref={correctionFormRef}
+                tabIndex={-1}
                 className="correction-form"
                 noValidate
                 onSubmit={reviewCorrectionRequest}
@@ -910,6 +961,8 @@ export default function Home() {
                   </button>
                 </div>
 
+                {correctionSource && <p className="field-help">勤務の確認からの申請です。{correctionContext?.source && <>{correctionContext.source.businessDate}の勤務（記録：{formatPunchDateTime(correctionContext.source.startedAt)}）。</>}日付・時刻は実際の日時を入力してください。</p>}
+                {correctionSource && <button type="button" disabled={correctionLocked || correctionValidating} onClick={() => void refreshCorrectionSource()}>入力を保持して対象勤務を再確認</button>}
                 {!correctionReview ? (
                   <fieldset className="correction-inputs" disabled={correctionValidating} aria-busy={correctionValidating}>
                     <label>
@@ -927,10 +980,10 @@ export default function Home() {
                         })}
                       >
                         <option value="" disabled>修正内容を選択</option>
-                        <option value="MISTAKE">
+                        <option value="MISTAKE" disabled={!!correctionSource}>
                           前回の打刻を押し間違えた
                         </option>
-                        <option value="MISSED">打刻を押し忘れた</option>
+                        <option value="MISSED" disabled={!!correctionSource && correctionContext?.eventType === null}>打刻を押し忘れた</option>
                         <option value="OTHER">その他</option>
                       </select>
                     </label>
@@ -978,6 +1031,7 @@ export default function Home() {
                           追加する打刻
                           <select
                             ref={correctionEventSelectRef}
+                            disabled={!!correctionSource}
                             value={correctionEvent}
                             onChange={(event) => changeCorrectionInput(() => {
                               const next = event.target.value as EventType | "BREAK_PAIR";
@@ -1228,8 +1282,12 @@ export default function Home() {
               )}
             </details>
 
-            <CorrectionHistory key={`${view.membership.staff_id}:${correctionHistoryVersion}`}
-              getStoreToken={() => storeTokenRef.current} />
+            <AttendanceAttention key={`${view.membership.store_id}:${view.membership.staff_id}`}
+              getStoreToken={getStoreToken} refreshKey={`${view.membership.state_version}:${correctionHistoryVersion}:${attentionVersion}`}
+              disabled={showCorrection || submitting !== null || correctionSubmitting || recovering || pendingOperation !== null}
+              onCorrect={openCorrectionForm} onHistory={id => setHistoryTarget(previous => ({ id, sequence: (previous?.sequence ?? 0) + 1 }))} />
+            <CorrectionHistory key={`${view.membership.store_id}:${view.membership.staff_id}:${correctionHistoryVersion}:${historyTarget?.sequence ?? 0}`}
+              getStoreToken={getStoreToken} initialRequestId={historyTarget?.id} onLoaded={refreshAttention} />
 
             {!showCorrection && (
               <div className="attendance-exit">

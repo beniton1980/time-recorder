@@ -28,20 +28,47 @@ test('saving is not closing; uncertain completion is recovered by reloading the 
  const saved={...consultation,changes:[{id:'correction',operation:'REPLACE',before:null,after:null,reason:'架空訂正',at:'2026-10-15T01:00:00Z'}]};
  const s=screen(saved);s.render();await settle();
  assert.match(text(s.render()),/修正保存済み・未完了/);assert.equal(s.calls.some(c=>c.action==='resolve'),false);
- s.respond(async()=>{throw Error('connection lost after commit');});await click(s,'対応済みにする');
+ s.respond(async()=>{throw Error('connection lost after commit');});await click(s,'保存した内容で相談を完了する');await click(s,'相談の完了を確定');
  assert.match(text(s.render()),/完了したか確認できません/);assert.doesNotMatch(text(s.render()),/相談を対応済みにしました/);
  s.respond(async()=>({ok:true,json:async()=>({ok:true,consultation:{...saved,status:'RESOLVED',outcome:'CORRECTED',resolvedAt:'2026-10-15T02:00:00Z'},days:[]})}));
- await click(s,'最新の状態を確認');assert.match(text(s.render()),/対応済み/);assert.equal(button(s,'対応済みにする'),undefined);assert.equal(s.calls.filter(c=>c.action==='resolve').length,1);
+ await click(s,'最新の状態を確認');assert.match(text(s.render()),/対応済み/);assert.equal(button(s,'保存した内容で相談を完了する'),undefined);assert.equal(s.calls.filter(c=>c.action==='resolve').length,1);
 });
 test('no-change close requires a reason and a failed refresh removes stale actionable content',async()=>{
- const s=screen();s.render();await settle();assert.equal(button(s,'対応済みにする'),undefined);
+ const s=screen();s.render();await settle();assert.equal(button(s,'保存した内容で相談を完了する'),undefined);
  await click(s,'修正せず確認を終える');
- const close=nodes(s.render(),'button').find(n=>text(n).includes('対応済み'));assert.equal(close.props.disabled,true);
+ const close=button(s,'修正なしで相談を完了する');assert.equal(close.props.disabled,true);
  nodes(s.render(),'textarea')[0].props.onChange({target:{value:'すでに修正済みと確認'}});
  s.respond(async body=>({ok:true,json:async()=>body.action==='resolve'?{ok:true}:{ok:true,consultation:{...consultation,status:'RESOLVED',outcome:'NO_CHANGE',resolutionReason:'すでに修正済みと確認',resolvedAt:'2026-10-15T02:00:00Z'},days:[]}}));
- nodes(s.render(),'button').find(n=>text(n).includes('対応済み')).props.onClick();await settle();
+ await click(s,'修正なしで相談を完了する');assert.equal(s.calls.some(c=>c.action==='resolve'),false);await click(s,'相談の完了を確定');
  assert.equal(s.calls.find(c=>c.action==='resolve').reason,'すでに修正済みと確認');assert.match(text(s.render()),/打刻の変更はありません/);
  s.respond(async()=>{throw Error('offline');});await click(s,'最新の状態を確認');assert.match(text(s.render()),/取得できません/);assert.doesNotMatch(text(s.render()),/相談内容|対象の打刻を確認・修正/);
+});
+
+test('reviewing or cancelling completion never closes the consultation, including stale confirmation clicks',async()=>{
+ const saved={...consultation,changes:[{id:'correction',operation:'ADD',before:null,after:null,reason:'架空訂正',at:'2026-10-15T01:00:00Z'}]};
+ const s=screen(saved);s.render();await settle();
+ assert.match(text(s.render()),/打刻の保存は完了しています/);
+ await click(s,'保存した内容で相談を完了する');
+ assert.match(text(s.render()),/スタッフ側にもこの相談が「対応済み」/);
+ const staleConfirm=button(s,'相談の完了を確定');
+ await click(s,'まだ完了しない');staleConfirm.props.onClick();await settle();
+ assert.equal(s.calls.some(c=>c.action==='resolve'),false);
+ await click(s,'保存した内容で相談を完了する');
+ const beforeRefresh=button(s,'相談の完了を確定');
+ await click(s,'最新の状態を確認');beforeRefresh.props.onClick();await settle();
+ assert.equal(s.calls.some(c=>c.action==='resolve'),false);
+ assert.equal(button(s,'相談の完了を確定'),undefined);
+});
+
+test('only the final confirmation sends completion and double clicks cannot duplicate it',async()=>{
+ const saved={...consultation,changes:[{id:'correction',operation:'ADD',before:null,after:null,reason:'架空訂正',at:'2026-10-15T01:00:00Z'}]};
+ const s=screen(saved);s.render();await settle();let finish;
+ s.respond(async body=>body.action==='resolve'?new Promise(r=>{finish=r;}):({ok:true,json:async()=>({ok:true,consultation:{...saved,status:'RESOLVED',outcome:'CORRECTED'},days:[]})}));
+ await click(s,'保存した内容で相談を完了する');assert.equal(s.calls.some(c=>c.action==='resolve'),false);
+ const confirm=button(s,'相談の完了を確定');confirm.props.onClick();confirm.props.onClick();await settle();
+ assert.equal(s.calls.filter(c=>c.action==='resolve').length,1);assert.equal(button(s,'完了を保存中…').props.disabled,true);
+ finish({ok:true,json:async()=>({ok:true})});await settle();
+ assert.match(text(s.render()),/相談を対応済みにしました/);assert.equal(button(s,'保存した内容で相談を完了する'),undefined);
 });
 test('a late detail response cannot update an unmounted consultation',async()=>{
  const s=screen();let finish;s.respond(()=>new Promise(r=>{finish=r;}));s.render();await settle();s.unmount();
