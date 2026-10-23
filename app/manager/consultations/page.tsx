@@ -13,6 +13,7 @@ const labels: Record<string, string> = { CHECK_IN: "出勤", CHECK_OUT: "退勤"
 const reasons: Record<string, string> = { PENDING_CORRECTION: "未処理の申請があります", LOGICAL_CONTRADICTION: "打刻の順序・時刻を確認してください", UNCLOSED_SHIFT: "退勤がありません", UNCLOSED_BREAK: "休憩終了がありません", UNUSUALLY_LONG_WORK: "勤務が16時間を超えています", UNUSUALLY_LONG_BREAK: "休憩時間を確認してください" };
 const dateTime = (value: string) => new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 type Data = { consultation: Consultation; days: { businessDate: string; status: string | null; reasons: string[] }[] };
+type CompletionReview = { id: string; storeId: string; version: string; reason: string | null };
 function EventSummary({ event }: { event: ConsultationEvent | null }) {
   return event ? <span>{labels[event.type]} {dateTime(event.at)}<small>（{event.day}の勤務）</small></span> : <span>記録なし</span>;
 }
@@ -29,11 +30,14 @@ export default function ConsultationPage() {
   const [notice, setNotice] = useState("");
   const generation = useRef({ value: 0 });
   const pending = useRef(false);
+  const [completionReview, setCompletionReview] = useState<CompletionReview | null>(null);
+  const reviewed = useRef<CompletionReview | null>(null);
   const load = useCallback(() => {
+    reviewed.current = null;
     const state = generation.current, current = ++state.value;
     return liff.init({ liffId: process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || "2010761826-6FNSE1PD" }).then(async () => {
       if (current !== state.value) return;
-      setLoading(true); setError(""); setData(null);
+      setLoading(true); setError(""); setData(null); setCompletionReview(null);
       if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
       const { response, result } = await withAttendanceDeadline(async signal => {
       const response = await fetch("/api/manager/consultations", { method: "POST", signal, headers: { "Content-Type": "application/json" },
@@ -58,13 +62,23 @@ export default function ConsultationPage() {
     if (edit && c.status === "PENDING") query.set("consultation", c.id);
     return `/manager/staff-attendance?${query}`;
   };
+  function reviewCompletion() {
+    if (!c || c.status !== "PENDING" || pending.current || (!c.changes.length && !reason.trim())) return;
+    const review = { id: c.id, storeId: c.storeId, version: c.version, reason: c.changes.length ? null : reason.trim() };
+    reviewed.current = review; setCompletionReview(review);
+  }
+  function cancelCompletion() {
+    if (pending.current) return;
+    reviewed.current = null; setCompletionReview(null);
+  }
   async function resolve() {
-    if (!c || pending.current || (!c.changes.length && !reason.trim())) return;
+    const review = reviewed.current;
+    if (!c || c.status !== "PENDING" || pending.current || !review || review.id !== id || review.storeId !== storeId || review.version !== c.version) return;
     pending.current = true; setSaving(true); setError(""); setNotice("");
     try {
       const { response, result } = await withAttendanceDeadline(async signal => {
       const response = await fetch("/api/manager/consultations", { method: "POST", signal, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken: liff.getIDToken(), storeId, requestId: id, action: "resolve", expectedVersion: c.version, reason: c.changes.length ? null : reason }) });
+        body: JSON.stringify({ idToken: liff.getIDToken(), storeId, requestId: id, action: "resolve", expectedVersion: review.version, reason: review.reason }) });
       return { response, result: await response.json() };
       }).catch(() => { throw new Error("完了したか確認できませんでした。「最新の状態を確認」で結果を確認してください。"); });
       if (!response.ok || !result.ok) {
@@ -74,7 +88,7 @@ export default function ConsultationPage() {
       setNotice("相談を対応済みにしました。");
       await load();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "完了したか確認できませんでした。最新の状態を確認してください。"); }
-    finally { pending.current = false; setSaving(false); }
+    finally { pending.current = false; setSaving(false); reviewed.current = null; setCompletionReview(null); }
   }
   return <main className={styles.page}><div className={styles.shell}>
     <header><a href={`/manager?${new URLSearchParams({ store_id: storeId })}`}>← 管理画面へ戻る</a><p className={styles.eyebrow}>ONOGAMI 勤怠</p><h1>打刻の相談</h1>
@@ -88,9 +102,10 @@ export default function ConsultationPage() {
         <p className={styles.muted}>相談受付：{dateTime(c.requestedAt)}</p><p className={styles.reason}>{c.reason}</p>
         {c.source && <p>通知の対象：{c.source.businessDate}の勤務（記録：{dateTime(c.source.startedAt)}）{c.source.breakStartedAt && <> ／ 休憩開始：{dateTime(c.source.breakStartedAt)}</>}。申請時点の記録です。</p>}
         {c.status === "PENDING" && <><p>{c.source ? "通知の対象勤務を開いて、現在の記録を確認できます。" : c.targetDay ? `対象勤務：${c.targetDay}` : c.changes.length ? "相談受付時の対象勤務は未指定です。保存した修正の勤務日は下に表示しています。" : "対象未指定。相談受付日と勤務日は異なる場合があります。"}</p>
-          <a className={styles.primary} href={attendanceHref(c.source?.businessDate ?? c.targetDay ?? undefined, true)}>対象の打刻を確認・修正</a></>}
+          {c.changes.length > 0 && <div className={styles.notice}><strong>打刻の保存は完了しています。</strong><p>残る操作は、保存した内容を確認して「相談の完了を確定」を押すことです。</p><a className={styles.primary} href="#saved-changes">保存した修正と完了操作を確認</a></div>}
+          <a className={c.changes.length ? styles.secondary : styles.primary} href={attendanceHref(c.source?.businessDate ?? c.targetDay ?? undefined, true)}>{c.changes.length ? "打刻を追加で確認・修正" : "対象の打刻を確認・修正"}</a></>}
       </section>
-      <section className={styles.card}><h2>この相談で保存した修正</h2>
+      <section className={styles.card} id="saved-changes"><h2>この相談で保存した修正</h2>
         {c.changes.length === 0 ? <p className={styles.muted}>{c.status === "RESOLVED" ? "この相談では打刻を変更していません。" : "この相談に結び付いた修正はまだありません。"}</p> : <>
           {c.status === "PENDING" && <p className={styles.notice}>打刻の修正を保存しました。相談はまだ完了していません。</p>}
           <ol className={styles.changes}>{c.changes.map(change => <li key={change.id}>
@@ -100,6 +115,20 @@ export default function ConsultationPage() {
           </li>)}</ol>
         </>}
       </section>
+      {c.status === "PENDING" ? <section className={`${styles.card} ${styles.completion}`} aria-labelledby="completion-heading"><h2 id="completion-heading">最後に、相談を完了する</h2>
+        <p>{c.changes.length ? "打刻の修正は保存済みです。追加し直す必要はありません。内容に問題がなければ、この相談を完了してください。" : "打刻の修正が不要な場合は、確認した内容を残して相談を完了できます。"}</p>
+        {completionReview?.id === c.id && completionReview.storeId === c.storeId && completionReview.version === c.version ? <div className={styles.confirmation} role="group" aria-label="相談完了の確認">
+          <h3>{c.staffName}さんの相談を完了しますか？</h3>
+          <p>確定すると、スタッフ側にもこの相談が「対応済み」と表示されます。</p>
+          {completionReview.reason && <p className={styles.reason}>確認内容：{completionReview.reason}</p>}
+          <div className={styles.actions}><button className={styles.secondary} disabled={saving} onClick={cancelCompletion}>まだ完了しない</button><button className={styles.primary} disabled={saving} onClick={() => void resolve()}>{saving ? "完了を保存中…" : "相談の完了を確定"}</button></div>
+        </div> : c.changes.length > 0 ? <button className={styles.primary} disabled={saving} onClick={reviewCompletion}>保存した内容で相談を完了する</button> : <>
+          <button className={styles.secondary} aria-expanded={noChange} onClick={() => setNoChange(!noChange)}>修正せず確認を終える</button>
+          {noChange && <div className={styles.closeForm}><label>確認した内容・修正しない理由<textarea maxLength={500} value={reason} onChange={e => setReason(e.target.value)} placeholder="例：8/31の勤務は以前の修正で対応済みと確認" /></label><p className={styles.muted}>確認した勤務日も記録してください。対象や実際の勤務が未確認の場合は、相談を未対応のまま残してください。</p>
+            <button className={styles.primary} disabled={saving || !reason.trim()} onClick={reviewCompletion}>修正なしで相談を完了する</button></div>}
+        </>}
+      </section> : c.status === "RESOLVED" && <section className={styles.card}><h2>対応済み</h2><p>{c.outcome === "CORRECTED" ? "打刻を修正しました。" : "確認しました。打刻の変更はありません。"}</p>
+        {c.resolvedAt && <p>対応完了：{dateTime(c.resolvedAt)}</p>}{c.resolutionReason && <p className={styles.reason}>確認内容：{c.resolutionReason}</p>}</section>}
       <section className={styles.card}><h2>対象・修正した勤務の現在の状態</h2><p className={styles.muted}>相談の完了と勤怠の確定は別です。残る要確認事項は対象の勤務で確認してください。</p>
         {workDays.length === 0 && <p className={styles.muted}>{c.status === "RESOLVED" ? "対象勤務の指定・修正履歴はありません。確認した勤務は下の対応内容を参照してください。" : "対象の勤務は未指定です。相談内容と実際の勤務を確認してください。"}</p>}
         <ul className={styles.days}>{workDays.map(day => <li key={day.businessDate}><a href={attendanceHref(day.businessDate)}>{day.businessDate}の勤務を確認</a>
@@ -112,14 +141,6 @@ export default function ConsultationPage() {
           <span>{requestDisplayDay.status === "NEEDS_REVIEW" ? "要確認" : requestDisplayDay.status === "CONFIRMED" ? "確定" : "記録なし"}</span>
           {requestDisplayDay.reasons.length > 0 && <p>{requestDisplayDay.reasons.map(r => reasons[r] || "勤怠を確認してください").join("／")}</p>}</li></ul>
       </section>}
-      {c.status === "PENDING" ? <section className={styles.card}><h2>相談を完了する</h2>
-        {c.changes.length > 0 ? <><p>保存した修正を確認して、この相談を対応済みにします。</p><button className={styles.primary} disabled={saving} onClick={() => void resolve()}>{saving ? "確認中…" : "対応済みにする"}</button></> : <>
-          <button className={styles.secondary} aria-expanded={noChange} onClick={() => setNoChange(!noChange)}>修正せず確認を終える</button>
-          {noChange && <div className={styles.closeForm}><label>確認した内容・修正しない理由<textarea maxLength={500} value={reason} onChange={e => setReason(e.target.value)} placeholder="例：8/31の勤務は以前の修正で対応済みと確認" /></label><p className={styles.muted}>確認した勤務日も記録してください。対象や実際の勤務が未確認の場合は、相談を未対応のまま残してください。</p>
-            <button className={styles.primary} disabled={saving || !reason.trim()} onClick={() => void resolve()}>{saving ? "確認中…" : "修正なしで対応済みにする"}</button></div>}
-        </>}
-      </section> : c.status === "RESOLVED" && <section className={styles.card}><h2>対応済み</h2><p>{c.outcome === "CORRECTED" ? "打刻を修正しました。" : "確認しました。打刻の変更はありません。"}</p>
-        {c.resolvedAt && <p>対応完了：{dateTime(c.resolvedAt)}</p>}{c.resolutionReason && <p className={styles.reason}>確認内容：{c.resolutionReason}</p>}</section>}
     </>}
   </div></main>;
 }

@@ -278,7 +278,7 @@ export default function StaffAttendanceEditPage() {
         </header>
 
         {message && !routeError && <p className={styles.status}>{message}</p>}
-        {payload?.consultation && <p className={styles.status}>この相談への対応中：{payload.consultation.reason}<br />修正を保存した後、相談へ戻って「対応済み」にします。</p>}
+        {payload?.consultation && <p className={styles.status}>この相談への対応中：{payload.consultation.reason}<br />ここで保存するのは打刻の修正です。保存後に相談へ戻ります。内容を確認し、「保存した内容で相談を完了する」→「相談の完了を確定」で対応を終えます。</p>}
         {visibleError && <p className={styles.error} role="alert">{visibleError}</p>}
 
         {payload && !visibleError && (

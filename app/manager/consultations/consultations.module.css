@@ -29,6 +29,11 @@
 .days li > span { display: inline-block; margin-left: 12px; font-size: 13px; }
 .days li a { display: inline-block; padding: 10px 0; }
 .closeForm { margin-top: 16px; }
+.completion { border-color: #8ab79a; border-width: 2px; }
+.confirmation { margin-top: 16px; padding: 16px; border-radius: 10px; background: #eaf4ed; }
+.confirmation h3 { margin: 0; font-size: 17px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.card[id] { scroll-margin-top: 16px; }
 .closeForm label { display: grid; gap: 8px; }
 .closeForm textarea { box-sizing: border-box; width: 100%; min-height: 96px; border: 1px solid #a5baad; border-radius: 8px; padding: 12px; resize: vertical; }
 @media (max-width: 480px) { .card { padding: 16px; } .primary { width: 100%; box-sizing: border-box; } .changes dl > div { grid-template-columns: 52px minmax(0,1fr); gap: 8px; } }
