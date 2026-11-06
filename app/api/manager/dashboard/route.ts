@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { logServerError } from "@/lib/safe-log";
 import { enforceRateLimit } from "@/lib/api-security";
+import { buildManagerAttendanceAttention, type ManagerAttentionEvent, type ManagerAttentionRequest } from "@/lib/attendance-attention";
 import {
   LineTokenVerificationError,
   verifyLineIdToken,
@@ -84,13 +85,14 @@ export async function POST(request: Request) {
         ${typeof body.businessDate === "string" ? body.businessDate : null}::date,
         ((NOW() AT TIME ZONE timezone)
           - make_interval(mins => business_day_start_minute))::date
-      )::text AS business_date
+      )::text AS business_date,
+        (((NOW() AT TIME ZONE timezone) - make_interval(mins => business_day_start_minute))::date)::text AS current_business_date
       FROM stores
       WHERE id = ${manager.store_id}
     `;
     const businessDate = String(dates[0].business_date);
 
-    const [attendance, corrections, staffMemberships, coManagers] = await Promise.all([
+    const [attendance, corrections, staffMemberships, coManagers, attentionEvents] = await Promise.all([
       sql`
         SELECT
           st.id AS staff_id,
@@ -158,6 +160,18 @@ export async function POST(request: Request) {
       sql`
         SELECT
           cr.id,
+          cr.staff_id,
+          link.source_reference->>'eventId' AS source_event_id,
+          CASE WHEN cr.operation = 'ADD' AND cr.requested_event_type IN ('BREAK_END', 'CHECK_OUT') THEN (
+            SELECT e.effective_id FROM effective_punch_events e
+            WHERE e.store_id = cr.store_id AND e.staff_id = cr.staff_id
+              AND e.event_type = 'CHECK_IN' AND e.occurred_at < cr.requested_occurred_at
+            ORDER BY e.occurred_at DESC, e.effective_id DESC LIMIT 1) END AS matched_event_id,
+          COALESCE(link.snapshot->>'breakStartedAt', CASE WHEN cr.requested_event_type = 'BREAK_END' THEN (
+            SELECT e.occurred_at::text FROM effective_punch_events e
+            WHERE e.store_id = cr.store_id AND e.staff_id = cr.staff_id
+              AND e.event_type = 'BREAK_START' AND e.occurred_at < cr.requested_occurred_at
+            ORDER BY e.occurred_at DESC, e.effective_id DESC LIMIT 1) END) AS break_started_at,
           cr.operation,
           cr.requested_event_type,
           cr.requested_occurred_at,
@@ -171,6 +185,7 @@ export async function POST(request: Request) {
           COALESCE(day_history.items, '[]'::json) AS day_events
         FROM correction_requests cr
         JOIN staff st ON st.id = cr.staff_id
+        LEFT JOIN correction_attention_sources link ON link.request_id = cr.id
         LEFT JOIN punch_events pe ON pe.id = cr.target_event_id
         LEFT JOIN correction_requests paired
           ON paired.group_id = cr.group_id AND paired.id <> cr.id
@@ -224,6 +239,16 @@ export async function POST(request: Request) {
            OR (st.store_id = ${manager.store_id} AND access.id IS NOT NULL)
         ORDER BY is_self DESC, status ASC, st.legal_name ASC
       `,
+      sql`
+        SELECT e.effective_id, e.staff_id, e.store_id, e.business_date::text AS business_date,
+          e.event_type, e.occurred_at, st.legal_name, st.status AS staff_status,
+          COALESCE(ss.state, 'OFF_DUTY') AS current_state
+        FROM effective_punch_events e
+        JOIN staff st ON st.id = e.staff_id AND st.store_id = e.store_id
+        LEFT JOIN staff_states ss ON ss.staff_id = st.id
+        WHERE e.store_id = ${manager.store_id}::uuid
+        ORDER BY e.staff_id, e.occurred_at, e.effective_id
+      `,
     ]);
 
     return NextResponse.json({
@@ -231,10 +256,11 @@ export async function POST(request: Request) {
       manager,
       businessDate,
       attendance,
+      attendanceAttention: buildManagerAttendanceAttention(attentionEvents as ManagerAttentionEvent[], corrections as ManagerAttentionRequest[], String(dates[0].current_business_date)),
       corrections,
       staffMemberships,
       coManagers,
-    });
+    }, { headers: { "Cache-Control": "no-store, private" } });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) {
       return NextResponse.json({ ok: false, code: "INVALID_ID_TOKEN" }, { status: 401 });

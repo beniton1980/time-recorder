@@ -35,6 +35,22 @@
 }
 
 .store { color: #627269; }
+.attention { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #d8e2da; }
+.attentionHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.attentionHeading h3 { margin: 0; font-size: 16px; }
+.attentionHeading span { font-size: 14px; font-weight: 700; }
+.attentionList { margin: 0; padding: 0; list-style: none; }
+.attentionList li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e5eae6; }
+.attentionList li:last-child { border-bottom: 0; }
+.attentionList p { margin: 4px 0 0; color: #56675b; font-size: 13px; line-height: 1.5; }
+.attentionList small { margin-left: 8px; color: #627269; }
+.attentionList a { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 12px; border: 1px solid #9bb5a4; border-radius: 8px; color: #245c40; background: #f5f9f6; font-size: 14px; font-weight: 700; text-decoration: none; }
+.attentionList a:focus-visible, .moreAttention summary:focus-visible { outline: 3px solid #39816c; outline-offset: 3px; }
+.moreAttention summary { min-height: 44px; padding: 12px 0; color: #245c40; cursor: pointer; font-size: 14px; font-weight: 700; }
+@media (max-width: 420px) {
+  .attentionList li { flex-wrap: wrap; }
+  .attentionList a { width: 100%; }
+}
 .manager { font-weight: 700; }
 
 .storeSelector {

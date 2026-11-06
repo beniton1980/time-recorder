@@ -117,7 +117,7 @@ export default function StaffAttendancePage() {
   const notice = receiptId && receipt?.storeId === storeId && receipt?.staffId === staffId && receipt?.businessDate === focusDate ? receipt : null;
   const returnMessage = notice
     ? `${dateLabel(focusDate)}の打刻を${{ ADD: "追加", REPLACE: "変更", VOID: "取消" }[notice.operation]}しました。`
-    : `${focusDate ? dateLabel(focusDate) : ""}の勤怠に戻りました。`;
+    : `${focusDate ? dateLabel(focusDate) : ""}の勤怠を表示しています。`;
 
   useEffect(() => {
     if (!storeId || !staffId) return;

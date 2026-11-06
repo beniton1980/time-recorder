@@ -100,6 +100,10 @@ test('break end then checkout use existing approval; pending addition is not eff
 test('every read/write requires active person, store and QR; source cannot cross tenant; old unresolved work stays visible',async()=>{
   const f=await fixture();try {
     const s=await seed(f,{age:90});let item=(await attention(f)).items.find(x=>x.source?.eventId===s.id);assert.equal(item.eventType,null);
+    for(let i=0;i<21;i++) await f.db.query("INSERT INTO correction_requests(store_id,staff_id,operation,reason) VALUES($1,$2,'REVIEW','Fictitious unassigned request')",[f.store,f.staff]);
+    const firstPage=await attention(f);
+    assert.equal(firstPage.checkCount,1);assert.equal(firstPage.items[0].source.eventId,s.id,'actionable old work precedes unrelated waiting requests');
+    assert.ok(firstPage.next);
     const body={clientRequestId:randomUUID(),category:'OTHER',reason:'Fictitious old work',attentionSource:reference(item.source)};
     assert.equal((await f.call(f.correction,body)).ok,true);
     const route=f.api('attendance-attention');
