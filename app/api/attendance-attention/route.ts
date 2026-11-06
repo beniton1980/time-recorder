@@ -50,11 +50,14 @@ export async function POST(request: Request) {
     `;
     if (!rows[0]) return json({ ok: false, code: "STAFF_OR_STORE_NOT_FOUND" }, 404);
     const all = buildAttendanceAttention(rows[0].days as { source: AttentionSource; events: EffectivePunch[] }[], rows[0].requests as AttentionRequest[]);
-    const items = body.sourceEventId ? all.filter(item => item.source?.eventId === body.sourceEventId) : all;
+    const items = (body.sourceEventId ? all.filter(item => item.source?.eventId === body.sourceEventId) : all)
+      .sort((a, b) => a.bucket.localeCompare(b.bucket));
     const offset = body.after == null ? 0 : items.findIndex(item => item.id === body.after) + 1;
     if (body.after != null && !offset) return json({ ok: false, code: "ATTENTION_CHANGED" }, 409);
     const page = items.slice(offset, offset + 20);
-    return json({ ok: true, checkedAt: rows[0].checkedAt, items: page, next: items.length > offset + 20 ? page.at(-1)!.id : null });
+    return json({ ok: true, checkedAt: rows[0].checkedAt, items: page,
+      checkCount: items.filter(item => item.bucket === "check").length,
+      next: items.length > offset + 20 ? page.at(-1)!.id : null });
   } catch (error) {
     if (error instanceof LineTokenVerificationError) return json({ ok: false, code: "INVALID_ID_TOKEN" }, 401);
     logServerError("attendance_attention_failed");

@@ -11,7 +11,7 @@ import type { EventType, CorrectionIntent, PendingOperation, OperationResult } f
 import { withAttendanceDeadline } from "@/lib/attendance-request";
 import { correctionValidationMessage } from "@/lib/correction-validation";
 import CorrectionHistory from "./correction-history";
-import AttendanceAttention from "./attendance-attention";
+import AttendanceAttention, { AttendanceAttentionNotice, AttendanceAttentionProvider } from "./attendance-attention";
 import type { AttentionItem, AttentionReference } from "@/lib/attendance-attention";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_ATTENDANCE_LIFF_ID || "2010761826-6FNSE1PD";
@@ -842,6 +842,8 @@ export default function Home() {
         )}
 
         {view.kind === "ready" && (
+          <AttendanceAttentionProvider key={`${view.membership.store_id}:${view.membership.staff_id}`}
+            getStoreToken={getStoreToken} refreshKey={`${view.membership.state_version}:${correctionHistoryVersion}:${attentionVersion}`}>
           <div className="message">
             {now && (
               <div className="clock" aria-label="現在時刻">
@@ -863,6 +865,7 @@ export default function Home() {
               )}
             </p>
 
+            <AttendanceAttentionNotice />
             {view.membership.pending_shift_start && <div className="operation-recovery">
               <p>{formatPunchDateTime(view.membership.pending_shift_start.checkout_at)} の退勤を申請済みです。</p>
               <p className="field-help">次の勤務を始められます。前回分は管理者の承認まで未確定です。</p>
@@ -1282,8 +1285,7 @@ export default function Home() {
               )}
             </details>
 
-            <AttendanceAttention key={`${view.membership.store_id}:${view.membership.staff_id}`}
-              getStoreToken={getStoreToken} refreshKey={`${view.membership.state_version}:${correctionHistoryVersion}:${attentionVersion}`}
+            <AttendanceAttention
               disabled={showCorrection || submitting !== null || correctionSubmitting || recovering || pendingOperation !== null}
               onCorrect={openCorrectionForm} onHistory={id => setHistoryTarget(previous => ({ id, sequence: (previous?.sequence ?? 0) + 1 }))} />
             <CorrectionHistory key={`${view.membership.store_id}:${view.membership.staff_id}:${correctionHistoryVersion}:${historyTarget?.sequence ?? 0}`}
@@ -1303,6 +1305,7 @@ export default function Home() {
             )}
 
           </div>
+          </AttendanceAttentionProvider>
         )}
 
         {view.kind === "error" && (

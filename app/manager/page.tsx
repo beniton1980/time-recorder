@@ -9,6 +9,7 @@ import PastMonthlyReport from "./past-monthly-report";
 import ReportFile, { useReportFile } from "./report-file";
 import ConsultationHistory from "./consultation-history";
 import { consultationHref } from "@/lib/consultation";
+import type { ManagerAttentionItem } from "@/lib/attendance-attention";
 
 const LIFF_ID = "2010761826-6FNSE1PD";
 const MANAGER_SESSION_LIFF_ID = process.env.NEXT_PUBLIC_MANAGER_LIFF_ID || LIFF_ID;
@@ -70,6 +71,7 @@ type Dashboard = {
     monthly_report_email_consent_version: string | null;
   };
   attendance: Attendance[];
+  attendanceAttention: ManagerAttentionItem[];
   corrections: Correction[];
   staffMemberships: StaffMembership[];
   coManagers: CoManager[];
@@ -106,6 +108,18 @@ const eventLabels: Record<EventType, string> = {
   BREAK_END: "休憩終了",
   CHECK_OUT: "退勤",
 };
+
+function attentionRow(item: ManagerAttentionItem, storeId: string) {
+  const params = new URLSearchParams({ store_id: storeId, staff_id: item.staffId,
+    month: item.businessDate.slice(0, 7), focus: item.businessDate, review: "1" });
+  return <li key={`${item.staffId}:${item.businessDate}`}>
+    <div><strong>{item.legalName}</strong>{item.staffStatus !== "active" && <small>{item.staffStatus === "departed" ? "退社済み" : "停止中"}</small>}
+      <p><time dateTime={item.businessDate}>{item.businessDate}</time>の勤務</p>
+      <p>{item.message}</p>
+    </div>
+    <a href={`/manager/staff-attendance?${params}`} aria-label={`${item.legalName}さんの${item.businessDate}の勤怠を確認`}>勤怠を確認</a>
+  </li>;
+}
 
 function formatTime(value: string) {
   return new Intl.DateTimeFormat("ja-JP", {
@@ -873,13 +887,23 @@ export default function ManagerPage() {
             <section className={styles.section} data-dashboard-key="attendance" aria-busy={switchingStore}>
               <div className={styles.sectionHeading}>
                 <h2>勤怠確認</h2>
-                <span>{dashboard.attendance.length}名</span>
               </div>
+              {!switchingStore && <div className={styles.attention}>
+                <div className={styles.attentionHeading}><h3>申請のない確認事項</h3><span>{dashboard.attendanceAttention?.length ?? 0}件</span></div>
+                {dashboard.attendanceAttention?.length ? <>
+                  <p className={styles.sectionNote}>記録が未完了の勤務です。本人に状況を確認してから修正してください。</p>
+                  <ul className={styles.attentionList}>{dashboard.attendanceAttention.slice(0, 3).map(item => attentionRow(item, dashboard.manager.store_id))}</ul>
+                  {dashboard.attendanceAttention.length > 3 && <details className={styles.moreAttention}>
+                    <summary>ほか{dashboard.attendanceAttention.length - 3}件を表示</summary>
+                    <ul className={styles.attentionList}>{dashboard.attendanceAttention.slice(3).map(item => attentionRow(item, dashboard.manager.store_id))}</ul>
+                  </details>}
+                </> : <p className={styles.sectionNote}>申請のない確認事項はありません。</p>}
+              </div>}
               <p className={styles.sectionNote}>
                 スタッフを選択すると、その人の今月の勤怠・要確認・打刻修正をまとめて確認できます。
               </p>
               <label className={styles.staffSelector}>
-                スタッフを選択
+                スタッフを選択（{dashboard.attendance.length}名）
                 <select
                   value={attendanceStaffId}
                   disabled={switchingStore || !attendanceStaffId}

@@ -26,6 +26,7 @@ export async function coManagerFixture(options) {
       return { sub: id };
     } },
     "@/lib/monthly-attendance.mjs": monthly,
+    "@/lib/attendance-attention": loadTs("lib/attendance-attention.ts", { "./monthly-attendance.mjs": monthly }),
     "@/lib/monthly-attendance-report.mjs": report,
     "@/lib/monthly-attendance-csv.mjs": csv,
     "@/lib/monthly-attendance-query": loadTs("lib/monthly-attendance-query.ts", { "@/lib/monthly-attendance.mjs": monthly }),
@@ -36,7 +37,7 @@ export async function coManagerFixture(options) {
     "@/lib/store-entry-token": { hashStoreEntryToken: value => createHash("sha256").update(value).digest("hex") },
     "@/lib/store-qr-encryption": { encryptStoreEntryToken: value => "fixture:" + value, decryptStoreEntryToken: value => value.slice(8) },
   };
-  const routes = Object.fromEntries(["consultations","staff-attendance","punch-corrections","corrections/decision","monthly-attendance/reports","monthly-attendance/csv","monthly-attendance/reissue","monthly-attendance/period","monthly-attendance/acceptance-test","store-qr"].map(name => [name,loadTs("app/api/manager/"+name+"/route.ts", modules)]));
+  const routes = Object.fromEntries(["dashboard","consultations","staff-attendance","punch-corrections","corrections/decision","monthly-attendance/reports","monthly-attendance/csv","monthly-attendance/reissue","monthly-attendance/period","monthly-attendance/acceptance-test","store-qr"].map(name => [name,loadTs("app/api/manager/"+name+"/route.ts", modules)]));
   const call = async (name, body = {}, actor = "fixture_delegate") => {
     const response = await routes[name].POST(new Request("http://fixture.local/api/manager/"+name,{method:"POST",body:JSON.stringify({idToken:actor,storeId:f.store,...body})}));
     const raw = await response.text();

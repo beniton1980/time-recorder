@@ -70,3 +70,59 @@ function waitingItem(r: AttentionRequest, source: AttentionSource | null): Atten
       : r.operation === "REVIEW" ? source ? "この勤務について相談中です" : "対象未指定の相談が確認待ちです"
       : "修正申請の承認待ちです" };
 }
+
+export type ManagerAttentionEvent = EffectivePunch & { current_state: string; staff_status: string };
+export type ManagerAttentionRequest = {
+  id: string; staff_id: string; operation: string; requested_event_type: string | null;
+  requested_at: string; requested_occurred_at: string | null;
+  source_event_id: string | null; matched_event_id: string | null; break_started_at: string | null;
+};
+export type ManagerAttentionItem = {
+  staffId: string; legalName: string; staffStatus: string; businessDate: string;
+  message: string; continuing: boolean;
+};
+
+// Manager navigation uses the same assessment and request coverage as the staff
+// notice. Keep all retained days, including people who have since left the store.
+export function buildManagerAttendanceAttention(events: ManagerAttentionEvent[], requests: ManagerAttentionRequest[], today: string): ManagerAttentionItem[] {
+  const staff = new Map<string, ManagerAttentionEvent[]>();
+  for (const event of events) {
+    const list = staff.get(event.staff_id) ?? [];
+    list.push(event);
+    staff.set(event.staff_id, list);
+  }
+  const result: ManagerAttentionItem[] = [];
+  for (const [staffId, punches] of staff) {
+    punches.sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime() || a.effective_id.localeCompare(b.effective_id));
+    const latest = punches.at(-1)!;
+    const grouped = new Map<string, ManagerAttentionEvent[]>();
+    for (const punch of punches) {
+      const day = grouped.get(punch.business_date) ?? [];
+      day.push(punch); grouped.set(punch.business_date, day);
+    }
+    const days = Array.from(grouped, ([businessDate, day]) => {
+      const last = day.at(-1)!;
+      const anchor = day.findLast(event => event.event_type === "CHECK_IN") ?? last;
+      return { events: day, source: {
+        eventId: anchor.effective_id, revision: "", businessDate,
+        startedAt: new Date(anchor.occurred_at).toISOString(), lastAt: new Date(last.occurred_at).toISOString(),
+        lastType: last.event_type, breakStartedAt: last.event_type === "BREAK_START" ? new Date(last.occurred_at).toISOString() : null,
+        current: latest.current_state !== "OFF_DUTY" && last.effective_id === latest.effective_id,
+        today, canCorrect: false,
+      } };
+    });
+    const pending = requests.filter(r => r.staff_id === staffId).map(r => ({
+      id: r.id, status: "PENDING", operation: r.operation, eventType: r.requested_event_type,
+      requestedAt: r.requested_at, occurredAt: r.requested_occurred_at, hasSavedCorrections: false,
+      sourceEventId: r.source_event_id, matchedEventId: r.matched_event_id, breakStartedAt: r.break_started_at,
+    }));
+    for (const item of buildAttendanceAttention(days, pending)) {
+      if (item.bucket !== "check" || !item.source) continue;
+      result.push({ staffId, legalName: latest.legal_name ?? "", staffStatus: latest.staff_status,
+        businessDate: item.source.businessDate, continuing: item.continuing,
+        message: item.continuing ? "勤務が続いているか確認してください" : item.message,
+      });
+    }
+  }
+  return result.sort((a, b) => b.businessDate.localeCompare(a.businessDate) || a.legalName.localeCompare(b.legalName, "ja") || a.staffId.localeCompare(b.staffId));
+}

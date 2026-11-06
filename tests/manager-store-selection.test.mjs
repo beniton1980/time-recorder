@@ -64,10 +64,26 @@ function screen(initialResult = dashboard("A", ["A1", "A2"])) {
 }
 const attendance = s => nodes(s.render(), "section").find(n => n.props["data-dashboard-key"] === "attendance");
 const select = s => nodes(attendance(s), "select")[0];
-const link = s => nodes(attendance(s), "a")[0];
+const link = s => nodes(attendance(s), "a").find(a => a.props["data-staff-attendance-link"]);
 const storeSelect = s => nodes(s.render(), "select")[0];
 const choose = (s, id) => select(s).props.onChange({ target: { value: id } });
 const switchTo = (s, id) => storeSelect(s).props.onChange({ target: { value: id } });
+
+test("unrequested attendance links directly to the historical day and disappears during a store switch", async () => {
+  const initial = dashboard("A", ["A1"]);
+  initial.attendanceAttention = [{ staffId: "A1", legalName: "架空A1", staffStatus: "departed", businessDate: "2026-08-31", message: "退勤の記録がありません", continuing: false }];
+  const s = screen(initial); await s.start();
+  const target = nodes(attendance(s), "a").find(a => a.props["aria-label"].includes("2026-08-31"));
+  const url = new URL(target.props.href, "https://fixture.invalid");
+  assert.deepEqual(Object.fromEntries(url.searchParams), { store_id: "A", staff_id: "A1", month: "2026-08", focus: "2026-08-31", review: "1" });
+  assert.match(text(attendance(s)), /退社済み/);
+  s.hold(); s.respond(dashboard("B", ["B1"]));
+  switchTo(s, "B");
+  assert.equal(nodes(attendance(s), "a").length, 0);
+  await s.release();
+  assert.doesNotMatch(text(attendance(s)), /2026-08-31|架空A1/);
+  assert.match(text(attendance(s)), /申請のない確認事項はありません/);
+});
 const options = s => nodes(select(s), "option").map(n => n.props.value);
 
 function withPendingCorrection() {

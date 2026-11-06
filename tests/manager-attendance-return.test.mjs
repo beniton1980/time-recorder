@@ -159,7 +159,7 @@ test("ordinary return focuses the target, and editing carries the selected revie
   const s = screen("&review=1&focus=2026-04-08"); await s.settle();
   assert.equal(s.focused.at(-1), "2026-04-08");
   assert.equal(s.edits().length, 1); assert.match(s.edits()[0].props.href, /&review=1$/);
-  assert.match(text(s.render()), /勤怠に戻りました/); assert.doesNotMatch(text(s.render()), /打刻を.*しました/);
+  assert.match(text(s.render()), /勤怠を表示しています/); assert.doesNotMatch(text(s.render()), /打刻を.*しました/);
 });
 
 test("success notices are scoped, expire and are consumed once; storage unavailability cannot fail a save", async () => {
